@@ -1,0 +1,20 @@
+{
+  "name": "cv-lab-2",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron + native C skeleton for compute-intensive image processing",
+  "main": "src/main.js",
+  "scripts": {
+    "build:native": "node-gyp rebuild",
+    "rebuild:electron": "node scripts/rebuild-electron.js",
+    "test:native": "node test/smoke.js",
+    "sample": "node scripts/make-sample.js 12",
+    "start": "electron .",
+    "dev": "npm run rebuild:electron && electron ."
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "electron": "^43.4.0",
+    "node-gyp": "^13.0.1"
+  }
+}

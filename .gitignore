@@ -1,0 +1,7 @@
+node_modules/
+build/
+dist/
+out/
+*.node
+.DS_Store
+assets/

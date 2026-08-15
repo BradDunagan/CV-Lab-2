@@ -1,0 +1,66 @@
+name: build
+
+# Inert until this directory is a git repo with a GitHub remote.
+# Once it is: `git push` and watch three machines build the same code.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # Don't cancel the other two when one fails -- you want to see all three
+      # failures at once, not discover them one release at a time.
+      fail-fast: false
+      matrix:
+        os:
+          - macos-14 # arm64
+          - windows-2022 # x64
+          - ubuntu-22.04 # x64, older glibc for wider compatibility
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - run: npm ci
+
+      # Build against the Node ABI first so the smoke test can run headlessly.
+      - name: Build addon (Node ABI)
+        run: npm run build:native
+
+      - name: Smoke test
+        run: npm run test:native
+
+      # Then rebuild against Electron's ABI -- a different NODE_MODULE_VERSION.
+      # This is the step that would fail if the addon were NAN/V8 based.
+      - name: Rebuild addon (Electron ABI)
+        run: npm run rebuild:electron
+
+      - name: Upload addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: cvlab-addon-${{ matrix.os }}
+          path: build/Release/*.node
+          if-no-files-found: error
+
+# Not here yet, deliberately -- see docs/electron-guide.md for the order to add
+# them in:
+#   * packaging (electron-builder) into .dmg / .exe / .AppImage
+#   * macOS signing + notarization      (needs Apple Developer, $99/yr)
+#   * Windows signing                   (needs an HSM-backed cert)
+#   * publishing releases + auto-update manifests

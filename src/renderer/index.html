@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      CSP: no remote loads at all. This matters more than usual here, because
+      this window runs with sandbox: false (see src/main.js).
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:"
+    />
+    <title>cv-lab-2</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <button id="open">Open Image…</button>
+      <button id="invert-async" disabled>Invert (async, native)</button>
+      <button id="invert-sync" disabled>Invert (sync — freezes UI)</button>
+      <button id="reset" disabled>Reset</button>
+
+      <div class="spacer"></div>
+
+      <!-- If this stops spinning, the UI thread is blocked. -->
+      <div class="pulse" title="Spins while the UI thread is free"></div>
+    </header>
+
+    <main>
+      <div id="stage">
+        <canvas id="canvas"></canvas>
+        <p id="empty">Open an image to begin.</p>
+      </div>
+    </main>
+
+    <footer class="status">
+      <span id="status">Ready.</span>
+      <span id="versions"></span>
+    </footer>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
