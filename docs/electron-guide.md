@@ -239,6 +239,61 @@ runs-on: ${{ matrix.os }}
 `fail-fast: false` matters: you want to see all three failures at once, not
 discover them one release at a time.
 
+### Packaging in CI, and the ASAR trap
+
+`npm run package` runs `electron-builder` per platform, unsigned, producing
+`.dmg`/`.zip`, `.exe` (NSIS) and `.AppImage`/`.deb`. Config lives in
+`electron-builder.yml`. Two things in it are not optional for this project:
+
+**1. `directories.buildResources` must not be `build`.** That is the default,
+and electron-builder **excludes the buildResources directory from the packaged
+app**. Our compiled addon is at `build/Release/cvlab.node`, so with the default
+the binary is silently dropped and the app dies at launch. Nothing in CI would
+notice — the addon compiled fine, it just never got bundled.
+
+**2. `.node` files must be unpacked from the ASAR.**
+
+ASAR (Atom Shell Archive) is Electron's app bundle: a JSON header of file
+offsets followed by all file contents concatenated. No compression — it exists
+to reduce file count, dodge Windows `MAX_PATH`, and cut the `stat`/`open`
+syscalls that `require()` resolution generates. Electron patches Node's `fs` so
+paths resolve transparently into the archive.
+
+That transparency stops at `dlopen`/`LoadLibrary`, which are **OS-level** calls
+with no idea what an ASAR is. A `.node` inside the archive cannot be loaded.
+Hence:
+
+```yaml
+asarUnpack:
+  - build/Release/*.node
+```
+
+which produces `app.asar.unpacked/build/Release/cvlab.node` as a real file. The
+archive keeps the header entry marked `"unpacked": true` so Electron's patched
+`fs` redirects reads to it — verified on the macOS build, where `app.asar` is
+16 KB and the referenced addon is 51 KB, so nothing is double-shipped.
+
+electron-builder auto-detects native modules under `node_modules/`. **This
+addon is part of the app itself**, so it must be listed explicitly.
+
+The same applies to anything needing a real path on disk: bundled executables
+spawned via `child_process`, files handed to native APIs. And note ASAR is
+**not** security — `npx asar extract` recovers everything.
+
+`scripts/verify-package.js` asserts both traps were avoided, per platform, and
+runs in CI right after packaging. Verified locally by loading the addon with
+the packaged binary:
+
+```
+ELECTRON_RUN_AS_NODE=1 cv-lab-2.app/Contents/MacOS/cv-lab-2 -e "require('...app.asar.unpacked/.../cvlab.node')"
+→ loaded from packaged bundle: [245,235,225,128]
+```
+
+Two consequences worth remembering: **nothing inside an ASAR is writable**, so
+user data belongs in `app.getPath('userData')`; and on macOS each unpacked
+native binary is one of the nested binaries that must be signed inside-out, so
+`asarUnpack` and code signing are linked.
+
 ### Add it early
 
 The moment one native function loads successfully in Electron on your Mac.

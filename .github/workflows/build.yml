@@ -61,6 +61,36 @@ jobs:
           path: build/Release/*.node
           if-no-files-found: error
 
+      # --- packaging -------------------------------------------------------
+      # Unsigned. Enough to install and run on a real machine, which is the
+      # only way to test the UI on a platform you do not own.
+      - name: Package
+        run: npm run package
+        env:
+          # Stops electron-builder hunting for a signing identity in the
+          # runner's keychain and failing when it finds none.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # Catches the failure that nothing else does: the addon compiles, the
+      # installers build, and the app still dies on launch because the .node
+      # was dropped from the bundle or stranded inside app.asar.
+      - name: Verify package layout
+        run: npm run verify:package
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: cvlab-installers-${{ matrix.os }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+          if-no-files-found: error
+          # ~120 MB per platform; no reason to keep them for the default 90 days.
+          retention-days: 14
+
 # Not here yet, deliberately -- see docs/electron-guide.md for the order to add
 # them in:
 #   * packaging (electron-builder) into .dmg / .exe / .AppImage

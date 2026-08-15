@@ -1,0 +1,56 @@
+appId: com.braddunagan.cvlab2
+productName: cv-lab-2
+
+# --- The two traps this config exists to avoid -------------------------------
+#
+# 1. directories.buildResources defaults to "build", and electron-builder
+#    EXCLUDES that directory from the packaged app. Our compiled addon lives at
+#    build/Release/cvlab.node, so with the default the binary would be silently
+#    dropped and the app would fail at launch. Point buildResources elsewhere.
+#
+# 2. dlopen/LoadLibrary are OS-level calls and cannot read a file from inside
+#    an ASAR archive. Any .node must be unpacked to real disk. electron-builder
+#    auto-detects native modules under node_modules/, but this addon is part of
+#    the app itself, so it has to be listed explicitly.
+#
+# scripts/verify-package.js asserts both of these actually held, per platform.
+
+directories:
+  buildResources: electron-resources
+  output: dist
+
+asar: true
+asarUnpack:
+  - build/Release/*.node
+
+# No runtime dependencies -- everything in package.json is a devDependency --
+# so the bundle is just our own source plus the compiled addon.
+files:
+  - package.json
+  - src/**/*
+  - native/**/*.js
+  - build/Release/*.node
+
+mac:
+  target:
+    - dmg
+    - zip # electron-updater needs the zip; dmg alone is not enough
+  category: public.app-category.graphics-design
+  # Unsigned for now. See docs/electron-guide.md for what signing adds and
+  # what it costs; nothing here blocks on it.
+  identity: null
+
+win:
+  target:
+    - nsis
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Graphics

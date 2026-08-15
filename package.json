@@ -13,11 +13,15 @@
     "test:native": "node test/smoke.js",
     "sample": "node scripts/make-sample.js 12",
     "start": "electron .",
-    "dev": "npm run rebuild:electron && electron ."
+    "dev": "npm run rebuild:electron && electron .",
+    "package": "electron-builder --publish never",
+    "verify:package": "node scripts/verify-package.js"
   },
+  "author": "Brad Dunagan <brad.dunagan@gmail.com>",
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
     "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
     "node-gyp": "^13.0.1"
   }
 }
