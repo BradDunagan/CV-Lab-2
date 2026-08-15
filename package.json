@@ -4,6 +4,9 @@
   "private": true,
   "description": "Electron + native C skeleton for compute-intensive image processing",
   "main": "src/main.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "build:native": "node-gyp rebuild",
     "rebuild:electron": "node scripts/rebuild-electron.js",

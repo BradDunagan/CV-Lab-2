@@ -28,9 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Must be >= 22.12. Electron 43, @electron/rebuild 4 and node-gyp 13 all
+      # declare it, and node-gyp 13's bundled undici genuinely breaks on Node 20
+      # with "webidl.util.markAsUncloneable is not a function" during configure.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install Linux build dependencies
