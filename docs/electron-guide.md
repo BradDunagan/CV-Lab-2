@@ -294,6 +294,20 @@ user data belongs in `app.getPath('userData')`; and on macOS each unpacked
 native binary is one of the nested binaries that must be signed inside-out, so
 `asarUnpack` and code signing are linked.
 
+### Two things deliberately left undone in packaging
+
+**No icon.** All three builds log `default Electron icon is used`. Harmless, but
+it makes builds look unfinished. Drop a 1024×1024 `icon.png` into the
+`buildResources` directory (`electron-resources/`) and electron-builder
+generates the platform formats — `.icns`, `.ico`, and the Linux sizes — from it.
+
+**macOS is arm64-only.** `macos-14` runners are Apple Silicon, so that is what
+gets built. Intel Macs cannot run it. A universal build needs the addon compiled
+for **both** architectures and merged with `lipo` before `@electron/universal`
+combines the two `.app` bundles — and merging must happen before signing. That
+is a real chunk of work; deferred until there is a reason. `electron-builder
+--mac --arm64 --x64` is the starting point when the time comes.
+
 ### Add it early
 
 The moment one native function loads successfully in Electron on your Mac.
@@ -307,6 +321,127 @@ The cross-platform failures are all structural, not logic bugs:
 
 Each is a 15-minute fix in a 100-line project and a miserable afternoon in a
 5,000-line one.
+
+### Watching a run
+
+The web UI is at `https://github.com/<owner>/<repo>/actions`. For scripted
+checks, **a public repo needs no authentication** — the REST API is readable:
+
+```bash
+# latest run: number, sha, status, conclusion
+curl -s "https://api.github.com/repos/<owner>/<repo>/actions/runs?per_page=1"
+
+# per-job, per-step results
+curl -s "https://api.github.com/repos/<owner>/<repo>/actions/runs/<run_id>/jobs"
+
+# artifacts and their sizes
+curl -s "https://api.github.com/repos/<owner>/<repo>/actions/runs/<run_id>/artifacts"
+```
+
+Two caveats found the hard way:
+
+- **Raw step logs need auth** (403 without). Everything else — status, per-step
+  pass/fail, timings, artifact sizes — is public. Install the CLI and
+  `gh auth login` if you want log access; `gh run view --log-failed` is the
+  nicest way to read a failure.
+- Commit messages in the JSON can contain characters Python's strict JSON
+  parser rejects. Use `json.loads(text, strict=False)`.
+
+### What actually went wrong — run 1
+
+All three jobs failed identically at `npm ci`. Worth studying because the
+diagnosis pattern generalises.
+
+**Symptom:** same step, same failure, all three platforms. *Identical failure
+everywhere means it is not a portability problem* — it is configuration or
+environment. Platform-specific bugs fail on one platform.
+
+**Cause:** the workflow pinned `node-version: 20`. `node-gyp` 13's bundled
+`undici` crashes on Node 20 during configure:
+
+```
+gyp ERR! configure error
+TypeError: webidl.util.markAsUncloneable is not a function
+  at new CacheStorage (node_modules/node-gyp/node_modules/undici/...)
+```
+
+**The lesson:** every dependency had already declared it needed newer Node, and
+npm only *warned*:
+
+```
+electron@43.4.0        node >= 22.12.0
+@electron/rebuild@4.2  node >= 22.12.0
+node-gyp@13.0.1        node ^22.22.2 || ^24.15.0 || >=26.0.0
+```
+
+`EBADENGINE` is a **warning, not an error**. npm installs anyway and you find
+out later, at a confusing place. When something breaks during install, read the
+`EBADENGINE` warnings you scrolled past.
+
+**Reproducing locally beats reading CI logs.** CI differed from the dev machine
+in exactly one way — Node version — so:
+
+```bash
+nvm install 20 && nvm use 20
+rm -rf node_modules build && npm ci     # identical failure, in seconds
+nvm use 22 && npm ci                    # confirmed fixed
+```
+
+Faster than any amount of log-reading, and it proves the fix before you push.
+
+**The fix:** bump `setup-node` to 22, and add the constraint to `package.json`
+where it belongs:
+
+```json
+"engines": { "node": ">=22.12.0" }
+```
+
+### What a green run looks like
+
+Run 3, the first with packaging (times will drift, the shape won't):
+
+| Job | Total | Slowest steps |
+|---|---|---|
+| `macos-14` | 60s | Package 30s |
+| `ubuntu-22.04` | 132s | Package 97s |
+| `windows-2022` | 197s | `npm ci` 96s, Package 64s |
+
+Windows is consistently slowest — MSVC plus Windows filesystem I/O. Not a
+problem to fix.
+
+Artifacts:
+
+| Artifact | Size |
+|---|---|
+| `cvlab-addon-*` | 3.5–56 KB |
+| `cvlab-installers-macos-14` | 238.8 MB (`.dmg` + `.zip`) |
+| `cvlab-installers-ubuntu-22.04` | 227.1 MB (`.AppImage` + `.deb`) |
+| `cvlab-installers-windows-2022` | 99.7 MB (NSIS `.exe`) |
+
+The addon size spread is zip compression on a PE DLL versus Mach-O/ELF, not a
+problem. macOS is double-sized because it ships both `.dmg` and `.zip` — the
+zip is dead weight until `electron-updater` needs it. 565 MB per run at 14-day
+retention costs nothing on a public repo; revisit if the repo goes private.
+
+### What green proves, and what it does not
+
+Proves:
+
+- the C compiles under **MSVC, clang and gcc** — `portable.h` earning its keep
+- the smoke tests pass on all three, including the two behavioural assertions:
+  C writes directly into the JS buffer, and async work leaves the event loop free
+- the Electron ABI rebuild succeeds on Windows, so `win_delay_load_hook` worked
+- `verify-package.js` passed per platform, so the addon is in the bundle and
+  unpacked from the ASAR
+
+Does **not** prove:
+
+- that the app launches — CI never runs Electron with a window
+- that the UI renders correctly, HiDPI scales, or native dialogs behave
+- that `LoadLibrary` actually succeeds on a real Windows machine
+
+That last gap closes only by installing the artifact on a real machine or VM.
+Doing so confirmed the addon loads at runtime on Windows 10.
 
 ### Cost
 
@@ -343,6 +478,33 @@ Unsigned, every user gets SmartScreen's full-screen *"Windows protected your PC
 — Unknown publisher"*, with "Run anyway" hidden behind "More info." Most
 non-technical users stop there. OV certs accumulate reputation over weeks of
 downloads; EV certs skip the wait and cost more.
+
+**Testing unsigned builds locally will mislead you.** Neither SmartScreen nor
+Gatekeeper inspects the binary to decide it is untrusted. Both key off a marker
+the *browser* attaches at download time:
+
+| OS | Marker | Stripped by |
+|---|---|---|
+| Windows | NTFS alternate data stream `Zone.Identifier` (`ZoneId=3`) | extracting a ZIP, USB, network share, scp |
+| macOS | extended attribute `com.apple.quarantine` | the same |
+
+Confirmed on this project: the unsigned NSIS installer, downloaded as a GitHub
+Actions artifact ZIP and extracted, installed and ran on Windows 10 with **no
+warning at all** — because `Get-Item ... -Stream Zone.Identifier` errored, i.e.
+there was no Mark of the Web. SmartScreen was never consulted.
+
+That is a valid test of *does the app work* and a worthless test of *what users
+will see*. To exercise the real path, attach the marker by hand:
+
+```powershell
+Set-Content -Path .\Setup.exe -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3"
+```
+
+```bash
+xattr -w com.apple.quarantine "0083;00000000;Safari;" ./App.dmg   # macOS equivalent
+```
+
+Or host the file and download it with a browser, which is what users actually do.
 
 **2. macOS signing + notarization.** $99/year Apple Developer Program. Per build:
 
@@ -458,13 +620,43 @@ Endianness is not a concern; all three targets are little-endian.
 
 ## 7. Order of work
 
-| Phase | Do this |
-|---|---|
-| **Now** | App + addon on the Mac. Portable C from the start. ✅ done |
-| **Week 1–2** | CI matrix, unsigned builds, three green artifacts. Test the Windows/Linux output in VMs. |
-| **Before first outside user** | Apple Developer account, macOS signing + notarization. Crash reporter. |
-| **Before wider release** | Windows cert, auto-update, installer polish. |
+| Phase | Do this | Status |
+|---|---|---|
+| **Start** | App + addon on the Mac. Portable C from the start. | ✅ done |
+| **Week 1–2** | CI matrix, three green builds. | ✅ done — run 3 |
+| | Unsigned packaging, installers per platform. | ✅ done |
+| | Install and run the artifacts on real Windows/Linux machines. | ◑ Windows 10 verified; Linux outstanding |
+| **Before first outside user** | Apple Developer account, macOS signing + notarization. | ☐ |
+| | Crash reporter (Crashpad + symbol upload). | ☐ |
+| | An icon. | ☐ |
+| **Before wider release** | Windows certificate. | ☐ |
+| | Auto-update (`electron-updater`), installer polish. | ☐ |
+| **When there is a reason** | macOS universal (arm64 + x64) build. | ☐ |
 
 **None of the Tier 1 items block development**, and every one of them is easier
 to solve against a working build than against an idea. Three green unsigned
-builds is the milestone that de-risks everything else.
+builds is the milestone that de-risks everything else — that milestone is
+passed.
+
+---
+
+## 8. What this project has actually verified
+
+Distinguishing what was measured from what was assumed, since much of the advice
+above is only as good as its evidence.
+
+| Claim | How it was verified |
+|---|---|
+| Node-API is ABI-stable across runtimes | The addon built against Electron 43's headers loads and passes all 7 tests under plain Node 24 |
+| C writes into the JS buffer, no copy | `test/smoke.js` mutates through a separate `ArrayBuffer` view and checks the original |
+| Async work leaves the event loop free | A `setInterval` tick counter runs during a 64 MB invert; blocking would leave it at 0 |
+| contextBridge deep-copies typed arrays | Caller's array unmutated, returned object is a third object — measured in Electron 43 |
+| Keeping pixels in the preload is faster | 24.1 ms vs 30.1 ms median on 12 MP, and far less jitter |
+| The C is portable across MSVC/clang/gcc | All three CI jobs compile and pass the smoke tests |
+| `win_delay_load_hook` binds to `electron.exe` | The Electron ABI rebuild step succeeds on `windows-2022` |
+| The addon survives packaging | `app.asar` header entry marked `"unpacked": true`; archive is 16 KB, referenced addon 51 KB |
+| The packaged app can load it | `ELECTRON_RUN_AS_NODE=1 <packaged binary> -e "require(...)"` → `[245,235,225,128]` |
+| It works on a real Windows machine | NSIS installer run on Windows 10; app launched and ran |
+| Unsigned installers warn users | **Not verified** — the test file had no Mark of the Web, so SmartScreen never ran |
+
+The last row is the useful reminder: an untriggered check is not a passed check.
