@@ -16,7 +16,27 @@ one distributable. The process model is inherited from Chromium:
 |---|---|---|---|
 | **Main** | one | full Node | app lifecycle, windows, menus, dialogs, tray, auto-update |
 | **Renderer** | one per window | no, by default | the DOM, your UI |
-| **Preload** | one per renderer | yes (see sandbox note) | the bridge between the two |
+
+There are only two kinds of process. **The preload script is not a third one.**
+It runs *inside* the renderer process, in a separate JavaScript context — an
+"isolated world", in Chromium's terms — created by `contextIsolation`. Same
+process, same event loop, same DOM; a different global object.
+
+| Inside one renderer process | Sees the DOM | Has Node | Global object |
+|---|---|---|---|
+| **page script** (main world) | yes | no | the page's `window` |
+| **preload** (isolated world) | yes | yes, subject to `sandbox` | its own `window` |
+
+That distinction is not pedantry — it explains two things measured later in
+this document:
+
+- The preload can reach `document.getElementById('canvas')`, because **the DOM
+  is shared** between the two contexts. That is what makes the fast path in
+  "Measured: contextBridge deep-copies typed arrays" below possible.
+- `contextBridge` deep-copies typed arrays, because **the JS heaps are not
+  shared**. It is an in-process memcpy between two isolated worlds, not IPC
+  serialisation between two processes — which is why it costs single-digit
+  milliseconds on a 48 MB image rather than far more.
 
 `ipcMain` / `ipcRenderer` carry messages between main and renderer.
 `contextBridge.exposeInMainWorld()` in the preload is how you hand the page a
