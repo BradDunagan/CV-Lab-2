@@ -40,7 +40,8 @@ src/renderer/       page script; no require(), no fs, no ipcRenderer
 test/smoke.js       runs under plain node
 scripts/            electron rebuild helper, sample image generator
 .github/workflows/  the three-platform CI matrix (inert until pushed)
-docs/electron-guide.md   ← the full write-up: builds, CI, signing, costs
+docs/electron-guide.md   ← builds, CI, packaging, signing, costs (written after doing it)
+docs/design-lab-model.md ← slots, ops, commands, reproducibility (written before)
 ```
 
 ## Scripts
