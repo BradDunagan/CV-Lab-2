@@ -72,6 +72,22 @@ function buildRegistry() {
     }),
   }));
   r.register(defineOp({
+    name: 'needsLinear', version: 1,
+    inputs: [{ name: 'src', space: 'linear' }], params: [],
+    output: { channels: 1, dtype: 'f32' },
+    kernel: ({ inputs }) => ({ kind: 'buffer', handle: { values: inputs[0].handle.values, space: 'linear' } }),
+  }));
+  r.register(defineOp({
+    name: 'makeSrgb', version: 1, inputs: [], params: [],
+    output: { channels: 1, dtype: 'f32' },
+    kernel: () => ({ kind: 'buffer', handle: { values: [1, 2], space: 'srgb' } }),
+  }));
+  r.register(defineOp({
+    name: 'makeNone', version: 1, inputs: [], params: [],
+    output: { channels: 1, dtype: 'f32' },
+    kernel: () => ({ kind: 'buffer', handle: { values: [1, 2], space: 'none' } }),
+  }));
+  r.register(defineOp({
     name: 'total', version: 1, inputs: [{ name: 'src' }], params: [],
     output: { kind: 'scalars' },
     kernel: ({ inputs }) => ({
@@ -184,6 +200,38 @@ test('scalars are recorded and hashed too', async () => {
   assert.equal(entry.produced, null);
   assert.deepEqual(entry.output.values, { sum: 6 });
   assert.match(entry.output.hash, /^[0-9a-f]{64}$/);
+});
+
+/* --- declared colour space is enforced, not merely recorded ----------- */
+
+test('an op that needs linear refuses an srgb input, and says how to fix it', async () => {
+  const s = newSession();
+  await s.execute('S = makeSrgb()');
+  await assert.rejects(async () => s.execute('X = needsLinear(S)'),
+    /needs linear input, but S#1 is srgb.*toLinear\(S\)/s);
+});
+
+test('a linear input is accepted', async () => {
+  const s = newSession();
+  await s.execute('A = ramp()');           // the ramp kernel produces linear
+  const entry = await s.execute('X = needsLinear(A)');
+  assert.equal(entry.produced.slot, 'X');
+});
+
+test('space "none" satisfies any requirement', async () => {
+  // A gradient or a mask is not a colour, so the question does not apply.
+  const s = newSession();
+  await s.execute('N = makeNone()');
+  const entry = await s.execute('X = needsLinear(N)');
+  assert.equal(entry.produced.slot, 'X');
+});
+
+test('a refused command appends nothing to the log', async () => {
+  const s = newSession();
+  await s.execute('S = makeSrgb()');
+  try { await s.execute('X = needsLinear(S)'); } catch { /* expected */ }
+  assert.equal(s.log.length, 1, 'a rejected command must not be recorded');
+  assert.equal(s.slots.has('X'), false);
 });
 
 /* --- the provenance DAG ----------------------------------------------- */

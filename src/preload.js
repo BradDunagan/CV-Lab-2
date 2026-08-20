@@ -15,12 +15,53 @@
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 
 const native = require('../native');
 const { createRegistry } = require('./lab/ops');
 const { Session } = require('./lab/session');
 
-const registry = createRegistry();
+/**
+ * Decode an image using Chromium's decoder — the reason `load`'s kernel lives
+ * in JavaScript rather than C. It handles every format the platform knows and
+ * is already in the process, which is a large amount of native library and
+ * build complexity avoided (electron-guide.md §5).
+ *
+ * Two options here are deliberate and easy to get wrong:
+ *
+ *   colorSpaceConversion: 'none'
+ *     By default the browser applies any embedded ICC profile and converts to
+ *     the display profile. For a lab that is silent, unrecorded processing —
+ *     the same file could decode differently on a different monitor. We want
+ *     the values that are actually in the file.
+ *
+ *   premultiplyAlpha: 'none'
+ *     Premultiplication is lossy and would fold alpha into the colour channels
+ *     before we drop it.
+ *
+ * The cost of borrowing Chromium: it returns 8 bits per channel. Higher
+ * precision input (16-bit PNG, TIFF, raw) needs a native decode path, which is
+ * still open in design-lab-model.md §11.
+ */
+async function decodeFile(filePath) {
+  const bytes = await fs.readFile(filePath);
+  const bitmap = await createImageBitmap(new Blob([bytes]), {
+    colorSpaceConversion: 'none',
+    premultiplyAlpha: 'none',
+  });
+  try {
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext('2d', { colorSpace: 'srgb', willReadFrequently: true });
+    ctx.drawImage(bitmap, 0, 0);
+    const image = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+    return { width: bitmap.width, height: bitmap.height, pixels: image.data };
+  } finally {
+    bitmap.close();
+  }
+}
+
+const registry = createRegistry({ decodeFile });
 const session = new Session({
   registry,
   environment: {
@@ -161,6 +202,11 @@ contextBridge.exposeInMainWorld('lab', {
   sessionJSON: () => session.toJSON(),
 
   saveSession: () => ipcRenderer.invoke('session:save', session.toJSON()),
+
+  /** Native open dialog. Returns a path, or null if cancelled. */
+  openImage: () => ipcRenderer.invoke('dialog:openImage'),
+
+  basename: (filePath) => path.basename(filePath),
 
   versions: {
     electron: process.versions.electron,

@@ -363,6 +363,59 @@ static CvStatus k_stats(const CvBuffer *const *inputs, size_t n_inputs,
 }
 
 /* ------------------------------------------------------------------ */
+/* toLinear(src) / toSrgb(src)                                          */
+/*                                                                      */
+/* The colour-space conversion, as an explicit operation rather than    */
+/* something the runtime inserts silently. A conversion that appears in */
+/* the log is a conversion the provenance can explain.                  */
+/* ------------------------------------------------------------------ */
+
+static double srgb_to_linear(double s) {
+  return (s <= 0.04045) ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4);
+}
+
+static double linear_to_srgb(double l) {
+  return (l <= 0.0031308) ? 12.92 * l : 1.055 * pow(l, 1.0 / 2.4) - 0.055;
+}
+
+static CvStatus convert_space(const CvBuffer *src, CvBuffer *out,
+                              CvSpace to, const CvKernelCtx *ctx) {
+  if (src->dtype != CV_DTYPE_F32) return CV_ERR_DTYPE;
+
+  CvStatus status = cv_buffer_alloc(out, src->width, src->height, src->channels,
+                                    CV_DTYPE_F32, to);
+  if (status != CV_OK) return status;
+
+  const float *in = f32(src);
+  float *dst = f32(out);
+  const size_t n = cv_buffer_elements(src);
+
+  for (size_t i = 0; i < n; i++) {
+    if ((i & 0xFFFF) == 0 && is_cancelled(ctx)) { cv_buffer_free(out); return CV_ERR_CANCELLED; }
+    const double v = (double)in[i];
+    /* Values outside 0..1 are passed through: the transfer function is only
+     * defined on the unit interval, and clamping would destroy data. */
+    if (v < 0.0 || v > 1.0) { dst[i] = in[i]; continue; }
+    dst[i] = (float)((to == CV_SPACE_LINEAR) ? srgb_to_linear(v) : linear_to_srgb(v));
+  }
+  return CV_OK;
+}
+
+static CvStatus k_to_linear(const CvBuffer *const *inputs, size_t n_inputs,
+                            const CvParams *params, CvBuffer *out,
+                            CvScalars *scalars, const CvKernelCtx *ctx) {
+  (void)n_inputs; (void)params; (void)scalars;
+  return convert_space(inputs[0], out, CV_SPACE_LINEAR, ctx);
+}
+
+static CvStatus k_to_srgb(const CvBuffer *const *inputs, size_t n_inputs,
+                          const CvParams *params, CvBuffer *out,
+                          CvScalars *scalars, const CvKernelCtx *ctx) {
+  (void)n_inputs; (void)params; (void)scalars;
+  return convert_space(inputs[0], out, CV_SPACE_SRGB, ctx);
+}
+
+/* ------------------------------------------------------------------ */
 /* the table                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -373,6 +426,8 @@ static const CvKernelEntry KERNELS[] = {
   { "sobel",     k_sobel,     1, true  },
   { "threshold", k_threshold, 1, true  },
   { "stats",     k_stats,     1, false },
+  { "toLinear",  k_to_linear, 1, true  },
+  { "toSrgb",    k_to_srgb,   1, true  },
 };
 
 const CvKernelEntry *cv_kernel_lookup(const char *name) {

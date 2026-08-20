@@ -55,6 +55,19 @@ ipcMain.handle('session:save', async (event, sessionJson) => {
   return filePath;
 });
 
+ipcMain.handle('dialog:openImage', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: 'Open an image',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  return canceled || filePaths.length === 0 ? null : filePaths[0];
+});
+
 app.whenReady().then(() => {
   createWindow();
 

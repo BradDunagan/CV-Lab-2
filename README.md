@@ -15,7 +15,7 @@ npm test        # six suites, ~120 tests, no Electron needed
 npm start       # launch the app
 ```
 
-In the command bar:
+Press **Open Image…**, or work without a file:
 
 ```
 A = pattern(kind=checker, width=512, height=512)
@@ -98,17 +98,18 @@ All three are explained in `docs/electron-guide.md`.
 ## Status
 
 Working: the buffer type, the operation registry, the command language, the
-session log with provenance and replay, six kernels (`pattern`, `gray`,
-`gaussian`, `sobel`, `threshold`, `stats`), the display path, and the UI.
-Three-platform CI produces unsigned installers.
+session log with provenance and replay, the display path, and the UI. Nine
+operations — `load`, `pattern`, `gray`, `gaussian`, `sobel`, `threshold`,
+`stats`, `toLinear`, `toSrgb`. Three-platform CI produces unsigned installers.
 
 Outstanding, in rough order:
 
-- **`load`** — declared but with no kernel. Chromium's decoder is free and
-  excellent but returns 8-bit RGBA, so anything higher-precision needs a native
-  decode path. See `docs/design-lab-model.md` §11.
-- **The colour policy** — buffers carry a `space` field, but whether the lab
-  converts to linear on load is still open. §11 again.
+- **Higher-precision input** — `load` borrows Chromium's decoder, which returns
+  8-bit RGBA. 16-bit PNG, TIFF and raw need a native decode path. See
+  `docs/design-lab-model.md` §11.
+- **The colour policy** — buffers carry a `space` field and operations declare
+  what they need, but whether `load` should default to `linear` rather than
+  `srgb` is still open. §11 again.
 - **Kernels on the thread pool** — they run synchronously today. The contract is
   already async, so this touches only the binding.
 - **Cancellation UI** — the flag is threaded through every kernel already.

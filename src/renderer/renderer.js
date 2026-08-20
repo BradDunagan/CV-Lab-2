@@ -11,6 +11,7 @@ const els = {
   empty: document.getElementById('empty'),
   command: document.getElementById('command'),
   run: document.getElementById('run'),
+  open: document.getElementById('open'),
   opMenu: document.getElementById('op-menu'),
   cols: document.getElementById('cols'),
   fit: document.getElementById('fit'),
@@ -389,6 +390,16 @@ async function runCommand() {
     els.command.focus();
   }
 }
+
+// The Open button writes a command rather than loading directly, so a file
+// opened through the UI is in the log and replays like anything else (§4).
+els.open.addEventListener('click', async () => {
+  const filePath = await window.lab.openImage();
+  if (!filePath) return;
+  els.command.value = `${nextSlotName()} = load("${filePath.replace(/"/g, '\\"')}")`;
+  els.command.focus();
+  await runCommand();
+});
 
 els.run.addEventListener('click', runCommand);
 els.command.addEventListener('keydown', (event) => {

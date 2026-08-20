@@ -137,7 +137,7 @@ class Session {
       throw new SessionError(`operation "${op.name}" is declared but has no kernel yet`);
     }
 
-    const inputValues = record.inputs.map((ref) => {
+    const inputValues = record.inputs.map((ref, index) => {
       const binding = this.slots.get(ref.slot);
       if (!binding) throw new SessionError(`unknown slot "${ref.slot}"`);
       if (binding.version !== ref.version) {
@@ -145,6 +145,7 @@ class Session {
           `${ref.slot}#${ref.version} is no longer bound (current is #${binding.version})`
         );
       }
+      this._checkSpace(op, index, ref, binding.value);
       return binding.value;
     });
 
@@ -182,6 +183,31 @@ class Session {
     Object.freeze(entry);
     this.log.push(entry);
     return entry;
+  }
+
+  /**
+   * Enforce the colour space an operation declares it needs (§2).
+   *
+   * Declaring it in the registry is not enough on its own: without this check
+   * `gray` will happily apply luminance coefficients to sRGB-encoded values
+   * and produce luma while calling it luminance — silently wrong output rather
+   * than an error, which is precisely the failure §2 exists to prevent.
+   *
+   * `none` satisfies any requirement. A gradient or a mask is not a colour, so
+   * the linear-versus-sRGB question does not apply to it.
+   */
+  _checkSpace(op, index, ref, value) {
+    const required = op.inputs[index]?.space ?? 'any';
+    if (required === 'any' || value.kind !== 'buffer') return;
+
+    const actual = this.buffers.describe(value.handle).space;
+    if (actual === 'none' || actual === required) return;
+
+    const fix = required === 'linear' ? 'toLinear' : 'toSrgb';
+    throw new SessionError(
+      `${op.name} needs ${required} input, but ${ref.slot}#${ref.version} is ${actual}. ` +
+        `Convert it explicitly: X = ${fix}(${ref.slot})`
+    );
   }
 
   _describeResult(result, producesBuffer) {

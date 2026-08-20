@@ -102,6 +102,17 @@ module.exports = {
    */
   bufferRelease: addon.bufferRelease,
 
+  /**
+   * Build a 3-channel f32 buffer from 8-bit RGBA, as Chromium's decoder
+   * produces it. Alpha is dropped. `as: 'linear'` applies the exact sRGB
+   * transfer function via a 256-entry lookup.
+   * @param {Uint8ClampedArray|Uint8Array} pixels
+   * @param {number} width
+   * @param {number} height
+   * @param {{as?:'srgb'|'linear'}} [opts]
+   */
+  bufferFromRGBA8: addon.bufferFromRGBA8,
+
   // --- kernels (design-lab-model.md §3) ---------------------------------
   //
   // One entry point for every operation. The kernels share a C signature, so

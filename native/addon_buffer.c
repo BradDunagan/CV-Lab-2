@@ -8,6 +8,7 @@
 
 #include "addon_buffer.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -277,6 +278,118 @@ static napi_value BufferWrite(napi_env env, napi_callback_info info) {
 }
 
 /* ------------------------------------------------------------------ */
+/* bufferFromRGBA8(pixels, width, height, { as })                       */
+/*                                                                      */
+/* The bridge from Chromium's image decoder into a lab buffer. The      */
+/* decoder hands back 8-bit RGBA in sRGB; this converts to the f32      */
+/* working format and drops alpha.                                      */
+/*                                                                      */
+/* Because the source is 8-bit, sRGB -> linear is an EXACT 256-entry    */
+/* lookup rather than a per-pixel power function -- no approximation,   */
+/* and no transcendental in the inner loop.                             */
+/* ------------------------------------------------------------------ */
+
+static float srgb_to_linear_byte(int i) {
+  const double s = (double)i / 255.0;
+  return (float)(s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4));
+}
+
+static napi_value BufferFromRGBA8(napi_env env, napi_callback_info info) {
+  size_t argc = 4;
+  napi_value argv[4];
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 3) {
+    THROW_RETURN(env, "bufferFromRGBA8(pixels, width, height, opts) requires 3 arguments");
+  }
+
+  bool is_typedarray = false;
+  if (napi_is_typedarray(env, argv[0], &is_typedarray) != napi_ok || !is_typedarray) {
+    napi_throw_type_error(env, NULL, "bufferFromRGBA8: pixels must be a typed array");
+    return NULL;
+  }
+  napi_typedarray_type type;
+  size_t length = 0;
+  void *data = NULL;
+  if (napi_get_typedarray_info(env, argv[0], &type, &length, &data, NULL, NULL) != napi_ok) {
+    THROW_RETURN(env, "bufferFromRGBA8: could not read pixels");
+  }
+  if (type != napi_uint8_clamped_array && type != napi_uint8_array) {
+    napi_throw_type_error(env, NULL, "bufferFromRGBA8: pixels must be 8-bit");
+    return NULL;
+  }
+
+  int64_t width = 0, height = 0;
+  if (napi_get_value_int64(env, argv[1], &width) != napi_ok ||
+      napi_get_value_int64(env, argv[2], &height) != napi_ok) {
+    napi_throw_type_error(env, NULL, "bufferFromRGBA8: width and height must be numbers");
+    return NULL;
+  }
+
+  /* Hostile input (§3): check the geometry against the actual byte count
+   * before trusting either. */
+  size_t expected = 0;
+  if (!cv_mul_checked((size_t)(width > 0 ? width : 0), (size_t)(height > 0 ? height : 0), &expected) ||
+      !cv_mul_checked(expected, 4, &expected)) {
+    THROW_RETURN(env, "bufferFromRGBA8: dimensions overflow");
+  }
+  if (expected == 0 || length != expected) {
+    napi_throw_range_error(env, NULL,
+        "bufferFromRGBA8: pixel length does not match width * height * 4");
+    return NULL;
+  }
+
+  char space_name[16] = "srgb";
+  if (argc >= 4) {
+    napi_value value;
+    napi_valuetype vt;
+    if (napi_get_named_property(env, argv[3], "as", &value) == napi_ok &&
+        napi_typeof(env, value, &vt) == napi_ok && vt == napi_string) {
+      size_t written = 0;
+      napi_get_value_string_utf8(env, value, space_name, sizeof(space_name), &written);
+    }
+  }
+  const bool to_linear = (strcmp(space_name, "linear") == 0);
+  if (!to_linear && strcmp(space_name, "srgb") != 0) {
+    THROW_RETURN(env, "bufferFromRGBA8: `as` must be \"srgb\" or \"linear\"");
+  }
+
+  /* 8-bit input means the transfer function is exactly 256 values. */
+  float lut[256];
+  for (int i = 0; i < 256; i++) {
+    lut[i] = to_linear ? srgb_to_linear_byte(i) : (float)((double)i / 255.0);
+  }
+
+  CvBuffer *buffer = (CvBuffer *)calloc(1, sizeof(CvBuffer));
+  if (buffer == NULL) THROW_RETURN(env, "out of memory");
+
+  const CvStatus status = cv_buffer_alloc(buffer, width, height, 3, CV_DTYPE_F32,
+                                          to_linear ? CV_SPACE_LINEAR : CV_SPACE_SRGB);
+  if (status != CV_OK) {
+    free(buffer);
+    napi_throw_range_error(env, NULL, cv_status_str(status));
+    return NULL;
+  }
+
+  const uint8_t *src = (const uint8_t *)data;
+  float *dst = (float *)buffer->data;
+  const size_t pixels = (size_t)width * (size_t)height;
+  for (size_t i = 0; i < pixels; i++) {
+    dst[i * 3 + 0] = lut[src[i * 4 + 0]];
+    dst[i * 3 + 1] = lut[src[i * 4 + 1]];
+    dst[i * 3 + 2] = lut[src[i * 4 + 2]];
+    /* alpha is dropped: the lab has no compositing model yet */
+  }
+
+  napi_value handle;
+  if (napi_create_object(env, &handle) != napi_ok ||
+      cv_wrap_buffer(env, handle, buffer) != napi_ok) {
+    cv_buffer_free(buffer);
+    free(buffer);
+    THROW_RETURN(env, "could not create buffer handle");
+  }
+  return handle;
+}
+
+/* ------------------------------------------------------------------ */
 /* bufferRelease(handle) -- explicit free, rather than waiting for GC  */
 /* ------------------------------------------------------------------ */
 
@@ -314,5 +427,6 @@ napi_status cv_register_buffer_api(napi_env env, napi_value exports) {
   if ((status = export_fn(env, exports, "bufferRead", BufferRead)) != napi_ok) return status;
   if ((status = export_fn(env, exports, "bufferWrite", BufferWrite)) != napi_ok) return status;
   if ((status = export_fn(env, exports, "bufferRelease", BufferRelease)) != napi_ok) return status;
+  if ((status = export_fn(env, exports, "bufferFromRGBA8", BufferFromRGBA8)) != napi_ok) return status;
   return napi_ok;
 }

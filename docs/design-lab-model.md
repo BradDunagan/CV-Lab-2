@@ -94,11 +94,31 @@ Why it has to be tracked rather than assumed:
   different measurement — which is exactly why the lab must record which one it
   made.
 
-So: operations declare the space they require in the registry, and the runtime
-converts or refuses rather than silently computing the wrong thing. The first
-operation where this bites is `gray`, because the familiar luminance
-coefficients `0.2126 R + 0.7152 G + 0.0722 B` are valid **only** on linear
-values; applied to `srgb` values they produce luma, a different quantity.
+So: operations declare the space they require in the registry, and the session
+**refuses** rather than silently computing the wrong thing. The first operation
+where this bites is `gray`, because the familiar luminance coefficients
+`0.2126 R + 0.7152 G + 0.0722 B` are valid **only** on linear values; applied
+to `srgb` values they produce luma, a different quantity.
+
+**Declaring is not enforcing.** This was written before it was implemented, and
+the first version of `gray` shipped with the requirement declared in the
+registry and checked nowhere — it computed luma on sRGB input and reported it
+as luminance. Exactly the failure this section exists to prevent, silently, for
+one commit. The check now lives in `Session._apply`, and a refused command
+appends nothing to the log.
+
+**Refuse, not convert**, in the end. An earlier draft of this section said
+"converts or refuses". Auto-conversion loses: it would insert processing that
+never appears in the log, and the log explaining the result is this project's
+whole claim. Instead the refusal is actionable —
+
+```
+gray needs linear input, but S#1 is srgb. Convert it explicitly: X = toLinear(S)
+```
+
+— and `toLinear` / `toSrgb` are real operations that appear as entries.
+`space: 'none'` satisfies any requirement: a gradient or a mask is not a
+colour, so the question does not apply to it.
 
 `space` is recorded in provenance alongside dimensions and dtype (§5). "Which
 space was this computed in" is precisely the sort of question a reproducible log
@@ -536,6 +556,7 @@ Small enough to finish, large enough to be genuinely useful:
 
 - `f32` slots, auto-created on assignment, named `A`/`B`/… or user-named
 - six operations: `load`, `gray`, `gaussian`, `sobel`, `threshold`, `stats`
+  (plus `pattern` as a file-free source, and `toLinear` / `toSrgb`)
 - command bar with an executed log, replayable
 - two view types: image and histogram
 - synchronised pan/zoom, and the multi-slot pixel probe
@@ -561,7 +582,19 @@ item genuinely deferrable.
   correct by default and costs nothing in `f32`; or keep values as loaded and
   convert only where an operation demands it, which keeps results comparable
   with other CV tools that operate on gamma-encoded values.
-- **Where `load` decodes.** Chromium's decoder is excellent and free, but it
-  returns 8-bit RGBA — so anything higher-precision (16-bit PNG, TIFF, raw)
-  needs a native decode path, and that means a third-party library and all the
-  build complexity `electron-guide.md` §5 describes avoiding.
+- **Higher-precision decoding.** *Settled:* `load` uses Chromium's decoder,
+  borrowed from the renderer. Its kernel is injected rather than compiled,
+  because that decoder only exists in a renderer — so `load` reports itself
+  unimplemented under plain node instead of throwing when called. Only the
+  decode is borrowed; the 8-bit-to-`f32` conversion happens in C, where sRGB to
+  linear is an exact 256-entry lookup rather than a per-pixel power function.
+  Two decode options are load-bearing: `colorSpaceConversion: 'none'`, because
+  the default applies an embedded ICC profile and converts to the *display*
+  profile, which would make the same file decode differently on a different
+  monitor; and `premultiplyAlpha: 'none'`, which is lossy and would fold alpha
+  into colour before it is dropped.
+
+  *Open:* Chromium returns 8 bits per channel. 16-bit PNG, TIFF and camera raw
+  still need a native decode path, and that means a third-party library and all
+  the build complexity `electron-guide.md` §5 describes avoiding. Worth doing
+  only when an experiment actually needs the precision.

@@ -142,6 +142,69 @@ async function main() {
     assert.equal(values[1], 7, 'copy did not survive its source');
   });
 
+  /* --- bufferFromRGBA8: the bridge from Chromium's decoder ------------- */
+
+  await test('builds a 3-channel f32 buffer from 8-bit RGBA', () => {
+    const rgba = Uint8ClampedArray.from([255, 0, 0, 255, 0, 255, 0, 255]);
+    const buf = native.bufferFromRGBA8(rgba, 2, 1, { as: 'srgb' });
+    const info = native.bufferInfo(buf);
+    assert.equal(info.channels, 3, 'alpha should be dropped');
+    assert.equal(info.dtype, 'f32');
+    assert.equal(info.space, 'srgb');
+    assert.deepEqual([...native.bufferRead(buf)], [1, 0, 0, 0, 1, 0]);
+  });
+
+  await test('as=srgb divides by 255 and nothing else', () => {
+    const rgba = Uint8ClampedArray.from([0, 128, 255, 255]);
+    const values = [...native.bufferRead(native.bufferFromRGBA8(rgba, 1, 1, { as: 'srgb' }))];
+    assert.deepEqual(values.map((v) => +v.toFixed(6)), [0, +(128 / 255).toFixed(6), 1]);
+  });
+
+  await test('as=linear applies the exact sRGB transfer function', () => {
+    // Checked against the standard piecewise definition, not against whatever
+    // the code produced:
+    //   S <= 0.04045 -> S/12.92 ; else ((S+0.055)/1.055)^2.4
+    const srgbToLinear = (b) => {
+      const s = b / 255;
+      return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    };
+    const bytes = [0, 1, 10, 11, 128, 200, 255];
+    const rgba = Uint8ClampedArray.from(bytes.flatMap((b) => [b, b, b, 255]));
+    const values = [...native.bufferRead(
+      native.bufferFromRGBA8(rgba, bytes.length, 1, { as: 'linear' }))];
+    bytes.forEach((b, i) => {
+      const expected = srgbToLinear(b);
+      assert.ok(Math.abs(values[i * 3] - expected) < 1e-6,
+        `byte ${b}: expected ${expected}, got ${values[i * 3]}`);
+    });
+    // 10 is below the knee, 11 is above it — the piecewise join must be right.
+    assert.ok(Math.abs(values[2 * 3] - 10 / 255 / 12.92) < 1e-7, 'linear segment');
+  });
+
+  await test('linear and srgb differ, and linear is darker in the midtones', () => {
+    const rgba = Uint8ClampedArray.from([128, 128, 128, 255]);
+    const asSrgb = native.bufferRead(native.bufferFromRGBA8(rgba, 1, 1, { as: 'srgb' }))[0];
+    const asLinear = native.bufferRead(native.bufferFromRGBA8(rgba, 1, 1, { as: 'linear' }))[0];
+    assert.ok(asLinear < asSrgb, `${asLinear} should be below ${asSrgb}`);
+    assert.ok(Math.abs(asLinear - 0.2158) < 0.001, `mid grey is ~0.216 linear, got ${asLinear}`);
+  });
+
+  await test('endpoints are exact in both spaces', () => {
+    for (const as of ['srgb', 'linear']) {
+      const rgba = Uint8ClampedArray.from([0, 0, 0, 255, 255, 255, 255, 255]);
+      const v = [...native.bufferRead(native.bufferFromRGBA8(rgba, 2, 1, { as }))];
+      assert.deepEqual([v[0], v[3]], [0, 1], `${as}: 0 and 255 must map to 0 and 1`);
+    }
+  });
+
+  await test('geometry is checked against the actual byte count', () => {
+    const rgba = Uint8ClampedArray.from([0, 0, 0, 255]);
+    assert.throws(() => native.bufferFromRGBA8(rgba, 2, 2), /does not match width \* height \* 4/);
+    assert.throws(() => native.bufferFromRGBA8(rgba, 0, 1), /does not match|overflow/);
+    assert.throws(() => native.bufferFromRGBA8([0, 0, 0, 255], 1, 1), /typed array/);
+    assert.throws(() => native.bufferFromRGBA8(rgba, 1, 1, { as: 'cmyk' }), /srgb.*linear/);
+  });
+
   console.log(failures === 0 ? '\nAll buffer tests passed.' : `\n${failures} failing.`);
   process.exit(failures === 0 ? 0 : 1);
 }

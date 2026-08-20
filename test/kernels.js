@@ -39,7 +39,7 @@ console.log(`cv-lab-2 kernel tests (${runtime}, ${process.platform}/${process.ar
 
 test('every kernel is reachable by name', () => {
   assert.deepEqual(native.kernelNames(),
-    ['pattern', 'gray', 'gaussian', 'sobel', 'threshold', 'stats']);
+    ['pattern', 'gray', 'gaussian', 'sobel', 'threshold', 'stats', 'toLinear', 'toSrgb']);
 });
 
 test('an unknown kernel and a wrong input count are refused', () => {
@@ -244,6 +244,49 @@ test('stats is bit-identical across repeated runs', () => {
     assert.equal(again.mean, first.mean, 'mean drifted between runs');
     assert.equal(again.stddev, first.stddev, 'stddev drifted between runs');
   }
+});
+
+/* --- colour space conversion ------------------------------------------- */
+
+test('toLinear matches the standard sRGB transfer function', () => {
+  const srgbToLinear = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  const src = run('pattern', [], { kind: 'ramp', width: 16, height: 1 });
+  const before = read(src);
+  const after = read(run('toLinear', [src]));
+  before.forEach((v, i) => {
+    assert.ok(close(after[i], srgbToLinear(v), 1e-6),
+      `${v}: expected ${srgbToLinear(v)}, got ${after[i]}`);
+  });
+  assert.equal(native.bufferInfo(run('toLinear', [src])).space, 'linear');
+});
+
+test('toSrgb is the inverse of toLinear', () => {
+  const src = run('pattern', [], { kind: 'ramp', width: 64, height: 1 });
+  const before = read(src);
+  const round = read(run('toSrgb', [run('toLinear', [src])]));
+  before.forEach((v, i) => {
+    assert.ok(close(round[i], v, 1e-5), `round trip lost ${v} -> ${round[i]}`);
+  });
+});
+
+test('conversion is exact at the endpoints and across the knee', () => {
+  const buf = native.createBuffer({ width: 4, height: 1, channels: 1 });
+  native.bufferWrite(buf, Float32Array.from([0, 0.04045, 0.05, 1]));
+  const out = read(run('toLinear', [buf]));
+  assert.ok(close(out[0], 0, 1e-9) && close(out[3], 1, 1e-6), 'endpoints');
+  assert.ok(close(out[1], 0.04045 / 12.92, 1e-7), 'at the knee, linear segment');
+  assert.ok(close(out[2], Math.pow((0.05 + 0.055) / 1.055, 2.4), 1e-7), 'above the knee');
+});
+
+test('values outside 0..1 pass through rather than being clamped', () => {
+  // The transfer function is only defined on the unit interval; clamping
+  // would destroy data a derived buffer legitimately holds.
+  const buf = native.createBuffer({ width: 3, height: 1, channels: 1 });
+  native.bufferWrite(buf, Float32Array.from([-0.5, 0.5, 2.0]));
+  const out = read(run('toLinear', [buf]));
+  assert.equal(out[0], -0.5);
+  assert.equal(out[2], 2.0);
+  assert.ok(out[1] < 0.5, 'in-range values still convert');
 });
 
 /* --- hostile inputs ---------------------------------------------------- */
