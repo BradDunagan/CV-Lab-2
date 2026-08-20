@@ -5,3 +5,4 @@ out/
 *.node
 .DS_Store
 assets/
+sessions/
