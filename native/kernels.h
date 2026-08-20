@@ -43,8 +43,6 @@ const char *cv_param_str(const CvParams *params, const char *name, const char *f
 
 /* --- context ------------------------------------------------------- */
 
-typedef struct { int64_t x, y, width, height; } CvRect;
-
 typedef struct {
   /*
    * Polled periodically by every kernel, from the first kernel written (§3).

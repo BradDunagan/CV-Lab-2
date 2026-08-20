@@ -7,7 +7,8 @@
         "native/addon_buffer.c",
         "native/addon_kernels.c",
         "native/buffer.c",
-        "native/kernels.c"
+        "native/kernels.c",
+        "native/render.c"
       ],
       "include_dirs": ["native"],
 

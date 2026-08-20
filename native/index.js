@@ -117,4 +117,27 @@ module.exports = {
 
   /** @returns {string[]} every kernel compiled into the addon */
   kernelNames: addon.kernelNames,
+
+  // --- the display path (design-lab-model.md §6, §8) --------------------
+  //
+  // Downsampling and the display transform happen in C, so only
+  // display-resolution RGBA crosses into JS. That matters doubly here: every
+  // crossing is a real copy, since Electron forbids external ArrayBuffers.
+
+  /**
+   * @param {object} handle
+   * @param {{width:number, height:number, x?:number, y?:number, w?:number, h?:number,
+   *          range?:'auto'|'fixed'|'percentile'|'symmetric', lo?:number, hi?:number,
+   *          percentile?:number, curve?:'linear'|'log'|'abs'|'sqrt',
+   *          colormap?:'gray'|'viridis'|'turbo'|'diverging'|'categorical',
+   *          channel?:number}} spec
+   * @returns {{pixels:Uint8ClampedArray, width:number, height:number, lo:number, hi:number}}
+   */
+  renderTile: addon.renderTile,
+
+  /** @returns {{counts:Int32Array, lo:number, hi:number}} */
+  histogram: addon.histogram,
+
+  /** @returns {number[]|null} one value per channel, or null outside the image */
+  samplePixel: addon.samplePixel,
 };

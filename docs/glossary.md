@@ -353,7 +353,14 @@ or add a small epsilon.
 only care how strong an edge is, `abs` folds negatives onto positives and lets
 you use a sequential colormap instead of a diverging one.
 
-`sqrt` is roughly a gamma of 0.5 — a gentler version of the same idea as log.
+`sqrt` is roughly a gamma of 0.5 — usually a gentler version of the same idea
+as log.
+
+**"Usually" is doing work there.** The ordering *linear < sqrt < log* only
+holds once the data spans orders of magnitude. On a narrow range such as
+0–1, `log1p` is very nearly linear, so `sqrt` actually lifts small values
+*more* than `log` does. Measured, and pinned down by a test in
+`test/render.js`, because the opposite is the natural assumption.
 
 **The thing to stay aware of:** a curve changes *perception*, not data. Anything
 you judge by eye after applying a log curve is a statement about the curve as

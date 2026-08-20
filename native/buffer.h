@@ -36,6 +36,10 @@ typedef enum {
   CV_ERR_CANCELLED
 } CvStatus;
 
+/* A region of interest, in buffer coordinates. Lives here rather than with
+ * the kernels because both the kernels and the display path need it. */
+typedef struct { int64_t x, y, width, height; } CvRect;
+
 typedef struct {
   int64_t width;
   int64_t height;
