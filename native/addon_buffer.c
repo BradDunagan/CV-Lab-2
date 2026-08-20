@@ -289,8 +289,20 @@ static napi_value BufferWrite(napi_env env, napi_callback_info info) {
 /* and no transcendental in the inner loop.                             */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Note the deliberate round through float: the value is narrowed to f32
+ * BEFORE the transfer function is applied.
+ *
+ * Without it, `load(as=linear)` and `toLinear(load(...))` disagree by one f32
+ * ULP on about half the byte values -- mathematically the same result reached
+ * by two routes, differing because one of them stores an intermediate as f32
+ * and the other does not. Numerically that is nothing; for a lab that compares
+ * content hashes it is the difference between two provenance chains agreeing
+ * and not. Where two routes to the same value exist, make them agree on
+ * purpose.
+ */
 static float srgb_to_linear_byte(int i) {
-  const double s = (double)i / 255.0;
+  const double s = (double)(float)((double)i / 255.0);
   return (float)(s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4));
 }
 

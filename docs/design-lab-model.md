@@ -394,6 +394,15 @@ The cost is a small performance loss. Given that this is a learning lab where
 results will be compared across machines, that is worth paying — and it is far
 cheaper than diagnosing a mysterious cross-platform discrepancy later.
 
+**4. Where two routes reach the same value, make them agree on purpose.**
+Found by a test, not by reasoning: `load(as=linear)` and
+`toLinear(load(...))` differed by one `f32` ULP on about half the possible byte
+values, because one route narrows an intermediate to `f32` and the other stays
+in `double`. Numerically that is nothing. For a lab that compares content
+hashes it is the difference between two provenance chains agreeing and not, so
+the lookup table now narrows to `f32` before applying the transfer function,
+deliberately. Expect more of these wherever a value can be computed two ways.
+
 **What remains achievable:** bit-exact results within a machine, and — with
 rule 3 — across platforms. What is not achievable is bit-exactness across
 different compiler versions or optimisation levels; treat those as new

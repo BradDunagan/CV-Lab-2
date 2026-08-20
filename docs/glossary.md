@@ -81,6 +81,8 @@ turned off. Similar in spirit to Java's `.jar` and Python's `.whl`.
 
 ## Color handling — linear vs sRGB
 
+Background reading: [sRGB on Wikipedia](https://en.wikipedia.org/wiki/SRGB).
+
 **A pixel value stored in an image file is not proportional to the amount of
 light it represents.** Knowing which of the two a buffer holds is the whole of
 this topic.

@@ -36,9 +36,12 @@ jobs:
           node-version: 22
           cache: npm
 
+      # xvfb provides the virtual display the renderer tests need: Electron
+      # cannot open a window on a headless Linux runner, and `show: false` is
+      # not the same as needing no display.
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential
+        run: sudo apt-get update && sudo apt-get install -y build-essential xvfb
 
       - run: npm ci
 
@@ -57,6 +60,18 @@ jobs:
       # This is the step that would fail if the addon were NAN/V8 based.
       - name: Rebuild addon (Electron ABI)
         run: npm run rebuild:electron
+
+      # The only suite that needs a real renderer. Two things exist nowhere
+      # else: Chromium's image decoder, which `load` borrows, and the DOM, and
+      # therefore the whole UI. Everything above this line runs headless under
+      # plain node and would pass with the interface completely broken.
+      - name: Renderer tests
+        if: runner.os != 'Linux'
+        run: npm run test:renderer
+
+      - name: Renderer tests (Linux, under xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run test:renderer
 
       - name: Upload addon
         uses: actions/upload-artifact@v4

@@ -197,6 +197,19 @@ async function main() {
     }
   });
 
+  await test('decoding straight to linear equals decoding then converting', () => {
+    // Two routes to the same value. They agree only because the LUT narrows to
+    // f32 before applying the transfer function; without that they differ by
+    // one ULP on about half the byte values -- nothing numerically, but enough
+    // to make two provenance chains disagree.
+    const rgba = Uint8ClampedArray.from(
+      Array.from({ length: 256 }, (_, i) => [i, i, i, 255]).flat());
+    const direct = native.bufferRead(native.bufferFromRGBA8(rgba, 256, 1, { as: 'linear' }));
+    const converted = native.bufferRead(native.runKernel('toLinear',
+      [native.bufferFromRGBA8(rgba, 256, 1, { as: 'srgb' })], {}));
+    assert.deepEqual([...direct], [...converted]);
+  });
+
   await test('geometry is checked against the actual byte count', () => {
     const rgba = Uint8ClampedArray.from([0, 0, 0, 255]);
     assert.throws(() => native.bufferFromRGBA8(rgba, 2, 2), /does not match width \* height \* 4/);

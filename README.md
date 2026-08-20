@@ -11,7 +11,7 @@ every result is **reproducible** from a replayable log.
 
 ```bash
 npm install     # also compiles the addon
-npm test        # six suites, ~120 tests, no Electron needed
+npm test        # seven suites, ~150 tests
 npm start       # launch the app
 ```
 
@@ -63,7 +63,8 @@ src/lab/session.js     slots, execution, the log, the provenance graph
 src/main.js            main process: window, save dialog
 src/preload.js         owns the session and every buffer handle
 src/renderer/          page script; no require, no fs, no pixels
-test/                  six suites, runnable under plain node
+test/                  six suites under plain node, plus test/renderer.js
+                       which needs a real Electron renderer
 docs/electron-guide.md   builds, CI, packaging, signing, costs (written after doing it)
 docs/design-lab-model.md slots, ops, commands, reproducibility (written before)
 docs/glossary.md         terms used in both, explained from scratch
