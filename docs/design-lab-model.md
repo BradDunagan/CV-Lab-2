@@ -454,9 +454,11 @@ item genuinely deferrable.
 - **Multi-image operations.** Stereo pairs, image stacks and frame sequences
   all want more than "two inputs". Does a slot ever hold a *stack*, or is that
   N slots and an operation that takes a list?
-- **Colour handling.** Is there a linear-vs-sRGB distinction to track per
+- **Color handling.** Is there a linear-vs-sRGB distinction to track per
   buffer? Filtering in sRGB is technically wrong, and it matters more for some
-  operations than others.
+  operations than others — blur and resize need linear, threshold and median
+  do not care, and `gray` is where it bites first. See
+  [`glossary.md`](glossary.md) for the two coherent policies to choose between.
 - **Where `load` decodes.** Chromium's decoder is excellent and free, but it
   returns 8-bit RGBA — so anything higher-precision (16-bit PNG, TIFF, raw)
   needs a native decode path, and that means a third-party library and all the
