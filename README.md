@@ -42,6 +42,7 @@ scripts/            electron rebuild helper, sample image generator
 .github/workflows/  the three-platform CI matrix (inert until pushed)
 docs/electron-guide.md   ← builds, CI, packaging, signing, costs (written after doing it)
 docs/design-lab-model.md ← slots, ops, commands, reproducibility (written before)
+docs/glossary.md         ← terms used in both, explained from scratch
 ```
 
 ## Scripts

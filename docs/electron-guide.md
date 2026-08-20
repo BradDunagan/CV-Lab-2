@@ -5,6 +5,8 @@ does **compute-intensive image processing in hand-written C** and is
 **distributed to other people** — those two facts drive most of the decisions
 below.
 
+Unfamiliar term? See [`glossary.md`](glossary.md).
+
 ---
 
 ## 1. How Electron is put together

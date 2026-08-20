@@ -11,6 +11,8 @@ findings — and correct it when reality disagrees.
 **non-8-bit data**, and results must be **reproducible**. Several choices below
 would be different if either were relaxed.
 
+Unfamiliar term? See [`glossary.md`](glossary.md).
+
 ---
 
 ## 1. The core model
