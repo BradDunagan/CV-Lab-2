@@ -5,121 +5,172 @@
   --text: #e6e6ea;
   --muted: #8b8b97;
   --accent: #6ea8fe;
+  --bad: #ff6b6b;
+  --ok: #7ee787;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  height: 100%;
-  margin: 0;
-}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
 
 body {
   display: flex;
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", sans-serif;
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   user-select: none;
 }
 
-.toolbar {
+/* --- toolbar ------------------------------------------------------- */
+
+.bar {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 10px 14px;
+  padding: 8px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
 
-.spacer {
-  flex: 1;
-}
+.spacer { flex: 1; }
 
-button {
+input[type="text"] {
+  flex: 2 1 420px;
+  min-width: 240px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #121216;
+  color: var(--text);
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  user-select: text;
+}
+input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+button, select {
   appearance: none;
   border: 1px solid var(--line);
   background: #2a2a33;
   color: var(--text);
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-radius: 6px;
   font: inherit;
   cursor: pointer;
 }
+button:hover:not(:disabled), select:hover { border-color: var(--accent); }
+button:disabled { opacity: 0.4; cursor: default; }
 
-button:hover:not(:disabled) {
-  border-color: var(--accent);
+.cols { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.cols input { width: 70px; }
+
+/* --- tiles --------------------------------------------------------- */
+
+main { flex: 1; overflow: auto; padding: 12px; }
+
+#tiles {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+  gap: 12px;
 }
 
-button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* Spins continuously via CSS animation. CSS animations run on the compositor,
-   but layout/paint of this element still needs the main thread each frame --
-   blocking JS visibly stalls it. That is the point of the sync button. */
-.pulse {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 2px solid var(--line);
-  border-top-color: var(--accent);
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-main {
-  flex: 1;
-  overflow: auto;
-  display: flex;
-}
-
-#stage {
-  margin: auto;
-  padding: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-canvas {
-  max-width: calc(100vw - 60px);
-  max-height: calc(100vh - 160px);
-  display: none;
+#empty { color: var(--muted); text-align: center; margin-top: 12vh; }
+#empty code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #121216;
+  padding: 2px 6px;
   border-radius: 4px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-  image-rendering: auto;
 }
 
-canvas.loaded {
+.tile {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tile > header {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tile .name {
+  font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--accent);
+}
+.tile .meta { color: var(--muted); font-size: 11px; }
+.tile select { padding: 2px 6px; font-size: 11px; }
+
+.tile canvas {
   display: block;
+  width: 100%;
+  height: auto;
+  background: #0d0d10;
+  cursor: crosshair;
+  image-rendering: pixelated;
 }
 
-#empty {
+.tile > footer {
+  padding: 4px 8px;
+  border-top: 1px solid var(--line);
   color: var(--muted);
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  justify-content: space-between;
 }
+
+/* --- probe --------------------------------------------------------- */
+
+.probe {
+  position: fixed;
+  pointer-events: none;
+  z-index: 10;
+  padding: 6px 8px;
+  background: rgba(10, 10, 14, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  color: var(--text);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+.probe .pk { color: var(--accent); }
+
+/* --- log ----------------------------------------------------------- */
+
+footer {
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.log {
+  max-height: 22vh;
+  overflow: auto;
+  padding: 6px 12px;
+  font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+.log div { white-space: pre; }
+.log .n { color: var(--muted); }
+.log .hash { color: var(--muted); }
+.log .err { color: var(--bad); }
+.log .slot { color: var(--accent); }
 
 .status {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 14px;
-  background: var(--panel);
+  padding: 6px 12px;
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-variant-numeric: tabular-nums;
 }
-
-#status {
-  color: var(--text);
-}
+#status.error { color: var(--bad); }
+#status.ok { color: var(--ok); }

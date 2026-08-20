@@ -1,12 +1,13 @@
 'use strict';
 
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const fs = require('node:fs/promises');
 const path = require('node:path');
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1180,
-    height: 820,
+    width: 1320,
+    height: 900,
     minWidth: 720,
     minHeight: 520,
     backgroundColor: '#16161a',
@@ -40,19 +41,18 @@ function createWindow() {
   return win;
 }
 
-// Small-payload IPC: the renderer asks for a native file dialog, gets a path
-// back. Pixel data never travels this way.
-ipcMain.handle('dialog:openImage', async (event) => {
+// Small-payload IPC only. Pixel data never travels this way: it stays in C,
+// owned by the preload context (design-lab-model.md §8).
+ipcMain.handle('session:save', async (event, sessionJson) => {
   const win = BrowserWindow.fromWebContents(event.sender);
-  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-    title: 'Open an image',
-    properties: ['openFile'],
-    filters: [
-      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] },
-      { name: 'All files', extensions: ['*'] },
-    ],
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: 'Save session',
+    defaultPath: 'session.cvlab.json',
+    filters: [{ name: 'cv-lab session', extensions: ['json'] }],
   });
-  return canceled || filePaths.length === 0 ? null : filePaths[0];
+  if (canceled || !filePath) return null;
+  await fs.writeFile(filePath, JSON.stringify(sessionJson, null, 2), 'utf8');
+  return filePath;
 });
 
 app.whenReady().then(() => {

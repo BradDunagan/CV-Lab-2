@@ -2,10 +2,6 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <!--
-      CSP: no remote loads at all. This matters more than usual here, because
-      this window runs with sandbox: false (see src/main.js).
-    -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:"
@@ -14,28 +10,36 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="toolbar">
-      <button id="open">Open Image…</button>
-      <button id="invert-async" disabled>Invert (async, native)</button>
-      <button id="invert-sync" disabled>Invert (sync — freezes UI)</button>
-      <button id="reset" disabled>Reset</button>
-
+    <header class="bar">
+      <select id="op-menu" title="Insert a command template"></select>
+      <input id="command" type="text" spellcheck="false" autocomplete="off"
+             placeholder="A = pattern(kind=checker, width=512, height=512)" />
+      <button id="run">Run</button>
       <div class="spacer"></div>
-
-      <!-- If this stops spinning, the UI thread is blocked. -->
-      <div class="pulse" title="Spins while the UI thread is free"></div>
+      <label class="cols">cols
+        <input id="cols" type="range" min="1" max="4" value="2" />
+      </label>
+      <button id="fit" title="Reset pan and zoom">Fit</button>
+      <button id="save">Save session</button>
     </header>
 
     <main>
-      <div id="stage">
-        <canvas id="canvas"></canvas>
-        <p id="empty">Open an image to begin.</p>
-      </div>
+      <div id="tiles"></div>
+      <p id="empty">
+        No slots yet. Try <code>A = pattern(kind=checker, width=512, height=512)</code>,
+        then <code>B = gaussian(A, sigma=3)</code>.
+      </p>
     </main>
 
-    <footer class="status">
-      <span id="status">Ready.</span>
-      <span id="versions"></span>
+    <!-- One readout for every slot at once, §7. -->
+    <div id="probe" class="probe" hidden></div>
+
+    <footer>
+      <div id="log" class="log"></div>
+      <div class="status">
+        <span id="status">Ready.</span>
+        <span id="versions"></span>
+      </div>
     </footer>
 
     <script src="renderer.js"></script>

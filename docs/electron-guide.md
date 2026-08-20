@@ -215,7 +215,13 @@ Measured on a 12 MP (4243×2829) image, median of 5 runs:
 | kernel alone (inside the call) | 7–10 ms | the rest is `getImageData`/`putImageData` |
 
 About 20% and, more importantly, most of the variance. The gap grows with image
-size. Both are in `src/preload.js`; the app uses the first.
+size.
+
+Those two paths were an early demo, since removed. The architecture they argued
+for is what the lab now uses: `src/preload.js` owns the session and every
+buffer handle, and `lab.draw()` reaches into the shared DOM for a canvas and
+renders into it directly. What crosses the bridge is a canvas id and a small
+result object — never pixels.
 
 Note that `getImageData`/`putImageData` copy too — that is inherent to canvas
 2D. If those become the bottleneck, the next step is keeping the authoritative
