@@ -1,86 +1,116 @@
 # cv-lab-2
 
-Electron + native C skeleton for compute-intensive image processing.
+A computer-vision lab: Electron for the interface, hand-written C for the
+pixels. Built for experimenting with image-processing kernels, with results
+that can be reproduced later.
 
-It exercises every mechanism the real app will depend on, at a size small
-enough to hold in your head: a Node-API addon operating directly on canvas
-pixel memory, on a background thread, behind a `contextBridge` API — plus a CI
-matrix ready to build it on three platforms.
+Two requirements shape the whole design — it handles **non-8-bit data**, and
+every result is **reproducible** from a replayable log.
 
 ## Quick start
 
 ```bash
-npm install          # also compiles the addon
-npm run test:native  # 7 smoke tests, plain node, no Electron needed
-npm run sample       # writes assets/sample.png (12 MP)
-npm start            # launch the app
+npm install     # also compiles the addon
+npm test        # six suites, ~120 tests, no Electron needed
+npm start       # launch the app
 ```
 
-Open `assets/sample.png`, then press each Invert button and watch the spinner
-in the top-right corner.
+In the command bar:
 
-- **Invert (async, native)** — spinner keeps turning. Work runs on libuv's
-  thread pool.
-- **Invert (sync — freezes UI)** — spinner stalls. Same C kernel, called on the
-  UI thread. This is what you're avoiding.
+```
+A = pattern(kind=checker, width=512, height=512)
+B = gaussian(A, sigma=3)
+E = sobel(B, axis=x)
+M = threshold(E, t=0.02)
+stats(E)
+```
 
-Measured on this machine (M-series, 12 MP image): **24 ms** end to end, of
-which 7–10 ms is the C kernel and the rest is `getImageData`/`putImageData`.
+Each command creates a tile. Hover anywhere to read that pixel **in every slot
+at once**; scroll to zoom — all tiles move together. Pick an operation from the
+menu to have its command written into the bar for you.
+
+Notice that `E` renders on a diverging colormap centred on zero, because a
+Sobel response is signed, and `M` renders categorical, because a mask is an
+identity rather than a measurement.
+
+## How it works
+
+**Slots** (`A`, `B`, …) are uniform, user-created, and hold a typed buffer —
+`width, height, channels, dtype, space` — not a canvas. A canvas is 8-bit RGBA
+only, so slots-as-canvases would clamp away half a gradient. `f32` is the
+working format, with `i32` for label maps.
+
+**Operations** are one registry entry plus one C kernel. The registry is the
+single source of truth for the menus, the parser's validation, generated help,
+and the shape of a provenance record.
+
+**The log is the point.** Every command appends an immutable entry with fully
+resolved parameters and a content hash of the output. `A = gaussian(A)` produces
+`A#2` while still recording that it consumed `A#1` — names move, history does
+not. Save a session and replay it, and a hash mismatch tells you a kernel
+changed.
 
 ## Layout
 
 ```
-native/addon.c      the addon: kernel, argument checks, async work, promise
-native/portable.h   cross-compiler shims (MSVC vs clang vs gcc)
-native/index.js     thin JS wrapper — nothing else touches build/
-binding.gyp         build config
-src/main.js         main process: window, native file dialog over IPC
-src/preload.js      the bridge — the only place with Node access
-src/renderer/       page script; no require(), no fs, no ipcRenderer
-test/smoke.js       runs under plain node
-scripts/            electron rebuild helper, sample image generator
-.github/workflows/  the three-platform CI matrix (inert until pushed)
-docs/electron-guide.md   ← builds, CI, packaging, signing, costs (written after doing it)
-docs/design-lab-model.md ← slots, ops, commands, reproducibility (written before)
-docs/glossary.md         ← terms used in both, explained from scratch
+native/buffer.*        the buffer type: allocation, dtypes, overflow-checked sizing
+native/kernels.*       the six kernels, behind one uniform C signature
+native/render.*        display transforms and downsampling, done in C
+native/addon_*.c       the Node-API surface
+src/lab/registry.js    operation definitions, validation, provenance records
+src/lab/parser.js      the command language
+src/lab/session.js     slots, execution, the log, the provenance graph
+src/main.js            main process: window, save dialog
+src/preload.js         owns the session and every buffer handle
+src/renderer/          page script; no require, no fs, no pixels
+test/                  six suites, runnable under plain node
+docs/electron-guide.md   builds, CI, packaging, signing, costs (written after doing it)
+docs/design-lab-model.md slots, ops, commands, reproducibility (written before)
+docs/glossary.md         terms used in both, explained from scratch
 ```
 
 ## Scripts
 
 | Command | What it does |
 |---|---|
+| `npm test` | Everything |
 | `npm run build:native` | Compile the addon with node-gyp |
 | `npm run rebuild:electron` | Rebuild against Electron's headers |
-| `npm run test:native` | Smoke tests under plain node |
-| `npm run sample` | Generate `assets/sample.png` |
 | `npm start` | Launch the app |
+| `npm run package` | Unsigned installers into `dist/` |
+| `npm run verify:package` | Assert the addon survived packaging |
 
-Because this is a **Node-API** addon, one binary works under both Node and
-Electron — verified, not assumed. `rebuild:electron` is a convenience here, not
-a requirement. That stops being true the moment anything in the chain uses
-NAN/raw V8.
+## Three decisions worth knowing about
 
-## Two decisions worth knowing about
+**Node-API, not NAN.** One binary works under both Node and Electron — verified,
+not assumed. Electron's 8-week release cycle never forces a rebuild.
 
-**`sandbox: false` on the window** (`src/main.js`). Required so the preload can
-`require()` a real `.node`, which keeps pixel buffers in one process instead of
-structured-cloning ~33 MB per 4K image across an IPC boundary. `contextIsolation`
-stays on, `nodeIntegration` stays off. The condition: this window must only ever
-load local, first-party content.
+**`sandbox: false` on the window.** Required so the preload can `require()` a
+real `.node`. `contextIsolation` stays on and `nodeIntegration` stays off. The
+condition: this window must only ever load local, first-party content.
 
-**Pixels never cross the contextBridge.** `contextBridge` deep-copies typed
-arrays in both directions — measured, and the reason `invertCanvas(id)` exists:
-the preload reaches into the shared DOM for the canvas and does all pixel work
-in its own context. 24.1 ms vs 30.1 ms median on 12 MP, and far less jitter.
+**Pixels never cross the contextBridge.** It deep-copies typed arrays — measured
+— so the preload owns the buffers and renders into the canvas directly, with
+downsampling done in C. A 12 MP slot in a 480×360 tile sends nothing at all.
 
-**Node-API over NAN.** ABI stability is what decouples the addon from Electron's
-8-week release cycle.
+All three are explained in `docs/electron-guide.md`.
 
-Both are explained in `docs/electron-guide.md`.
+## Status
 
-## Next
+Working: the buffer type, the operation registry, the command language, the
+session log with provenance and replay, six kernels (`pattern`, `gray`,
+`gaussian`, `sobel`, `threshold`, `stats`), the display path, and the UI.
+Three-platform CI produces unsigned installers.
 
-1. Push to GitHub → the CI matrix runs → three green unsigned builds.
-2. Test the Windows and Linux artifacts in VMs.
-3. Then signing, notarization and auto-update — in the order given at the end of
-   the guide.
+Outstanding, in rough order:
+
+- **`load`** — declared but with no kernel. Chromium's decoder is free and
+  excellent but returns 8-bit RGBA, so anything higher-precision needs a native
+  decode path. See `docs/design-lab-model.md` §11.
+- **The colour policy** — buffers carry a `space` field, but whether the lab
+  converts to linear on load is still open. §11 again.
+- **Kernels on the thread pool** — they run synchronously today. The contract is
+  already async, so this touches only the binding.
+- **Cancellation UI** — the flag is threaded through every kernel already.
+- **Signing and notarization** — deferred until there are users. Costs and
+  order are in `docs/electron-guide.md` §5.
