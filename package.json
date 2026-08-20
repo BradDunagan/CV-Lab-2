@@ -15,7 +15,9 @@
     "start": "electron .",
     "dev": "npm run rebuild:electron && electron .",
     "package": "electron-builder --publish never",
-    "verify:package": "node scripts/verify-package.js"
+    "verify:package": "node scripts/verify-package.js",
+    "test:lab": "node test/registry.js",
+    "test": "npm run test:native && npm run test:lab"
   },
   "author": "Brad Dunagan <brad.dunagan@gmail.com>",
   "devDependencies": {

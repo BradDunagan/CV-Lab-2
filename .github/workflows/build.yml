@@ -49,6 +49,10 @@ jobs:
       - name: Smoke test
         run: npm run test:native
 
+      # Pure JS, no addon needed -- runs even if the native build were skipped.
+      - name: Lab tests
+        run: npm run test:lab
+
       # Then rebuild against Electron's ABI -- a different NODE_MODULE_VERSION.
       # This is the step that would fail if the addon were NAN/V8 based.
       - name: Rebuild addon (Electron ABI)
