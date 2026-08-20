@@ -42,6 +42,101 @@ this document:
 `contextBridge.exposeInMainWorld()` in the preload is how you hand the page a
 narrow, explicit API instead of raw Node.
 
+### Two `window` objects, one visible window
+
+The word "window" means three unrelated things here, which is most of why this
+is confusing:
+
+| "Window" | What it actually is |
+|---|---|
+| the visible window | an **OS window**, created by Electron's `BrowserWindow` |
+| `window` in JS | the **global object** of a JavaScript context — nothing to do with pixels on screen |
+| a Chromium "frame" | the internal object that hosts one document |
+
+There is **one** visible window and **two** `window` objects. They are not the
+same kind of thing, so there is no contradiction — the JS `window` is simply a
+badly-named global object. `globalThis` is the same object under a better name.
+
+#### What owns what
+
+```
+BrowserWindow                     (main process — one OS window)
+└── WebContents                   (renders one page)
+    └── renderer process
+        └── V8 isolate            (one JavaScript heap)
+            ├── main world context      → global object #1  ← page script's `window`
+            └── isolated world context  → global object #2  ← preload's `window`
+        └── Blink DOM             (ONE set of C++ objects: document, elements, canvas)
+```
+
+A **V8 context** is an independent JavaScript execution environment. It owns
+its global object, and it owns its own copies of every built-in: its own
+`Object`, `Array`, `Promise`, `Uint8ClampedArray`. Chromium calls each context
+a **world**. `contextIsolation: true` tells Chromium to create a second world
+for the preload, alongside the page's.
+
+So the two `window` objects are just the global objects of two worlds. Both are
+`Window` instances; neither is more real than the other.
+
+#### The part that makes it click
+
+**The DOM is not JavaScript.** The document, the elements, the canvas and its
+pixels are **C++ objects inside Blink**. What JavaScript holds are *wrappers*
+pointing at them.
+
+Each world gets **its own wrapper objects**, pointing at **the same underlying
+C++ objects**:
+
+```
+preload world:     wrapperA ──┐
+                              ├──► one C++ HTMLCanvasElement  (the real thing)
+page script world: wrapperB ──┘
+```
+
+`document.getElementById('canvas')` in the preload and the same call in page
+script return two *different JavaScript objects* that address the *same*
+canvas. Draw through one and the other sees it, because the state lives in C++,
+not in either JS heap.
+
+That single fact explains both measurements in this section:
+
+- **The fast path works** — the preload can grab the canvas and call
+  `getImageData`/`putImageData` on it, because it is the same canvas.
+- **Typed arrays get copied** — a `Uint8ClampedArray` is a *pure JavaScript*
+  object. There is no shared C++ object underneath for a second wrapper to
+  point at. And Electron will not hand the raw object across, because sharing
+  JS object identity between worlds is precisely what `contextIsolation`
+  exists to prevent. So `contextBridge` copies data and proxies functions.
+
+#### A familiar parallel
+
+This is the same mechanism browser extensions use: a Chrome extension's content
+script runs in an isolated world with its own `window`, while manipulating the
+same page DOM the site's own scripts see. Electron did not invent this; it
+reuses Chromium's worlds.
+
+#### Consequences worth knowing
+
+- **`instanceof` can lie across worlds.** Each world has its own
+  `Uint8ClampedArray` constructor, so a typed array that originated in the
+  other world may fail `x instanceof Uint8ClampedArray` even though it is one.
+  This bit the array-passing design: page script received the result of
+  `invert(pixels)` and had to normalise it before `ImageData` would accept it.
+  That code is gone now — `invertCanvas()` returns only a timing object, so
+  nothing crosses — but the hazard still applies to the `invert(pixels)` path
+  that remains exposed in `src/preload.js`. At a world boundary, prefer
+  `ArrayBuffer.isView()` or duck-typing over `instanceof`.
+- **"Main world" in `exposeInMainWorld` means the page's world**, not the main
+  *process*. The API name describes crossing from the isolated world into the
+  page's world. Two different meanings of "main" in one codebase.
+- **Worlds are recreated on navigation.** Load a new page and both contexts are
+  torn down and rebuilt, and the preload runs again. Anything the preload holds
+  in module scope does not survive.
+- **One isolate, two contexts** — so this is not a second thread and not a
+  second process. Blocking JavaScript in the preload blocks the page too. That
+  is why the addon's work goes to libuv's thread pool rather than running
+  inline.
+
 ### `nodeIntegration`
 
 A `webPreferences` flag that injects Node's globals — `require`, `process`,
