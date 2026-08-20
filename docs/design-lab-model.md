@@ -463,6 +463,38 @@ measured cost of moving a 12 MP image across it is real. So:
 Eight 12 MP `f32` slots is around 400 MB of buffer. That is fine as native
 allocations and would not be fine as page-script typed arrays.
 
+### JS cannot alias C memory — measured
+
+The obvious implementation, handing JavaScript a typed array over the C
+allocation, **does not work in Electron**:
+
+```
+napi_create_external_arraybuffer
+  → napi_status 22: "External buffers are not allowed"
+```
+
+Plain Node allows it; Electron does not, because V8 is built with pointer
+compression and a backing store must live inside V8's memory cage. Verified in
+both runtimes at the point the buffer type was written, rather than discovered
+later.
+
+So the C layer owns 64-byte aligned memory and JavaScript reaches it through
+**explicit copies** — `bufferRead` and `bufferWrite`, named so that no caller
+assumes aliasing. A 48 MB round trip costs about 10 ms under Node and 13 ms
+under Electron.
+
+This costs nothing architecturally, because the plan above never wanted whole
+buffers in page script anyway: views ask for a **downsampled tile at display
+resolution**, which is 1–2 MB regardless of image size. `bufferRead` exists for
+tests and debugging.
+
+The rejected alternative was to let V8 allocate the memory with
+`napi_create_arraybuffer` and have C write into it. That restores aliasing, but
+ties every buffer's lifetime to a `napi_env`, prevents kernels allocating
+temporaries outside a JS context, and gives up control of alignment — V8's
+allocator makes no 64-byte guarantee, which the SIMD plan in §6 of the Electron
+guide will want.
+
 The architecture already validated in the skeleton — addon in the renderer
 process, preload owning the pixels — is exactly what this needs.
 

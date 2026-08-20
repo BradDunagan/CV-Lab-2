@@ -2,7 +2,11 @@
   "targets": [
     {
       "target_name": "cvlab",
-      "sources": ["native/addon.c"],
+      "sources": [
+        "native/addon.c",
+        "native/addon_buffer.c",
+        "native/buffer.c"
+      ],
       "include_dirs": ["native"],
 
       # Node-API version 8 is a conservative, widely-supported floor.

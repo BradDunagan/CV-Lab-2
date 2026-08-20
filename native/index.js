@@ -57,4 +57,48 @@ module.exports = {
    * @param {Uint8ClampedArray|Uint8Array} pixels
    */
   invertSync: addon.invertSync,
+
+  // --- buffers (design-lab-model.md §1-2) -------------------------------
+  //
+  // The C layer owns the memory; JS holds an opaque handle. bufferView()
+  // returns a typed array aliasing that same memory, with no copy.
+
+  /**
+   * @param {{width:number, height:number, channels?:number,
+   *          dtype?:'f32'|'i32', space?:'none'|'srgb'|'linear'}} spec
+   * @returns {object} an opaque buffer handle
+   */
+  createBuffer: addon.createBuffer,
+
+  /**
+   * @param {object} handle
+   * @returns {{width:number, height:number, channels:number, dtype:string,
+   *            space:string, bytes:number, elements:number, live:boolean}}
+   */
+  bufferInfo: addon.bufferInfo,
+
+  /**
+   * Copy the buffer's contents out as a Float32Array or Int32Array.
+   *
+   * This is a COPY, not a view. Electron forbids external ArrayBuffers
+   * (napi_status 22), so C-owned memory cannot be aliased from JS. Sized for
+   * debugging and tests; the display path should ask for a downsampled tile
+   * rather than reading whole buffers.
+   * @param {object} handle
+   */
+  bufferRead: addon.bufferRead,
+
+  /**
+   * Copy a typed array into the buffer. Kind and length must match exactly.
+   * @param {object} handle
+   * @param {Float32Array|Int32Array} values
+   */
+  bufferWrite: addon.bufferWrite,
+
+  /**
+   * Free the memory now rather than waiting for GC. Idempotent. Buffers are
+   * large enough that leaving 400 MB to the collector is not acceptable.
+   * @param {object} handle
+   */
+  bufferRelease: addon.bufferRelease,
 };

@@ -222,6 +222,36 @@ Note that `getImageData`/`putImageData` copy too — that is inherent to canvas
 pixel buffer in C, owned by the preload, and only pushing to a canvas for
 display.
 
+### Measured: Electron forbids external ArrayBuffers
+
+A second boundary worth knowing before designing a native data layer, and the
+same shape of surprise as the `contextBridge` copying above.
+
+`napi_create_external_arraybuffer` lets an addon hand JavaScript a typed array
+over memory the addon allocated — no copy. It works under plain Node. Under
+Electron it fails:
+
+```
+napi_status 22: "External buffers are not allowed"
+```
+
+V8 is built with pointer compression, so an `ArrayBuffer` backing store must
+live inside V8's memory cage; memory from `malloc`/`posix_memalign` does not.
+Verified under Node 24 and Electron 43 with the same binary — which is also a
+neat demonstration that a Node-API addon really is one binary for both
+runtimes, since only the *runtime policy* differed, not the build.
+
+Consequences for a native data layer:
+
+- **C-owned memory cannot be aliased from JavaScript.** Reaching it means an
+  explicit copy, so name the functions accordingly rather than calling
+  something a "view" when it is not.
+- **Or let V8 own it** via `napi_create_arraybuffer`, which returns a pointer
+  C can write into. Aliasing works, but buffer lifetime is then tied to a
+  `napi_env`, and you give up control of alignment.
+
+`design-lab-model.md` §8 records which of the two this project chose, and why.
+
 ---
 
 ## 2. What a `.node` file actually is
