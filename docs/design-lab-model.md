@@ -21,7 +21,7 @@ Three concepts. Keeping them separate is the central decision of the design.
 
 | Concept | What it is | Named |
 |---|---|---|
-| **Buffer** | Raw pixel data: `width, height, channels, dtype`, plus the bytes | — |
+| **Buffer** | Raw pixel data: `width, height, channels, dtype, space`, plus the bytes | — |
 | **Slot** | A named container holding one buffer, plus its provenance | `A`, `B`, `edges`, … |
 | **View** | A tile displaying one slot, with a non-destructive display transform | — |
 
@@ -69,6 +69,44 @@ Cost: a 12 MP single-channel `f32` buffer is 48 MB — the same as 12 MP RGBA
 `u8`. Memory is not the constraint here; developer time is. Production CV
 libraries support many depths because memory bandwidth is their bottleneck.
 That is not this project's bottleneck.
+
+### Color space is part of the buffer
+
+Every buffer carries a `space` field: **`srgb`** or **`linear`**.
+
+A value stored in an image file is not proportional to light — it is
+gamma-encoded, so that 8 bits can be spread to match human perception. That
+makes two pixel arrays with identical numbers mean different things, and there
+is no way to tell them apart by inspection. See
+[`glossary.md`](glossary.md) for the transfer function and the worked example.
+
+Why it has to be tracked rather than assumed:
+
+- **Operations that mix pixels need `linear`** — blur, resize, alpha blending,
+  any convolution whose positive weights sum to 1. Averaging gamma-encoded
+  values averages in the wrong space and comes out too dark.
+- **Operations that only compare or rank values do not care** — threshold,
+  median and other rank filters, connected components. A monotonic transfer
+  function does not disturb ordering.
+- **Gradients are *different*, not wrong.** Sobel on `srgb` emphasises edges in
+  dark regions more than the same operator on `linear`. Much of classical
+  computer vision runs on gamma-encoded images quite happily. The result is a
+  different measurement — which is exactly why the lab must record which one it
+  made.
+
+So: operations declare the space they require in the registry, and the runtime
+converts or refuses rather than silently computing the wrong thing. The first
+operation where this bites is `gray`, because the familiar luminance
+coefficients `0.2126 R + 0.7152 G + 0.0722 B` are valid **only** on linear
+values; applied to `srgb` values they produce luma, a different quantity.
+
+`space` is recorded in provenance alongside dimensions and dtype (§5). "Which
+space was this computed in" is precisely the sort of question a reproducible log
+exists to answer.
+
+Note that working in `linear` throughout carries no precision cost here, since
+the working format is `f32`. The usual objection — banding in 8-bit linear —
+does not apply. §11 records which of the two policies remains open.
 
 ### Layout: interleaved
 
@@ -173,6 +211,32 @@ kernel written**. Retrofitting cancellation into twenty existing kernels is
 miserable; adding it to one costs nothing. The UI for cancelling can come
 later; the parameter cannot.
 
+### Validating inputs is a security requirement, not tidiness
+
+A native addon adds an attack surface a pure-JavaScript app does not have.
+Image-processing code written in C, parsing input somebody else supplied, is
+historically one of the richest sources of remote code execution there is — a
+buffer overflow while handling a malformed image hands an attacker control of
+the process. `CVE-2023-4863`, the WebP heap overflow exploited in the wild
+against Chrome and most software that decodes WebP, is exactly this shape.
+
+This project will open files it did not create, and eventually session files
+and images from other people. So every kernel treats its inputs as hostile:
+
+- **Check dimensions before allocating.** `width * height * channels` overflows
+  a 32-bit integer at moderate image sizes, yielding a buffer far smaller than
+  the code then writes into. Compute sizes in `size_t`, and reject implausible
+  dimensions up front rather than trusting the caller.
+- **Bounds-check rather than trusting a supplied length.** `native/addon.c`
+  already rejects a pixel count that is not a non-zero multiple of 4; that is
+  the pattern, not an exception to it.
+- **Fuzz the kernels** with malformed and adversarial input once there are
+  several. Cheap to automate, and it finds the class of bug that code review
+  reliably misses.
+
+The rule of thumb: a crash in C is not merely a crash. It is the first half of
+an exploit.
+
 ---
 
 ## 4. The command language
@@ -218,11 +282,11 @@ history — a slot's provenance is the sub-graph of log entries it depends on,
 derived on demand.
 
 ```
-#1  A ← load("samples/board.png")            sha256:9f2c…  4243×2829×1 f32  [v1]
-#2  B ← gaussian(A#1, sigma=1.4)             sha256:31ab…  4243×2829×1 f32  [v1]
-#3  C ← sobel(B#2, axis=mag)                 sha256:c740…  4243×2829×1 f32  [v1]
-#4  D ← threshold(C#3, t=0.2)                sha256:0e55…  4243×2829×1 i32  [v1]
-#5  E ← overlay(A#1, D#4, alpha=0.5)         sha256:aa13…  4243×2829×3 f32  [v1]
+#1  A ← load("samples/board.png")            sha256:9f2c…  4243×2829×1 f32 srgb    [v1]
+#2  B ← gaussian(A#1, sigma=1.4)             sha256:31ab…  4243×2829×1 f32 linear  [v1]
+#3  C ← sobel(B#2, axis=mag)                 sha256:c740…  4243×2829×1 f32 linear  [v1]
+#4  D ← threshold(C#3, t=0.2)                sha256:0e55…  4243×2829×1 i32 —       [v1]
+#5  E ← overlay(A#1, D#4, alpha=0.5)         sha256:aa13…  4243×2829×3 f32 linear  [v1]
 ```
 
 Reading that back:
@@ -418,6 +482,11 @@ Expensive to retrofit, so settle them first:
 - an optional ROI rectangle in the operation signature, even if it is always
   "whole image" for now
 - content hashing of buffers
+- **a `space` field on every buffer**, and operations declaring which space
+  they require — untracked color space produces results that are quietly wrong
+  rather than obviously broken
+- **treating kernel inputs as hostile from the first kernel**: sizes computed
+  in `size_t`, dimensions checked before allocating, lengths never trusted
 
 Safe to defer:
 
@@ -454,11 +523,12 @@ item genuinely deferrable.
 - **Multi-image operations.** Stereo pairs, image stacks and frame sequences
   all want more than "two inputs". Does a slot ever hold a *stack*, or is that
   N slots and an operation that takes a list?
-- **Color handling.** Is there a linear-vs-sRGB distinction to track per
-  buffer? Filtering in sRGB is technically wrong, and it matters more for some
-  operations than others — blur and resize need linear, threshold and median
-  do not care, and `gray` is where it bites first. See
-  [`glossary.md`](glossary.md) for the two coherent policies to choose between.
+- **Color policy.** *Settled:* every buffer carries a `space` field and
+  operations declare what they need (§2). *Open:* which of the two policies —
+  convert to `linear` on load and work there throughout, which is physically
+  correct by default and costs nothing in `f32`; or keep values as loaded and
+  convert only where an operation demands it, which keeps results comparable
+  with other CV tools that operate on gamma-encoded values.
 - **Where `load` decodes.** Chromium's decoder is excellent and free, but it
   returns 8-bit RGBA — so anything higher-precision (16-bit PNG, TIFF, raw)
   needs a native decode path, and that means a third-party library and all the
