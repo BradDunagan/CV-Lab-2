@@ -100,7 +100,9 @@ Every operation is one entry in a registry:
   version: 1,
   inputs: [{ name: 'src', channels: [1] }],
   params: [
-    { name: 'axis', type: 'enum', values: ['x', 'y', 'mag'], default: 'mag' },
+    { name: 'axis', type: 'enum', values: ['x', 'y', 'mag'], default: 'mag',
+      semantic: true },
+    { name: 'preview', type: 'bool', default: false, semantic: false },
   ],
   output: { channels: 1, dtype: 'f32' },
   cancellable: true,
@@ -112,15 +114,48 @@ The registry is the single source of truth for:
 - the operation dropdowns and their parameter forms
 - validation in the command parser, and its error messages
 - generated documentation
-- what gets recorded in the provenance log
+- the **shape** of a provenance record (see below)
 
 Adding a kernel is one registry entry plus one C function — not edits scattered
 across four files.
+
+### What the registry contributes to the log
+
+There is no `record:` field, and the registry is **not itself written into the
+log**. Its contribution is to define what a record must contain and how to
+normalise it. A log entry is:
+
+```
+op name  ·  op version  ·  fully-resolved semantic params  ·  input (slot, version) refs
+```
+
+The registry supplies the first two, and the parameter schema needed to produce
+the third.
+
+**Defaults must be resolved at record time.** The user types `sobel(B)`; the
+log must store `sobel(B#2, axis=mag) [v1]`. If only the typed text were kept
+and a later version changed the default from `mag` to `x`, replaying an old
+session would silently produce different pixels. This is the single most
+important rule in this section — it is cheap to get right and produces
+untraceable results when got wrong.
+
+**`semantic: false` marks parameters that do not affect output** — preview
+quality, display hints, progress granularity. They are excluded from the log
+and from any cache key, so toggling them never invalidates a result or
+perturbs a hash comparison. Anything unmarked defaults to semantic; opting
+*out* should be a deliberate act.
+
+**Bulk parameters are recorded by hash, not by value.** A custom convolution
+kernel passed as an array goes into the log as `kernel=sha256:1f9c…` with the
+array stored alongside the session, so a log line stays a line.
 
 **`version` matters because reproducibility does.** When a kernel's behaviour
 changes, bump it. Old session logs then record which version produced them,
 and a replay that produces different pixels has an explanation rather than a
 mystery.
+
+What is *not* recorded per entry, because it belongs to the session as a whole:
+the application version and the addon build identity (see §5).
 
 ### Purity
 
@@ -174,16 +209,67 @@ about it.
 
 ## 5. Reproducibility
 
-### Provenance
+### One log; slot provenance is a view over it
 
-Each slot records the command that produced it, the slot versions consumed, the
-operation versions used, and a **content hash of the resulting buffer**.
+There is a single append-only **session log**. Slots do not each own a private
+history — a slot's provenance is the sub-graph of log entries it depends on,
+derived on demand.
 
 ```
-#1  A ← load("samples/board.png")     sha256:9f2c…  4243×2829×1 f32
-#2  B ← gaussian(A#1, sigma=1.4)      sha256:31ab…  4243×2829×1 f32
-#3  C ← sobel(B#2, axis=mag)          sha256:c740…  4243×2829×1 f32
+#1  A ← load("samples/board.png")            sha256:9f2c…  4243×2829×1 f32  [v1]
+#2  B ← gaussian(A#1, sigma=1.4)             sha256:31ab…  4243×2829×1 f32  [v1]
+#3  C ← sobel(B#2, axis=mag)                 sha256:c740…  4243×2829×1 f32  [v1]
+#4  D ← threshold(C#3, t=0.2)                sha256:0e55…  4243×2829×1 i32  [v1]
+#5  E ← overlay(A#1, D#4, alpha=0.5)         sha256:aa13…  4243×2829×3 f32  [v1]
 ```
+
+Reading that back:
+
+- **A slot participates in many commands, but exactly one command *produced*
+  each version of it.** `A#1` is produced by `#1` and consumed by `#2` and
+  `#5`. "The command that produced it" is singular and correct; "the commands
+  it took part in" is a different and larger set.
+- **A slot's provenance is therefore a chain, not a line.** `E`'s provenance is
+  the transitive closure `{#5, #1, #4, #3, #2}` — a DAG, since `A#1` is reached
+  by two routes.
+
+### Slots are versioned; log entries are immutable
+
+`A = blur(A)` does not mutate `A#1`. It appends an entry producing `A#2`, and
+rebinds the name. The old buffer may be freed, but the *entry* never changes,
+so anything referring to `A#1` still means what it meant.
+
+The useful analogy is git: **log entries are commits, slot names are refs.**
+Names move; history does not.
+
+This is why references are `(slot, version)` pairs rather than bare names. A
+provenance chain built from bare names would be ambiguous the moment a slot was
+reassigned.
+
+### Two directions
+
+| Direction | Question it answers | Used for |
+|---|---|---|
+| **Backward** (ancestry) | how was this made? | reproducibility, replay, export metadata |
+| **Forward** (consumers) | what did this feed? | staleness — "I changed A, what is now out of date?" |
+
+Backward is the one reproducibility needs and the one to build first. Forward
+falls out of the same graph read the other way, and is what a future
+recompute-downstream feature would use.
+
+### Where it is persisted
+
+| When | Where |
+|---|---|
+| during a session | in memory, alongside the slot table |
+| continuously | appended to an autosave journal, so a crash does not lose the history |
+| on save | a session file: the log, plus source paths with their content hashes, plus any bulk parameter blobs |
+| on image export | a sidecar `.json` — or embedded metadata — carrying the ancestry of just that slot |
+
+Recorded **once per session** rather than per entry: the application version
+and the addon build identity. Compiler version and optimisation level change
+floating-point results (see the determinism rules below), so a replay under a
+different build is new provenance, not a contradiction.
 
 The hash is what makes reproducibility assertable rather than aspirational:
 replay a session, compare hashes, and a kernel change that altered results
@@ -324,6 +410,9 @@ Expensive to retrofit, so settle them first:
 - deterministic reductions, `-ffp-contract=off`, no `-ffast-math`
 - a cancellation flag in every kernel signature
 - the operation registry as the single source of truth
+- **resolving parameter defaults at record time**, and `(slot, version)` refs
+  rather than bare slot names — both are what make an old log still mean what
+  it meant
 - an optional ROI rectangle in the operation signature, even if it is always
   "whole image" for now
 - content hashing of buffers
