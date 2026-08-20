@@ -396,7 +396,9 @@ async function runCommand() {
 els.open.addEventListener('click', async () => {
   const filePath = await window.lab.openImage();
   if (!filePath) return;
-  els.command.value = `${nextSlotName()} = load("${filePath.replace(/"/g, '\\"')}")`;
+  // quote() handles backslashes as well as quotes: a raw Windows path loses
+  // every separator, since `\` is an escape character in the command language.
+  els.command.value = `${nextSlotName()} = load(${window.lab.quote(filePath)})`;
   els.command.focus();
   await runCommand();
 });

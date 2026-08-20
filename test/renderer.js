@@ -77,12 +77,14 @@ async function collect(win, swatch) {
       return entries.length ? entries[entries.length - 1].output.hash : null;
     };
 
+    r.quotedPath = window.lab.quote(swatch);
+    r.swatchPath = swatch;
     r.bridge = Object.keys(window.lab).sort();
     r.nodeLeaked = typeof window.require !== 'undefined' || typeof window.process !== 'undefined';
     r.loadImplemented = window.lab.ops().find(o => o.name === 'load').implemented;
 
     // --- load, through Chromium's decoder ---
-    await ui('S = load("' + swatch + '")');
+    await ui('S = load(' + window.lab.quote(swatch) + ')');
     const loaded = window.lab.log()[0];
     r.loadText = loaded.text;
     r.loadShape = [loaded.output.width, loaded.output.height, loaded.output.channels,
@@ -94,7 +96,7 @@ async function collect(win, swatch) {
       grey:  window.lab.probeAll(0.9, 0.9).S.values,
     };
 
-    await ui('L = load("' + swatch + '", as=linear)');
+    await ui('L = load(' + window.lab.quote(swatch) + ', as=linear)');
     r.linearSpace = window.lab.log()[1].output.space;
     r.linearGrey = window.lab.probeAll(0.9, 0.9).L.values[0];
     r.linearRed = window.lab.probeAll(0.0, 0.0).L.values;
@@ -190,7 +192,7 @@ app.whenReady().then(async () => {
 
   test('the bridge exposes only the lab API', () => {
     assert.deepEqual(r.bridge, ['basename', 'draw', 'histogram', 'log', 'openImage',
-      'ops', 'probeAll', 'run', 'saveSession', 'sessionJSON', 'slots', 'versions']);
+      'ops', 'probeAll', 'quote', 'run', 'saveSession', 'sessionJSON', 'slots', 'versions']);
   });
 
   test('no Node globals leak into page script', () => {
@@ -201,6 +203,14 @@ app.whenReady().then(async () => {
 
   test('load is implemented once a decoder is injected', () => {
     assert.equal(r.loadImplemented, true);
+  });
+
+  test('a path with separators survives the command language', () => {
+    // On Windows every backslash would otherwise be eaten as an escape, and
+    // C:\\Users\\… would reach load() as C:Users…. Caught by CI, not by
+    // reasoning: this passes trivially on macOS and Linux.
+    const recorded = r.loadText.match(/path=(.*)\)$/)[1];
+    assert.equal(recorded, r.swatchPath, 'the decoded path is not what was asked for');
   });
 
   test('load decodes to a 3-channel f32 buffer tagged srgb', () => {

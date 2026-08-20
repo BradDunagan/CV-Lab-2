@@ -12,7 +12,7 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
-const { parseStatement, parseScript, ParseError } = require('../src/lab/parser');
+const { parseStatement, parseScript, quoteString, ParseError } = require('../src/lab/parser');
 const { Registry, defineOp } = require('../src/lab/registry');
 const { Session, SessionError } = require('../src/lab/session');
 
@@ -132,6 +132,22 @@ test('reports line and column on a syntax error', () => {
 test('rejects positional after named, and a repeated parameter', () => {
   assert.throws(() => parseStatement('B = scale(by=2, A)'), /positional arguments must come before/);
   assert.throws(() => parseStatement('B = scale(A, by=1, by=2)'), /given twice/);
+});
+
+test('quoteString round-trips paths containing separators', () => {
+  // A Windows path is the case that matters: backslash is an escape here, so
+  // "C:\\Users\\me" would otherwise parse as "C:Usersme". This passes
+  // trivially on POSIX, which is exactly why it was found by CI on Windows
+  // rather than by testing on a Mac.
+  for (const raw of [
+    'C:\\Users\\runner\\AppData\\Local\\Temp\\swatch.png',
+    '/home/me/a b/c.png',
+    'weird "quoted" name.png',
+    'tab\there.png',
+  ]) {
+    const parsed = parseStatement(`X = load(${quoteString(raw)})`);
+    assert.equal(parsed.positional[0].value, raw, `round trip failed for ${raw}`);
+  }
 });
 
 test('parseScript keeps line numbers and skips blanks', () => {

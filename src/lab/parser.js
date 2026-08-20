@@ -207,4 +207,16 @@ function parseScript(source) {
   return out;
 }
 
-module.exports = { parseStatement, parseScript, ParseError };
+/**
+ * Quote a value for the command language — the inverse of the string handling
+ * in `tokenize`.
+ *
+ * Needed because `\` is an escape character here, so a Windows path pasted in
+ * raw loses every separator: `C:\\Users\\me` parses as `C:Usersme`. Anything
+ * building a command from a filesystem path must go through this.
+ */
+function quoteString(value) {
+  return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+module.exports = { parseStatement, parseScript, quoteString, ParseError };

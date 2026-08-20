@@ -21,6 +21,7 @@ const path = require('node:path');
 const native = require('../native');
 const { createRegistry } = require('./lab/ops');
 const { Session } = require('./lab/session');
+const { quoteString } = require('./lab/parser');
 
 /**
  * Decode an image using Chromium's decoder — the reason `load`'s kernel lives
@@ -207,6 +208,9 @@ contextBridge.exposeInMainWorld('lab', {
   openImage: () => ipcRenderer.invoke('dialog:openImage'),
 
   basename: (filePath) => path.basename(filePath),
+
+  /** Quote a value for the command language. Required for filesystem paths. */
+  quote: (value) => quoteString(value),
 
   versions: {
     electron: process.versions.electron,
