@@ -274,6 +274,67 @@ function formatValue(value) {
 }
 
 /* ------------------------------------------------------------------ */
+/* binding parsed arguments to inputs and params                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Map the parser's positional and named arguments onto an op's shape.
+ *
+ * Positional arguments fill the declared inputs first, then the declared
+ * params in order. So `load("a.png")` puts the string into `path` because
+ * load has no inputs, while `sobel(B, x)` puts B into `src` and "x" into
+ * `axis`.
+ *
+ * @returns {{inputSlots: string[], params: object}} slot NAMES, not refs --
+ *          only the session knows which version each name currently binds to.
+ */
+function bindArgs(op, positional = [], named = {}) {
+  const problems = [];
+  const inputSlots = [];
+  const params = {};
+
+  const arity = op.inputs.length;
+  for (let i = 0; i < arity; i++) {
+    const arg = positional[i];
+    if (arg === undefined) {
+      problems.push(`${op.name} input "${op.inputs[i].name}" is missing`);
+      continue;
+    }
+    if (arg.kind !== 'ident') {
+      problems.push(
+        `${op.name} input "${op.inputs[i].name}": expected a slot name, got a ${arg.kind}`
+      );
+      continue;
+    }
+    inputSlots.push(arg.value);
+  }
+
+  const extra = positional.slice(arity);
+  if (extra.length > op.params.length) {
+    problems.push(
+      `${op.name} takes ${arity} input(s) and at most ${op.params.length} ` +
+        `positional parameter(s), got ${positional.length} arguments`
+    );
+  }
+  extra.forEach((arg, index) => {
+    const param = op.params[index];
+    if (!param) return;
+    params[param.name] = arg.value;
+  });
+
+  for (const [key, arg] of Object.entries(named)) {
+    if (Object.prototype.hasOwnProperty.call(params, key)) {
+      problems.push(`${op.name} parameter "${key}" given both positionally and by name`);
+      continue;
+    }
+    params[key] = arg.value;
+  }
+
+  if (problems.length > 0) throw new CallError(problems[0], problems);
+  return { inputSlots, params };
+}
+
+/* ------------------------------------------------------------------ */
 /* the registry itself                                                 */
 /* ------------------------------------------------------------------ */
 
@@ -336,6 +397,7 @@ module.exports = {
   Registry,
   defineOp,
   resolveCall,
+  bindArgs,
   formatCall,
   checkValue,
   OpDefinitionError,
