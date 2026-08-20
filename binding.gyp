@@ -5,7 +5,9 @@
       "sources": [
         "native/addon.c",
         "native/addon_buffer.c",
-        "native/buffer.c"
+        "native/addon_kernels.c",
+        "native/buffer.c",
+        "native/kernels.c"
       ],
       "include_dirs": ["native"],
 

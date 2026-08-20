@@ -146,8 +146,15 @@ test('reports every problem, not just the first', () => {
 
 test('the first slice registers cleanly', () => {
   const r = createRegistry();
-  assert.deepEqual(r.names(), ['gaussian', 'gray', 'load', 'sobel', 'stats', 'threshold']);
-  assert.ok(r.list().every((op) => op.implemented === false), 'no kernels yet, as expected');
+  assert.deepEqual(r.names(),
+    ['gaussian', 'gray', 'load', 'pattern', 'sobel', 'stats', 'threshold']);
+});
+
+test('every op has a kernel except load', () => {
+  const r = createRegistry();
+  const missing = r.list().filter((op) => !op.implemented).map((op) => op.name);
+  // load is deliberately outstanding: where decoding happens is open in §11.
+  assert.deepEqual(missing, ['load']);
 });
 
 test('unknown op names list what is available', () => {

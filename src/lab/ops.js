@@ -12,6 +12,24 @@
 
 const { Registry, defineOp } = require('./registry');
 
+/**
+ * Bind a declared operation to its C kernel.
+ *
+ * `native` is required lazily so this module — and therefore the registry
+ * tests — load without the addon built. Only actually running a kernel needs
+ * it.
+ *
+ * There is no per-operation code here: the kernels share a C signature, so
+ * dispatch is one call whatever the op.
+ */
+function nativeKernel(name, { scalars = false } = {}) {
+  return ({ inputs, params }) => {
+    const native = require('../../native');
+    const result = native.runKernel(name, inputs.map((v) => v.handle), params);
+    return scalars ? { kind: 'scalars', values: result } : { kind: 'buffer', handle: result };
+  };
+}
+
 const ops = [
   defineOp({
     name: 'load',
@@ -28,6 +46,24 @@ const ops = [
     ],
     output: { channels: 3, dtype: 'f32' },
     cancellable: false,
+    // No kernel yet: where decoding happens is the open question in §11.
+    // Chromium's decoder is free and excellent but returns 8-bit RGBA.
+  }),
+
+  defineOp({
+    name: 'pattern',
+    version: 1,
+    summary: 'Generate a synthetic test image. Needs no file.',
+    inputs: [],
+    params: [
+      { name: 'kind', type: 'enum', values: ['ramp', 'checker', 'impulse', 'constant'], default: 'ramp' },
+      { name: 'width', type: 'int', default: 64, min: 1, max: 1 << 20 },
+      { name: 'height', type: 'int', default: 64, min: 1, max: 1 << 20 },
+      { name: 'channels', type: 'int', default: 1, min: 1, max: 4 },
+      { name: 'value', type: 'number', default: 0.5 },
+    ],
+    output: { channels: 'same', dtype: 'f32', space: 'linear' },
+    kernel: nativeKernel('pattern'),
   }),
 
   defineOp({
@@ -41,6 +77,7 @@ const ops = [
     inputs: [{ name: 'src', channels: [3], space: 'linear' }],
     params: [],
     output: { channels: 1, dtype: 'f32', space: 'linear' },
+    kernel: nativeKernel('gray'),
   }),
 
   defineOp({
@@ -56,6 +93,7 @@ const ops = [
       { name: 'preview', type: 'bool', default: false, semantic: false },
     ],
     output: { channels: 'same', dtype: 'f32', space: 'same' },
+    kernel: nativeKernel('gaussian'),
   }),
 
   defineOp({
@@ -69,6 +107,7 @@ const ops = [
       { name: 'axis', type: 'enum', values: ['x', 'y', 'mag'], default: 'mag' },
     ],
     output: { channels: 1, dtype: 'f32', space: 'none' },
+    kernel: nativeKernel('sobel'),
   }),
 
   defineOp({
@@ -84,6 +123,7 @@ const ops = [
     ],
     // A mask is an identity, not a measurement: i32, and no colour space.
     output: { channels: 1, dtype: 'i32', space: 'none' },
+    kernel: nativeKernel('threshold'),
   }),
 
   defineOp({
@@ -95,6 +135,7 @@ const ops = [
     // Reductions must use a fixed summation order (§5): float addition is not
     // associative, so a thread-parallel sum would vary between runs.
     output: { kind: 'scalars' },
+    kernel: nativeKernel('stats', { scalars: true }),
   }),
 ];
 

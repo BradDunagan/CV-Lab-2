@@ -20,6 +20,7 @@
 #include <stdlib.h>
 
 #include "addon_buffer.h"
+#include "addon_kernels.h"
 #include "portable.h"
 
 /* Bail out of a napi_value-returning function if a N-API call fails. */
@@ -237,5 +238,6 @@ NAPI_MODULE_INIT() {
   NAPI_CALL(env, export_fn(env, exports, "invert", Invert));
   NAPI_CALL(env, export_fn(env, exports, "invertSync", InvertSync));
   NAPI_CALL(env, cv_register_buffer_api(env, exports));
+  NAPI_CALL(env, cv_register_kernel_api(env, exports));
   return exports;
 }

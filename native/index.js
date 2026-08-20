@@ -101,4 +101,20 @@ module.exports = {
    * @param {object} handle
    */
   bufferRelease: addon.bufferRelease,
+
+  // --- kernels (design-lab-model.md §3) ---------------------------------
+  //
+  // One entry point for every operation. The kernels share a C signature, so
+  // dispatch is uniform and there is no per-op marshalling anywhere.
+
+  /**
+   * @param {string} name       a kernel from kernelNames()
+   * @param {object[]} inputs   buffer handles
+   * @param {object} [params]   plain values; the kernel reads what it needs
+   * @returns {object} a buffer handle, or a scalars object
+   */
+  runKernel: addon.runKernel,
+
+  /** @returns {string[]} every kernel compiled into the addon */
+  kernelNames: addon.kernelNames,
 };

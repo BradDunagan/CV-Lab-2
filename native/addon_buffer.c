@@ -33,6 +33,10 @@ static void finalize_buffer(napi_env env, void *data, void *hint) {
   free(buffer);
 }
 
+napi_status cv_wrap_buffer(napi_env env, napi_value handle, CvBuffer *buffer) {
+  return napi_wrap(env, handle, buffer, finalize_buffer, NULL, NULL);
+}
+
 static CvBuffer *unwrap(napi_env env, napi_value value) {
   CvBuffer *buffer = NULL;
   if (napi_unwrap(env, value, (void **)&buffer) != napi_ok || buffer == NULL) {

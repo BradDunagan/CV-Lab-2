@@ -17,9 +17,16 @@ const { Registry, defineOp } = require('../src/lab/registry');
 const { Session, SessionError } = require('../src/lab/session');
 
 let failures = 0;
-function test(name, fn) {
-  try { fn(); console.log(`  ok   ${name}`); }
-  catch (err) { failures++; console.error(`  FAIL ${name}\n       ${err.message}`); }
+const queue = [];
+function test(name, fn) { queue.push([name, fn]); }
+
+async function runAll() {
+  for (const [name, fn] of queue) {
+    try { await fn(); console.log(`  ok   ${name}`); }
+    catch (err) { failures++; console.error(`  FAIL ${name}\n       ${err.message}`); }
+  }
+  console.log(failures === 0 ? '\nAll session tests passed.' : `\n${failures} failing.`);
+  process.exit(failures === 0 ? 0 : 1);
 }
 
 /* --- a toy world: buffers are just arrays of numbers ------------------ */
@@ -118,9 +125,9 @@ test('parseScript keeps line numbers and skips blanks', () => {
 
 /* --- execution and the log -------------------------------------------- */
 
-test('executes and appends a canonical entry', () => {
+test('executes and appends a canonical entry', async () => {
   const s = newSession();
-  const entry = s.execute('A = ramp(n=3)');
+  const entry = await s.execute('A = ramp(n=3)');
   assert.equal(entry.n, 1);
   assert.equal(entry.text, 'ramp(n=3)');
   assert.deepEqual(entry.produced, { slot: 'A', version: 1 });
@@ -128,52 +135,52 @@ test('executes and appends a canonical entry', () => {
   assert.match(entry.output.hash, /^[0-9a-f]{64}$/);
 });
 
-test('defaults appear in the log even when not typed', () => {
+test('defaults appear in the log even when not typed', async () => {
   const s = newSession();
-  s.execute('A = ramp()');
+  await s.execute('A = ramp()');
   assert.equal(s.entry(1).text, 'ramp(n=4)', 'default was not resolved into the record');
 });
 
-test('an incidental param does not change the recorded text or hash', () => {
-  const a = newSession(); a.execute('A = ramp()'); a.execute('B = scale(A)');
-  const b = newSession(); b.execute('A = ramp()'); b.execute('B = scale(A, preview=true)');
+test('an incidental param does not change the recorded text or hash', async () => {
+  const a = newSession(); await a.execute('A = ramp()'); await a.execute('B = scale(A)');
+  const b = newSession(); await b.execute('A = ramp()'); await b.execute('B = scale(A, preview=true)');
   assert.equal(a.entry(2).text, b.entry(2).text);
   assert.equal(a.entry(2).output.hash, b.entry(2).output.hash);
 });
 
-test('reassignment appends a version rather than mutating', () => {
+test('reassignment appends a version rather than mutating', async () => {
   const s = newSession();
-  s.execute('A = ramp(n=3)');
-  s.execute('A = scale(A, by=10)');
+  await s.execute('A = ramp(n=3)');
+  await s.execute('A = scale(A, by=10)');
   assert.equal(s.versionOf('A'), 2);
   // The entry that produced A#2 consumed A#1 -- names move, history does not.
   assert.deepEqual(s.entry(2).record.inputs, [{ slot: 'A', version: 1 }]);
   assert.deepEqual(s.entry(2).produced, { slot: 'A', version: 2 });
 });
 
-test('unknown slots and unknown ops are refused', () => {
+test('unknown slots and unknown ops are refused', async () => {
   const s = newSession();
-  assert.throws(() => s.execute('B = scale(Q)'), /unknown slot "Q"/);
-  assert.throws(() => s.execute('B = nope(A)'), /unknown operation/);
+  await assert.rejects(async () => s.execute('B = scale(Q)'), /unknown slot "Q"/);
+  await assert.rejects(async () => s.execute('B = nope(A)'), /unknown operation/);
 });
 
-test('a buffer op needs a target; a scalar op must not have one', () => {
+test('a buffer op needs a target; a scalar op must not have one', async () => {
   const s = newSession();
-  s.execute('A = ramp()');
-  assert.throws(() => s.execute('ramp()'), /needs a target/);
-  assert.throws(() => s.execute('X = total(A)'), /cannot be assigned/);
+  await s.execute('A = ramp()');
+  await assert.rejects(async () => s.execute('ramp()'), /needs a target/);
+  await assert.rejects(async () => s.execute('X = total(A)'), /cannot be assigned/);
 });
 
-test('a declared-but-unimplemented op is refused', () => {
+test('a declared-but-unimplemented op is refused', async () => {
   const { createRegistry } = require('../src/lab/ops');
   const s = new Session({ registry: createRegistry(), buffers: fakeBuffers });
-  assert.throws(() => s.execute('A = load("x.png")'), /no kernel yet/);
+  await assert.rejects(async () => s.execute('A = load("x.png")'), /no kernel yet/);
 });
 
-test('scalars are recorded and hashed too', () => {
+test('scalars are recorded and hashed too', async () => {
   const s = newSession();
-  s.execute('A = ramp(n=4)');
-  const entry = s.execute('total(A)');
+  await s.execute('A = ramp(n=4)');
+  const entry = await s.execute('total(A)');
   assert.equal(entry.produced, null);
   assert.deepEqual(entry.output.values, { sum: 6 });
   assert.match(entry.output.hash, /^[0-9a-f]{64}$/);
@@ -181,11 +188,11 @@ test('scalars are recorded and hashed too', () => {
 
 /* --- the provenance DAG ----------------------------------------------- */
 
-function diamond() {
+async function diamond() {
   // A ─┬─► B ─► C ─┐
   //    └────────────┴─► D     (D reaches A by two routes)
   const s = newSession();
-  s.run(`
+  await s.run(`
     A = ramp(n=4)
     B = scale(A, by=2)
     C = scale(B, by=3)
@@ -194,57 +201,57 @@ function diamond() {
   return s;
 }
 
-test('ancestry is transitive and de-duplicated', () => {
-  const s = diamond();
+test('ancestry is transitive and de-duplicated', async () => {
+  const s = await diamond();
   assert.deepEqual(s.ancestry(4), [1, 2, 3, 4]);
   assert.deepEqual(s.ancestry(2), [1, 2]);
   assert.deepEqual(s.ancestry(1), [1]);
 });
 
-test('a slot reached by two routes appears once, not twice', () => {
-  const s = diamond();
+test('a slot reached by two routes appears once, not twice', async () => {
+  const s = await diamond();
   const ancestors = s.ancestry(4);
   assert.equal(new Set(ancestors).size, ancestors.length, 'duplicate entries in ancestry');
 });
 
-test('consumers read the graph forwards', () => {
-  const s = diamond();
+test('consumers read the graph forwards', async () => {
+  const s = await diamond();
   assert.deepEqual(s.consumers('A', 1), [2, 4], 'A#1 feeds both B and D');
   assert.deepEqual(s.consumers('C', 1), [4]);
   assert.deepEqual(s.consumers('D', 1), []);
 });
 
-test('provenanceOf returns entries, oldest first', () => {
-  const s = diamond();
+test('provenanceOf returns entries, oldest first', async () => {
+  const s = await diamond();
   assert.deepEqual(s.provenanceOf('D').map((e) => e.text),
     ['ramp(n=4)', 'scale(A#1, by=2)', 'scale(B#1, by=3)', 'add(A#1, C#1)']);
 });
 
-test('log entries are frozen', () => {
+test('log entries are frozen', async () => {
   const s = newSession();
-  const entry = s.execute('A = ramp()');
+  const entry = await s.execute('A = ramp()');
   assert.throws(() => { entry.n = 99; }, TypeError);
 });
 
 /* --- persistence and replay ------------------------------------------- */
 
-test('a session round-trips through JSON', () => {
-  const saved = diamond().toJSON();
+test('a session round-trips through JSON', async () => {
+  const saved = (await diamond()).toJSON();
   assert.equal(saved.format, 'cv-lab-2/session');
   assert.equal(saved.entries.length, 4);
   assert.equal(saved.entries[3].text, 'add(A#1, C#1)');
 });
 
-test('replay reproduces every hash', () => {
-  const saved = diamond().toJSON();
-  const { mismatches, entries } = Session.replay(saved,
+test('replay reproduces every hash', async () => {
+  const saved = (await diamond()).toJSON();
+  const { mismatches, entries } = await Session.replay(saved,
     { registry: buildRegistry(), buffers: fakeBuffers });
   assert.equal(entries.length, 4);
   assert.deepEqual(mismatches, [], 'replay did not reproduce the original hashes');
 });
 
-test('replay reports a kernel whose behaviour changed', () => {
-  const saved = diamond().toJSON();
+test('replay reports a kernel whose behaviour changed', async () => {
+  const saved = (await diamond()).toJSON();
   const altered = buildRegistry();
   // Simulate an edited kernel that was not version-bumped.
   const scale = altered.get('scale');
@@ -254,18 +261,17 @@ test('replay reports a kernel whose behaviour changed', () => {
   }) };
   altered._ops.set('scale', Object.freeze(broken));
 
-  const { mismatches } = Session.replay(saved, { registry: altered, buffers: fakeBuffers });
+  const { mismatches } = await Session.replay(saved, { registry: altered, buffers: fakeBuffers });
   assert.equal(mismatches.length, 3, 'expected the changed entry and everything downstream');
   assert.equal(mismatches[0].n, 2);
   assert.notEqual(mismatches[0].expected, mismatches[0].actual);
 });
 
-test('format() renders a readable log', () => {
-  const text = diamond().format();
+test('format() renders a readable log', async () => {
+  const text = (await diamond()).format();
   assert.match(text, /#1 {2}A#1 ← ramp\(n=4\)/);
   assert.match(text, /#4 {2}D#1 ← add\(A#1, C#1\)/);
   assert.match(text, /sha256:[0-9a-f]{8}…/);
 });
 
-console.log(failures === 0 ? '\nAll session tests passed.' : `\n${failures} failing.`);
-process.exit(failures === 0 ? 0 : 1);
+runAll();

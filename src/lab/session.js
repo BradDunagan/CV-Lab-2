@@ -83,15 +83,20 @@ class Session {
 
   /**
    * Parse, validate, execute, and append one log entry.
+   *
+   * Awaitable because kernels will move onto libuv's thread pool so the UI
+   * cannot block (§3). They are synchronous today; making the CONTRACT async
+   * now means that change touches only the kernel binding, not every caller.
+   *
    * @param {string} source one statement of the command language
    */
-  execute(source) {
+  async execute(source) {
     const statement = parseStatement(source);
     if (!statement) return null;
     return this.executeStatement(statement, source);
   }
 
-  executeStatement(statement, source = '') {
+  async executeStatement(statement, source = '') {
     const op = this.registry.get(statement.op);
     const { inputSlots, params } = bindArgs(op, statement.positional, statement.named);
 
@@ -120,7 +125,7 @@ class Session {
    * authoritative, not `entry.text`. The text carries versioned refs like
    * `A#1` for the reader's benefit and is not itself re-parseable.
    */
-  _apply(op, record, target, source = '') {
+  async _apply(op, record, target, source = '') {
     const producesBuffer = op.output.kind !== 'scalars';
     if (producesBuffer && !target) {
       throw new SessionError(`${op.name} produces a buffer, so it needs a target: X = ${op.name}(...)`);
@@ -143,7 +148,7 @@ class Session {
       return binding.value;
     });
 
-    const result = op.kernel({
+    const result = await op.kernel({
       inputs: inputValues,
       params: { ...record.params, ...record.incidental },
       cancelled: () => false, // §3: the flag exists from the first kernel
@@ -194,11 +199,11 @@ class Session {
   }
 
   /** Run a whole script, stopping at the first failure. */
-  run(script) {
+  async run(script) {
     const entries = [];
     for (const { line, source, statement } of parseScript(script)) {
       try {
-        entries.push(this.executeStatement(statement, source));
+        entries.push(await this.executeStatement(statement, source));
       } catch (err) {
         err.message = `line ${line}: ${err.message}`;
         throw err;
@@ -279,7 +284,7 @@ class Session {
    *
    * @returns {{entries:Array, mismatches:Array}}
    */
-  static replay(saved, options) {
+  static async replay(saved, options) {
     if (saved?.format !== 'cv-lab-2/session') {
       throw new SessionError('not a cv-lab-2 session file');
     }
@@ -298,7 +303,7 @@ class Session {
         params: savedEntry.record.params,
       });
 
-      const entry = session._apply(op, record, savedEntry.target, savedEntry.text);
+      const entry = await session._apply(op, record, savedEntry.target, savedEntry.text);
 
       if (entry.output.hash !== savedEntry.output.hash) {
         mismatches.push({
