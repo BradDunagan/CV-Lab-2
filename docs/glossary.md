@@ -6,6 +6,9 @@ use — this is the lookup table, not a replacement for them.
 
 Alphabetical. Grows on request; if a term is missing, it belongs here.
 
+Section references always name their document — both documents number their
+sections from 1, so a bare "§6" would be ambiguous.
+
 ---
 
 ## ABI — application binary interface
@@ -176,7 +179,7 @@ Y = 0.2126·R + 0.7152·G + 0.0722·B     ← luminance, only valid on linear va
 Applying those same weights directly to sRGB-encoded values produces **luma**
 (written `Y'`), which is a different quantity. Most code does this without
 noticing. It is the first place the distinction will bite this project, since
-`gray` is in the first slice of operations in §10.
+`gray` is in the first slice of operations in `design-lab-model.md` §10.
 
 ### Two coherent policies
 
@@ -275,7 +278,8 @@ Use it when a particular value is meaningful and deviation in both directions
 matters. **It must be centred on that value** — pair it with the "symmetric
 about zero" range setting — or it lies about the data.
 
-This is why §6 makes it the default for gradients: a Sobel result is signed, and
+This is why `design-lab-model.md` §6 makes it the default for gradients: a Sobel
+result is signed, and
 a diverging map shows negative one colour, positive the other, and zero as
 neutral. Under `gray` the same data is an undifferentiated smear.
 
@@ -414,7 +418,8 @@ vulnerable code path at all.
 - Once you distribute to other people, **someone else's CVEs become your
   problem.** Chromium has a steady stream of them, and the fixes reach you only
   through an Electron release — which is precisely why Electron supports only
-  the latest three majors, and why staying current is not optional (§5, Tier 2).
+  the latest three majors, and why staying current is not optional
+  (`electron-guide.md` §5, Tier 2).
 
 **Where you will meet them**: `npm audit` output, GitHub Dependabot alerts,
 Electron and Chromium release notes, and any security questionnaire a
@@ -441,7 +446,8 @@ from"*. It is acyclic because a result cannot be its own ancestor — time runs
 one way.
 
 It is a DAG rather than a **tree** because a node may have several parents, and
-one node may be reached by more than one route. In §5's example:
+one node may be reached by more than one route. In `design-lab-model.md` §5's
+example:
 
 ```
 #1 A ──► #2 B ──► #3 C ──► #4 D ──┐
@@ -593,7 +599,7 @@ gives them:
 
 | Rule | Because |
 |---|---|
-| stored as **`i32`, not `f32`** | identity must be exact; float rounding silently merges or invents regions. This is the one deliberate exception to the f32-everywhere rule in §2 |
+| stored as **`i32`, not `f32`** | identity must be exact; float rounding silently merges or invents regions. This is the one deliberate exception to the f32-everywhere rule in `design-lab-model.md` §2 |
 | **never interpolate** — nearest-neighbour only | bilinear sampling between label 3 and label 9 yields 6, a region that may not exist |
 | **never filter** | blurring a label map is nonsense; morphological work is done per-label |
 | **categorical colormap** | a sequential map would imply an ordering that does not exist |
@@ -706,8 +712,8 @@ default in scientific imaging. Costs a histogram pass to compute.
 For signed data, and the partner of a diverging colormap: it guarantees zero
 lands exactly on the neutral midpoint. Under `auto min/max` instead, zero would
 sit off-centre and the colours would misreport sign — a slightly negative pixel
-could appear on the positive side. This pairing is why §6 makes it the default
-for gradients.
+could appear on the positive side. This pairing is why `design-lab-model.md` §6
+makes it the default for gradients.
 
 **Worth knowing:** values outside the range are *clamped*, not discarded, so
 clipping is invisible unless you look for it. Tools often render out-of-range
@@ -796,7 +802,8 @@ project would undermine the very thing the metadata is recording.
 the sidecar, and the provenance is gone. Nothing enforces the pairing except
 the shared filename.
 
-**In this project:** §5 proposes a sidecar on image export, carrying the
+**In this project:** `design-lab-model.md` §5 proposes a sidecar on image
+export, carrying the
 ancestry of just that slot, so an exported PNG can still answer "how was this
 made?"
 
