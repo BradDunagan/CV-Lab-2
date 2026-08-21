@@ -646,6 +646,60 @@ beside it, are this same marker.
 
 ---
 
+## NMS — non-maximum suppression
+
+**Two different algorithms share this name.** Both act on the idea "where
+several responses describe the same thing, keep the strongest" — and there the
+resemblance ends. Code for one is useless for the other, and neither is a
+special case of the other.
+
+| | **Edge NMS** (this project) | **Detection NMS** |
+|---|---|---|
+| Acts on | every pixel | a list of bounding boxes |
+| Compares | one pixel against 2 neighbours | box overlap, by IoU |
+| Needs sorting? | no ordering at all | yes, by confidence score |
+| Produces | thinner edges | fewer duplicate detections |
+| Cost | O(pixels) | O(detections²) |
+
+**Search results will give you the wrong one.** Object detection is where most
+current writing about "NMS" points, so a plain search describes boxes and IoU.
+Look for *"non-maximum suppression Canny"* or *"edge thinning"* instead.
+
+### Edge NMS — the one the `nms` operation implements
+
+Stage three of Canny. A gradient magnitude image has *ridges* several pixels
+wide, because blurring spread the edge out; an edge is one pixel. So for each
+pixel, look along the **gradient direction** — across the ridge, not along it —
+and keep the pixel only if it is at least as large as the two neighbours in
+that direction. Everything else becomes zero.
+
+Looking along the gradient is the whole trick. Comparing against all eight
+neighbours would erase the edge itself, since neighbouring pixels *along* an
+edge have similar magnitudes and are supposed to survive.
+
+The direction is quantised to four — horizontal, vertical, and the two
+diagonals — which is why `nms` needs `gx` and `gy` and not just the magnitude.
+
+One subtlety in this implementation: the comparison is asymmetric, `>` on one
+side and `>=` on the other. With `>=` both ways, a ridge exactly two pixels
+wide keeps both pixels, and thinning is the entire purpose of the stage.
+
+### Detection NMS — the one you will find first
+
+Given many overlapping boxes proposed for the same object: drop everything
+below a confidence threshold, sort the rest by score, take the highest, discard
+every remaining box whose Intersection-over-Union with it exceeds a threshold,
+and repeat. **Soft-NMS** is the variant that decays the scores of overlapping
+boxes instead of deleting them, which behaves better in crowded scenes.
+
+Nothing in this project does this, and it would need a detector first.
+
+**Elsewhere**: the same word collides in signal processing, where "non-maximum
+suppression" means peak-picking in a 1-D signal — the same idea again, in one
+dimension.
+
+---
+
 ## Notarization
 
 **Apple-specific: uploading a signed app to Apple's automated service, which
