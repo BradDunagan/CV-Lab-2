@@ -15,13 +15,14 @@
  *   npm run test:renderer
  */
 
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
 const { encodePNG } = require('../scripts/png');
+const { parseStatement } = require('../src/lab/parser');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -154,6 +155,21 @@ async function collect(win, swatch) {
     r.histogram = scaleOf('P');
 
     r.sessionEntries = window.lab.sessionJSON().entries.length;
+
+    // --- reset, driven through the button ---
+    r.beforeReset = { slots: window.lab.slots().length, tiles: document.querySelectorAll('.tile').length };
+    document.getElementById('reset').click();
+    await new Promise(res => setTimeout(res, 150));
+    r.afterReset = {
+      slots: window.lab.slots().length,
+      tiles: document.querySelectorAll('.tile').length,
+      logLines: document.getElementById('log').children.length,
+      emptyShown: !document.getElementById('empty').hidden,
+    };
+
+    // and the lab still works afterwards
+    await ui('A = pattern(kind=ramp, width=32, height=32)');
+    r.afterResetEntry = window.lab.log().length;
     return r;
   })()`);
 }
@@ -163,6 +179,16 @@ app.whenReady().then(async () => {
   console.log(`cv-lab-2 renderer tests (${runtime}, ${process.platform}/${process.arch})`);
 
   const swatch = writeSwatch();
+
+  /*
+   * This harness runs its own main process, so src/main.js's IPC handlers are
+   * absent. Reset's confirmation is a native modal that would block forever
+   * with nobody to click it, so it is stubbed to answer "discard". The real
+   * dialog lives in src/main.js and is the one thing here that cannot be
+   * exercised headlessly.
+   */
+  ipcMain.handle('session:confirmReset', () => 'discard');
+
   const win = new BrowserWindow({
     show: false,
     width: 1320,
@@ -191,8 +217,9 @@ app.whenReady().then(async () => {
   /* --- the bridge --------------------------------------------------- */
 
   test('the bridge exposes only the lab API', () => {
-    assert.deepEqual(r.bridge, ['basename', 'draw', 'histogram', 'log', 'openImage',
-      'ops', 'probeAll', 'quote', 'run', 'saveSession', 'sessionJSON', 'slots', 'versions']);
+    assert.deepEqual(r.bridge, ['basename', 'confirmReset', 'draw', 'histogram', 'log',
+      'openImage', 'ops', 'probeAll', 'quote', 'reset', 'run', 'saveSession',
+      'sessionJSON', 'slots', 'versions']);
   });
 
   test('no Node globals leak into page script', () => {
@@ -209,8 +236,12 @@ app.whenReady().then(async () => {
     // On Windows every backslash would otherwise be eaten as an escape, and
     // C:\\Users\\… would reach load() as C:Users…. Caught by CI, not by
     // reasoning: this passes trivially on macOS and Linux.
-    const recorded = r.loadText.match(/path=(.*)\)$/)[1];
-    assert.equal(recorded, r.swatchPath, 'the decoded path is not what was asked for');
+    //
+    // Parsing the log line rather than pattern-matching it also asserts the
+    // stronger property: what the log displays is something the parser accepts.
+    const reparsed = parseStatement(`X = ${r.loadText}`);
+    assert.equal(reparsed.named.path.value, r.swatchPath,
+      'the recorded path is not the path that was asked for');
   });
 
   test('load decodes to a 3-channel f32 buffer tagged srgb', () => {
@@ -284,6 +315,16 @@ app.whenReady().then(async () => {
 
   test('the session is complete and saveable', () => {
     assert.equal(r.sessionEntries, r.tiles.length, 'one entry per slot produced');
+  });
+
+  test('reset clears every slot, tile and log line', () => {
+    assert.ok(r.beforeReset.slots > 0 && r.beforeReset.tiles > 0, 'nothing to reset');
+    assert.deepEqual(r.afterReset,
+      { slots: 0, tiles: 0, logLines: 0, emptyShown: true });
+  });
+
+  test('the lab works again after a reset', () => {
+    assert.equal(r.afterResetEntry, 1, 'the log should restart at one entry');
   });
 
   test('the page logged no errors', () => {

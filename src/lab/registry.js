@@ -14,6 +14,8 @@
  * tested under plain node.
  */
 
+const { quoteString } = require('./parser');
+
 const PARAM_TYPES = new Set(['number', 'int', 'bool', 'enum', 'string']);
 const DTYPES = new Set(['f32', 'i32']);
 const SPACES = new Set(['none', 'srgb', 'linear']);
@@ -267,10 +269,20 @@ function formatCall(record) {
   return `${record.op}(${args.join(', ')})`;
 }
 
+/**
+ * Render a value as the command language would accept it back.
+ *
+ * Strings are quoted unless they are bare identifiers, so `axis=mag` stays
+ * readable while `path="/Users/me/a.png"` round-trips. Rendering a path
+ * unquoted made the log display something the parser rejects — pasting a log
+ * line back gave `unexpected character "/"`.
+ */
 function formatValue(value) {
-  if (typeof value === 'string') return value;
   if (typeof value === 'boolean') return value ? 'true' : 'false';
-  return String(value);
+  if (typeof value !== 'string') return String(value);
+  const bare = /^[A-Za-z_][A-Za-z0-9_]*$/.test(value)
+    && value !== 'true' && value !== 'false';
+  return bare ? value : quoteString(value);
 }
 
 /* ------------------------------------------------------------------ */

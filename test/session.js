@@ -31,10 +31,11 @@ async function runAll() {
 
 /* --- a toy world: buffers are just arrays of numbers ------------------ */
 
+const released = [];
 const fakeBuffers = {
   describe: (h) => ({ width: h.values.length, height: 1, channels: 1, dtype: 'f32', space: h.space }),
   hash: (h) => crypto.createHash('sha256').update(Buffer.from(Float32Array.from(h.values).buffer)).digest('hex'),
-  release: () => {},
+  release: (h) => released.push(h),
 };
 
 function buildRegistry() {
@@ -295,6 +296,58 @@ test('log entries are frozen', async () => {
   const s = newSession();
   const entry = await s.execute('A = ramp()');
   assert.throws(() => { entry.n = 99; }, TypeError);
+});
+
+/* --- freeing memory ---------------------------------------------------- */
+
+test('rebinding a slot releases the superseded buffer', async () => {
+  const s = newSession();
+  released.length = 0;
+  await s.execute('A = ramp(n=3)');
+  const first = s.slots.get('A').value.handle;
+  await s.execute('A = scale(A, by=2)');
+  assert.deepEqual(released, [first],
+    'A#1 should be freed immediately: it can never be used again');
+});
+
+test('an old version can never be referenced, which is what makes that safe', async () => {
+  const s = newSession();
+  await s.execute('A = ramp(n=3)');
+  await s.execute('A = scale(A, by=2)');
+  // _apply refuses a ref whose version is not the current binding.
+  await assert.rejects(
+    async () => s._apply(s.registry.get('scale'),
+      { op: 'scale', version: 1, inputs: [{ slot: 'A', version: 1 }], params: { by: 1 }, incidental: {} },
+      'Z'),
+    /A#1 is no longer bound/);
+});
+
+test('reset discards everything and frees every buffer', async () => {
+  const s = newSession();
+  await s.run('A = ramp(n=3)\nB = scale(A, by=2)\nC = scale(B, by=2)');
+  released.length = 0;
+  const live = [...s.slots.values()].map((b) => b.value.handle);
+
+  const discarded = s.reset();
+  assert.deepEqual(discarded, { entries: 3, slots: 3 });
+  assert.equal(s.slots.size, 0);
+  assert.equal(s.log.length, 0);
+  assert.deepEqual(released.sort(), live.sort(), 'every live buffer should be freed');
+});
+
+test('the session is usable again after a reset, numbering from 1', async () => {
+  const s = newSession();
+  await s.execute('A = ramp(n=3)');
+  s.reset();
+  const entry = await s.execute('A = ramp(n=5)');
+  assert.equal(entry.n, 1);
+  assert.deepEqual(entry.produced, { slot: 'A', version: 1 }, 'versions restart too');
+  assert.deepEqual(s.ancestry(1), [1]);
+});
+
+test('reset on an empty session is a no-op', () => {
+  const s = newSession();
+  assert.deepEqual(s.reset(), { entries: 0, slots: 0 });
 });
 
 /* --- persistence and replay ------------------------------------------- */

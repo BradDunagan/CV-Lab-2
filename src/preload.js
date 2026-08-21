@@ -199,6 +199,16 @@ contextBridge.exposeInMainWorld('lab', {
     return out;
   },
 
+  /**
+   * Throw everything away and start over. Frees buffer memory immediately
+   * rather than waiting for GC.
+   * @returns {{entries:number, slots:number}} what was discarded
+   */
+  reset: () => session.reset(),
+
+  /** Ask the main process to confirm, since reset destroys the log. */
+  confirmReset: (entries) => ipcRenderer.invoke('session:confirmReset', entries),
+
   /** The whole session, ready to write to disk. */
   sessionJSON: () => session.toJSON(),
 

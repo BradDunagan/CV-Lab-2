@@ -16,6 +16,7 @@ const els = {
   cols: document.getElementById('cols'),
   fit: document.getElementById('fit'),
   save: document.getElementById('save'),
+  reset: document.getElementById('reset'),
   log: document.getElementById('log'),
   probe: document.getElementById('probe'),
   status: document.getElementById('status'),
@@ -434,6 +435,32 @@ els.save.addEventListener('click', async () => {
   } catch (err) {
     setStatus(err.message, 'error');
   }
+});
+
+els.reset.addEventListener('click', async () => {
+  const entries = window.lab.log().length;
+
+  // Only confirm when there is something to lose. Discarding an empty session
+  // is not a decision worth interrupting for.
+  if (entries > 0) {
+    const answer = await window.lab.confirmReset(entries);
+    if (answer === 'cancel') return;
+    if (answer === 'save') {
+      const saved = await window.lab.saveSession();
+      if (!saved) { setStatus('Save cancelled — nothing was discarded.'); return; }
+    }
+  }
+
+  const discarded = window.lab.reset();
+  views.clear();
+  els.log.textContent = '';
+  viewport.x = 0; viewport.y = 0; viewport.w = 1; viewport.h = 1;
+  history.length = 0;
+  historyIndex = 0;
+  refreshTiles();
+  setStatus(discarded.entries === 0
+    ? 'Nothing to discard.'
+    : `Discarded ${discarded.slots} slot(s) and ${discarded.entries} log entries.`, 'ok');
 });
 
 /* ------------------------------------------------------------------ */

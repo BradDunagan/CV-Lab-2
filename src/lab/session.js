@@ -168,6 +168,18 @@ class Session {
     if (producesBuffer) {
       const previous = this.slots.get(target);
       const version = (previous?.version ?? 0) + 1;
+
+      /*
+       * Free the superseded buffer now rather than leaving it to GC.
+       * `A = gaussian(A)` binds A#2 and makes A#1 unreachable — and an old
+       * version can never be used again, because _apply refuses a ref whose
+       * version is not the current binding. At 48 MB a slot, waiting for the
+       * collector is not acceptable (§8).
+       */
+      if (previous && previous.value.kind === 'buffer') {
+        this.buffers.release(previous.value.handle);
+      }
+
       this.slots.set(target, { version, value: result });
       entry.produced = { slot: target, version };
       this._producedBy.set(key(target, version), n);
@@ -344,6 +356,27 @@ class Session {
       }
     }
     return { session, entries: session.log, mismatches };
+  }
+
+  /**
+   * Discard every slot and the whole log, freeing buffer memory immediately.
+   *
+   * Deliberately destructive and deliberately not an operation: it cannot go
+   * in the log, because it destroys the log. Callers holding anything worth
+   * keeping should save first.
+   *
+   * @returns {{entries:number, slots:number}} what was discarded
+   */
+  reset() {
+    const discarded = { entries: this.log.length, slots: this.slots.size };
+    for (const binding of this.slots.values()) {
+      if (binding.value.kind === 'buffer') this.buffers.release(binding.value.handle);
+    }
+    this.slots.clear();
+    this.log.length = 0;
+    this._producedBy.clear();
+    this._consumedBy.clear();
+    return discarded;
   }
 
   /** The log as the user sees it, one line per entry. */

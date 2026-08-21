@@ -10,6 +10,7 @@ const assert = require('node:assert/strict');
 const {
   defineOp, resolveCall, formatCall, OpDefinitionError, CallError,
 } = require('../src/lab/registry');
+const { parseStatement } = require('../src/lab/parser');
 const { createRegistry } = require('../src/lab/ops');
 
 let failures = 0;
@@ -97,6 +98,35 @@ test('incidental params are kept out of the record', () => {
 
 test('the record carries the op version', () => {
   assert.equal(resolveCall(SOBEL, { inputs: [ref('B', 2)], params: {} }).version, 1);
+});
+
+test('formatted commands parse back', () => {
+  // The log renders the canonical form of a call. Rendering a path unquoted
+  // made it display something the parser rejects: pasting a log line back
+  // gave `unexpected character "/"`.
+  const OP = defineOp({
+    name: 'load', version: 1, inputs: [],
+    params: [
+      { name: 'path', type: 'string', default: '' },
+      { name: 'as', type: 'enum', values: ['srgb', 'linear'], default: 'srgb' },
+    ],
+    output: { channels: 3, dtype: 'f32' },
+  });
+  for (const path of [
+    '/Users/me/Downloads/ABC-x0.20-y1.00-z0.70.png',
+    'C:\\Users\\me\\a b.png',
+    'has "quotes".png',
+    '',
+  ]) {
+    const text = formatCall(resolveCall(OP, { inputs: [], params: { path } }));
+    const reparsed = parseStatement(`X = ${text}`);
+    assert.equal(reparsed.named.path.value, path, `round trip failed for ${JSON.stringify(path)}`);
+  }
+});
+
+test('identifier-like strings stay unquoted for readability', () => {
+  const record = resolveCall(SOBEL, { inputs: [ref('B', 2)], params: { axis: 'x' } });
+  assert.equal(formatCall(record), 'sobel(B#2, axis=x, scale=1)');
 });
 
 test('param order is canonical regardless of call order', () => {

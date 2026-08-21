@@ -68,6 +68,21 @@ ipcMain.handle('dialog:openImage', async (event) => {
   return canceled || filePaths.length === 0 ? null : filePaths[0];
 });
 
+ipcMain.handle('session:confirmReset', async (event, entries) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    message: 'Discard the session?',
+    detail: `${entries} log ${entries === 1 ? 'entry' : 'entries'} and every slot will be ` +
+      `thrown away. The log is the record of how these results were produced — ` +
+      `once discarded it cannot be recovered.`,
+    buttons: ['Cancel', 'Save first…', 'Discard'],
+    defaultId: 0,
+    cancelId: 0,
+  });
+  return ['cancel', 'save', 'discard'][response];
+});
+
 app.whenReady().then(() => {
   createWindow();
 
