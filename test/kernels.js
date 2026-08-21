@@ -39,7 +39,8 @@ console.log(`cv-lab-2 kernel tests (${runtime}, ${process.platform}/${process.ar
 
 test('every kernel is reachable by name', () => {
   assert.deepEqual(native.kernelNames(),
-    ['pattern', 'gray', 'gaussian', 'sobel', 'threshold', 'stats', 'toLinear', 'toSrgb']);
+    ['pattern', 'gray', 'gaussian', 'sobel', 'threshold', 'stats', 'toLinear',
+     'toSrgb', 'nms', 'hysteresis']);
 });
 
 test('an unknown kernel and a wrong input count are refused', () => {
@@ -287,6 +288,166 @@ test('values outside 0..1 pass through rather than being clamped', () => {
   assert.equal(out[0], -0.5);
   assert.equal(out[2], 2.0);
   assert.ok(out[1] < 0.5, 'in-range values still convert');
+});
+
+/* --- nms: Canny stage 3 ------------------------------------------------- */
+
+function mono(values, width, height = 1) {
+  const b = native.createBuffer({ width, height, channels: 1, dtype: 'f32' });
+  native.bufferWrite(b, Float32Array.from(values));
+  return b;
+}
+const fill = (n, v) => mono(new Array(n).fill(v), n);
+
+test('nms keeps only the maximum across the gradient direction', () => {
+  const out = read(run('nms',
+    [mono([0, 1, 2, 1, 0], 5), fill(5, 1), fill(5, 0)]));
+  assert.deepEqual(out, [0, 0, 2, 0, 0]);
+});
+
+test('nms thins a ridge exactly two pixels wide to one', () => {
+  // The reason the comparison is asymmetric: with >= on both sides these two
+  // equal pixels would both survive, and thinning is the whole job.
+  const out = read(run('nms',
+    [mono([0, 2, 2, 0], 4), fill(4, 1), fill(4, 0)]));
+  assert.deepEqual(out, [0, 2, 0, 0]);
+});
+
+test('nms follows the gradient direction, not the image axes', () => {
+  // Same magnitudes, different gradient: the answer must change.
+  const mag = () => mono([0, 1, 2, 1, 0], 5);
+  const across = read(run('nms', [mag(), fill(5, 1), fill(5, 0)]));   // horizontal
+  const along = read(run('nms', [mag(), fill(5, 0), fill(5, 1)]));    // vertical
+  assert.deepEqual(across, [0, 0, 2, 0, 0], 'thins across a horizontal gradient');
+  assert.deepEqual(along, [0, 0, 0, 0, 0],
+    'a vertical gradient has no vertical neighbours in a 1-row image');
+});
+
+test('nms handles a diagonal gradient', () => {
+  const grid = (v) => mono(v, 3, 3);
+  const gx = mono(new Array(9).fill(1), 3, 3);
+  const gy = mono(new Array(9).fill(1), 3, 3);
+  // centre is the max along the (1,1) diagonal
+  let out = read(run('nms', [grid([1,0,0, 0,2,0, 0,0,1]), gx, gy]));
+  assert.equal(out[4], 2, 'centre should survive');
+  // now a larger neighbour sits on that diagonal
+  out = read(run('nms', [grid([3,0,0, 0,2,0, 0,0,1]), gx, gy]));
+  assert.equal(out[4], 0, 'centre should be suppressed by the diagonal neighbour');
+});
+
+test('nms leaves zero magnitude alone and rejects mismatched shapes', () => {
+  assert.deepEqual(read(run('nms', [fill(4, 0), fill(4, 1), fill(4, 0)])), [0, 0, 0, 0]);
+  assert.throws(() => run('nms', [mono([1, 2, 3], 3), fill(4, 1), fill(4, 0)]),
+    /same dimensions/);
+  assert.throws(() => native.runKernel('nms', [fill(4, 1), fill(4, 1)], {}), /takes 3 input/);
+});
+
+test('nms reduces the number of lit pixels on a real edge map', () => {
+  const checker = run('pattern', [], { kind: 'checker', width: 64, height: 64 });
+  const blurred = run('gaussian', [checker], { sigma: 1.4 });
+  const mag = run('sobel', [blurred], { axis: 'mag' });
+  const gx = run('sobel', [blurred], { axis: 'x' });
+  const gy = run('sobel', [blurred], { axis: 'y' });
+  const thinned = read(run('nms', [mag, gx, gy]));
+  const before = read(mag).filter((v) => v > 1e-4).length;
+  const after = thinned.filter((v) => v > 1e-4).length;
+  assert.ok(after < before * 0.75, `expected thinning: ${before} -> ${after}`);
+  assert.ok(after > 0, 'everything was suppressed');
+});
+
+/* --- hysteresis: Canny stage 4 ------------------------------------------ */
+
+test('hysteresis keeps weak pixels connected to a strong one', () => {
+  const out = read(run('hysteresis', [mono([0.2, 0.07, 0.07, 0.0, 0.07], 5)],
+    { low: 0.05, high: 0.15 }));
+  //          strong  weak   weak   gap   isolated weak
+  assert.deepEqual(out, [1, 1, 1, 0, 0]);
+});
+
+test('hysteresis drops a weak run with no strong seed', () => {
+  const out = read(run('hysteresis', [mono([0.07, 0.07, 0.07], 3)], { low: 0.05, high: 0.15 }));
+  assert.deepEqual(out, [0, 0, 0]);
+});
+
+test('hysteresis connects diagonally, not just orthogonally', () => {
+  const b = native.createBuffer({ width: 3, height: 3, channels: 1 });
+  native.bufferWrite(b, Float32Array.from([
+    0.2, 0.0, 0.0,
+    0.0, 0.07, 0.0,
+    0.0, 0.0, 0.07,
+  ]));
+  const out = read(run('hysteresis', [b], { low: 0.05, high: 0.15 }));
+  assert.deepEqual(out, [1, 0, 0, 0, 1, 0, 0, 0, 1], '8-connectivity expected');
+});
+
+test('hysteresis does not wrap around an image edge', () => {
+  // Reflection is right for a convolution and wrong for connectivity: the
+  // last pixel of one row does not touch the first pixel of the next.
+  const b = native.createBuffer({ width: 3, height: 2, channels: 1 });
+  native.bufferWrite(b, Float32Array.from([
+    0.0, 0.0, 0.2,
+    0.07, 0.0, 0.0,
+  ]));
+  const out = read(run('hysteresis', [b], { low: 0.05, high: 0.15 }));
+  assert.equal(out[3], 0, 'row 1 column 0 must not be reached from row 0 column 2');
+});
+
+test('hysteresis output is an i32 mask with no colour space', () => {
+  const info = native.bufferInfo(run('hysteresis', [mono([0.2], 1)], { low: 0.05, high: 0.15 }));
+  assert.equal(info.dtype, 'i32');
+  assert.equal(info.space, 'none');
+});
+
+test('hysteresis refuses low above high', () => {
+  assert.throws(() => run('hysteresis', [mono([0.2], 1)], { low: 0.5, high: 0.1 }),
+    /low must not exceed high/);
+});
+
+test('hysteresis is deterministic', () => {
+  const checker = run('pattern', [], { kind: 'checker', width: 48, height: 48 });
+  const blurred = run('gaussian', [checker], { sigma: 1.2 });
+  const mag = run('sobel', [blurred], { axis: 'mag' });
+  const first = read(run('hysteresis', [mag], { low: 0.02, high: 0.06 }));
+  for (let i = 0; i < 3; i++) {
+    assert.deepEqual(read(run('hysteresis', [mag], { low: 0.02, high: 0.06 })), first);
+  }
+});
+
+test('a full Canny chain finds exactly the checkerboard boundaries', () => {
+  // A 64x64 checkerboard of 8-pixel blocks has 7 internal vertical and 7
+  // internal horizontal boundaries. That makes the answer checkable against
+  // geometry rather than against a tolerance someone guessed.
+  const W = 64;
+  const checker = run('pattern', [], { kind: 'checker', width: W, height: W });
+  const blurred = run('gaussian', [checker], { sigma: 1.4 });
+  const gx = run('sobel', [blurred], { axis: 'x' });
+  const gy = run('sobel', [blurred], { axis: 'y' });
+  const mag = run('sobel', [blurred], { axis: 'mag' });
+  const edges = read(run('hysteresis', [run('nms', [mag, gx, gy])],
+    { low: 0.01, high: 0.04 }));
+
+  assert.ok(edges.every((v) => v === 0 || v === 1), 'mask must be 0/1 only');
+
+  // Row 4 sits inside a block vertically, so it crosses only the vertical
+  // boundaries: one lit pixel each, and nothing else.
+  const row = edges.slice(4 * W, 5 * W);
+  assert.equal(row.filter((v) => v === 1).length, 7,
+    `expected one pixel per internal vertical boundary, got ${row.join('')}`);
+
+  // And each of those is a single pixel: no two adjacent. This is what nms
+  // is for — before thinning, a blurred edge is several pixels wide.
+  for (let x = 1; x < W; x++) {
+    assert.ok(!(row[x] === 1 && row[x - 1] === 1),
+      `edge is more than one pixel wide at x=${x}`);
+  }
+
+  // Lit pixels land on boundaries, never in the middle of a flat block.
+  for (let x = 0; x < W; x++) {
+    if (row[x] === 1) {
+      const distance = Math.min(x % 8, 8 - (x % 8));
+      assert.ok(distance <= 1, `lit pixel at x=${x} is not near a block boundary`);
+    }
+  }
 });
 
 /* --- hostile inputs ---------------------------------------------------- */

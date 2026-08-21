@@ -154,6 +154,35 @@ function buildOps({ decodeFile } = {}) {
     }),
 
     defineOp({
+      name: 'nms',
+      version: 1,
+      summary: 'Non-maximum suppression: thin gradient ridges to one pixel.',
+      // Canny stage 3. Takes the magnitude and both signed derivatives,
+      // because thinning has to happen ALONG the gradient direction.
+      inputs: [
+        { name: 'mag', channels: [1], space: 'any' },
+        { name: 'gx', channels: [1], space: 'any' },
+        { name: 'gy', channels: [1], space: 'any' },
+      ],
+      params: [],
+      output: { channels: 1, dtype: 'f32', space: 'none' },
+      kernel: nativeKernel('nms'),
+    }),
+
+    defineOp({
+      name: 'hysteresis',
+      version: 1,
+      summary: 'Double-threshold edge tracking: keep weak edges joined to strong ones.',
+      inputs: [{ name: 'src', channels: [1], space: 'any' }],
+      params: [
+        { name: 'low', type: 'number', default: 0.05, min: 0 },
+        { name: 'high', type: 'number', default: 0.15, min: 0 },
+      ],
+      output: { channels: 1, dtype: 'i32', space: 'none' },
+      kernel: nativeKernel('hysteresis'),
+    }),
+
+    defineOp({
       name: 'threshold',
       version: 1,
       summary: 'Binary mask: 1 where the input exceeds t, else 0.',

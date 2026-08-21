@@ -415,6 +415,13 @@ static CvStatus k_to_srgb(const CvBuffer *const *inputs, size_t n_inputs,
   return convert_space(inputs[0], out, CV_SPACE_SRGB, ctx);
 }
 
+static CvStatus k_nms(const CvBuffer *const *inputs, size_t n_inputs,
+                      const CvParams *params, CvBuffer *out,
+                      CvScalars *scalars, const CvKernelCtx *ctx);
+static CvStatus k_hysteresis(const CvBuffer *const *inputs, size_t n_inputs,
+                             const CvParams *params, CvBuffer *out,
+                             CvScalars *scalars, const CvKernelCtx *ctx);
+
 /* ------------------------------------------------------------------ */
 /* the table                                                            */
 /* ------------------------------------------------------------------ */
@@ -428,6 +435,8 @@ static const CvKernelEntry KERNELS[] = {
   { "stats",     k_stats,     1, false },
   { "toLinear",  k_to_linear, 1, true  },
   { "toSrgb",    k_to_srgb,   1, true  },
+  { "nms",        k_nms,        3, true },
+  { "hysteresis", k_hysteresis, 1, true },
 };
 
 const CvKernelEntry *cv_kernel_lookup(const char *name) {
@@ -442,4 +451,181 @@ size_t cv_kernel_count(void) { return sizeof(KERNELS) / sizeof(KERNELS[0]); }
 
 const CvKernelEntry *cv_kernel_at(size_t index) {
   return (index < cv_kernel_count()) ? &KERNELS[index] : NULL;
+}
+
+/* ------------------------------------------------------------------ */
+/* nms(mag, gx, gy) -- non-maximum suppression                          */
+/*                                                                      */
+/* Canny stage 3. A gradient magnitude image has ridges several pixels  */
+/* wide; an edge is one pixel. Keep a pixel only where it is a maximum  */
+/* ALONG the gradient direction -- across the ridge, not along it.      */
+/*                                                                      */
+/* The direction is quantised to four, using ratio comparisons rather   */
+/* than atan2: tan(22.5 deg) and tan(67.5 deg) are the two boundaries.  */
+/* ------------------------------------------------------------------ */
+
+#define CV_TAN_22_5 0.41421356237309503
+#define CV_TAN_67_5 2.41421356237309515
+
+static CvStatus k_nms(const CvBuffer *const *inputs, size_t n_inputs,
+                      const CvParams *params, CvBuffer *out,
+                      CvScalars *scalars, const CvKernelCtx *ctx) {
+  (void)n_inputs; (void)params; (void)scalars;
+  const CvBuffer *mag = inputs[0];
+  const CvBuffer *gx = inputs[1];
+  const CvBuffer *gy = inputs[2];
+
+  if (mag->channels != 1 || gx->channels != 1 || gy->channels != 1) return CV_ERR_CHANNELS;
+  if (mag->dtype != CV_DTYPE_F32 || gx->dtype != CV_DTYPE_F32 || gy->dtype != CV_DTYPE_F32) {
+    return CV_ERR_DTYPE;
+  }
+  if (gx->width != mag->width || gx->height != mag->height ||
+      gy->width != mag->width || gy->height != mag->height) {
+    return CV_ERR_SHAPE;
+  }
+
+  CvStatus status = cv_buffer_alloc(out, mag->width, mag->height, 1,
+                                    CV_DTYPE_F32, CV_SPACE_NONE);
+  if (status != CV_OK) return status;
+
+  const int64_t rows = mag->height, cols = mag->width;
+  const float *m = f32(mag), *dx = f32(gx), *dy = f32(gy);
+  float *dst = f32(out);
+
+  for (int64_t y = 0; y < rows; y++) {
+    if ((y & 63) == 0 && is_cancelled(ctx)) { cv_buffer_free(out); return CV_ERR_CANCELLED; }
+    for (int64_t x = 0; x < cols; x++) {
+      const size_t i = (size_t)(y * cols + x);
+      const double value = m[i];
+      if (value <= 0.0) { dst[i] = 0.0f; continue; }
+
+      const double ax = fabs((double)dx[i]);
+      const double ay = fabs((double)dy[i]);
+
+      int64_t sx, sy;
+      if (ay <= ax * CV_TAN_22_5) {          /* gradient mostly horizontal */
+        sx = 1; sy = 0;
+      } else if (ay >= ax * CV_TAN_67_5) {   /* mostly vertical */
+        sx = 0; sy = 1;
+      } else if ((double)dx[i] * (double)dy[i] > 0.0) {
+        sx = 1; sy = 1;
+      } else {
+        sx = 1; sy = -1;
+      }
+
+      const double before = m[reflect(y - sy, rows) * cols + reflect(x - sx, cols)];
+      const double after  = m[reflect(y + sy, rows) * cols + reflect(x + sx, cols)];
+
+      /*
+       * Asymmetric on purpose: `>` one way and `>=` the other. With `>=` both
+       * ways a ridge exactly two pixels wide keeps both, and the whole point
+       * of this stage is to leave one.
+       */
+      dst[i] = (value > before && value >= after) ? (float)value : 0.0f;
+    }
+  }
+  return CV_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* hysteresis(src, low, high) -> i32 mask                               */
+/*                                                                      */
+/* Canny stage 4. Two thresholds: anything above `high` is an edge;     */
+/* anything above `low` is an edge only if it connects, through other   */
+/* above-low pixels, to something above `high`. That is what keeps a    */
+/* faint continuation of a strong edge while dropping isolated noise.   */
+/*                                                                      */
+/* Order-independent by construction -- a pixel either reaches a strong  */
+/* seed or it does not -- so unlike a reduction this needs no care about */
+/* traversal order to stay deterministic (§5).                          */
+/* ------------------------------------------------------------------ */
+
+static CvStatus k_hysteresis(const CvBuffer *const *inputs, size_t n_inputs,
+                             const CvParams *params, CvBuffer *out,
+                             CvScalars *scalars, const CvKernelCtx *ctx) {
+  (void)n_inputs; (void)scalars;
+  const CvBuffer *src = inputs[0];
+  if (src->channels != 1) return CV_ERR_CHANNELS;
+  if (src->dtype != CV_DTYPE_F32) return CV_ERR_DTYPE;
+
+  const double low = cv_param_num(params, "low", 0.05);
+  const double high = cv_param_num(params, "high", 0.15);
+  if (low > high) return CV_ERR_PARAM;
+
+  CvStatus status = cv_buffer_alloc(out, src->width, src->height, 1,
+                                    CV_DTYPE_I32, CV_SPACE_NONE);
+  if (status != CV_OK) return status;
+
+  const int64_t rows = src->height, cols = src->width;
+  const float *m = f32(src);
+  int32_t *dst = (int32_t *)out->data;
+  const size_t n = (size_t)rows * (size_t)cols;
+
+  /*
+   * A stack of pixels waiting to be walked from. Each pixel is pushed at most
+   * once, because it is marked before being pushed -- so the worst case is n,
+   * but a typical edge map needs a small fraction of that. Start small and
+   * double, rather than allocating 96 MB for a 12 MP image that will use a
+   * few hundred kilobytes.
+   */
+  size_t capacity = 1024;
+  int64_t *stack = (int64_t *)malloc(capacity * sizeof(int64_t));
+  if (stack == NULL) { cv_buffer_free(out); return CV_ERR_ALLOC; }
+  size_t top = 0;
+
+  for (size_t i = 0; i < n; i++) {
+    if ((double)m[i] >= high) {
+      dst[i] = 1;
+      if (top == capacity) {
+        const size_t grown = capacity * 2;
+        int64_t *bigger = (int64_t *)realloc(stack, grown * sizeof(int64_t));
+        if (bigger == NULL) { free(stack); cv_buffer_free(out); return CV_ERR_ALLOC; }
+        stack = bigger;
+        capacity = grown;
+      }
+      stack[top++] = (int64_t)i;
+    }
+  }
+
+  /*
+   * The first kernel whose work is data-dependent rather than a fixed pixel
+   * loop, and therefore the first where polling the cancellation flag mid-run
+   * actually matters.
+   */
+  size_t since_check = 0;
+  while (top > 0) {
+    if (++since_check >= 4096) {
+      since_check = 0;
+      if (is_cancelled(ctx)) { free(stack); cv_buffer_free(out); return CV_ERR_CANCELLED; }
+    }
+
+    const int64_t index = stack[--top];
+    const int64_t y = index / cols;
+    const int64_t x = index % cols;
+
+    for (int64_t dy = -1; dy <= 1; dy++) {
+      for (int64_t dx = -1; dx <= 1; dx++) {
+        if (dx == 0 && dy == 0) continue;
+        const int64_t ny = y + dy, nx = x + dx;
+        if (ny < 0 || nx < 0 || ny >= rows || nx >= cols) continue;   /* no reflection here:
+                                                                         connectivity must not
+                                                                         wrap around an edge */
+        const size_t ni = (size_t)(ny * cols + nx);
+        if (dst[ni] != 0) continue;
+        if ((double)m[ni] < low) continue;
+        dst[ni] = 1;
+        if (top == capacity) {
+          const size_t grown = capacity * 2;
+          int64_t *bigger = (int64_t *)realloc(stack, grown * sizeof(int64_t));
+          if (bigger == NULL) { free(stack); cv_buffer_free(out); return CV_ERR_ALLOC; }
+          stack = bigger;
+          capacity = grown;
+        }
+        stack[top++] = (int64_t)ni;
+      }
+    }
+  }
+
+  free(stack);
+  return CV_OK;
 }

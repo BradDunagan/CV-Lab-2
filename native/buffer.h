@@ -33,7 +33,9 @@ typedef enum {
   CV_ERR_DTYPE,
   CV_ERR_OVERFLOW,  /* size computation overflowed */
   CV_ERR_ALLOC,
-  CV_ERR_CANCELLED
+  CV_ERR_CANCELLED,
+  CV_ERR_PARAM,     /* a parameter is out of range, or inconsistent with another */
+  CV_ERR_SHAPE      /* inputs disagree about their dimensions */
 } CvStatus;
 
 /* A region of interest, in buffer coordinates. Lives here rather than with

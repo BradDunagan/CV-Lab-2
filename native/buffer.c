@@ -36,6 +36,8 @@ const char *cv_status_str(CvStatus status) {
     case CV_ERR_OVERFLOW: return "buffer size overflows";
     case CV_ERR_ALLOC: return "allocation failed";
     case CV_ERR_CANCELLED: return "cancelled";
+    case CV_ERR_PARAM: return "parameter out of range (low must not exceed high)";
+    case CV_ERR_SHAPE: return "inputs must all have the same dimensions";
     default: return "unknown error";
   }
 }
