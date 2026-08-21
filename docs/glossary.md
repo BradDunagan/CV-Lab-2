@@ -469,6 +469,67 @@ dependencies in `make`, spreadsheet formula dependencies.
 
 ---
 
+## Hysteresis (double-threshold edge tracking)
+
+**Keep a weak edge if — and only if — it joins a strong one.**
+
+Canny's last stage, and the answer to a problem one threshold cannot solve.
+Threshold a gradient magnitude image at a single value and you must choose
+between two bad outcomes:
+
+- **too high** — strong edges survive, but they break into dashes wherever the
+  edge is momentarily faint (a shallower angle, a softer boundary, a shadow)
+- **too low** — edges stay connected, but noise passes too, and the result is
+  speckled with fragments that are not edges at all
+
+Two thresholds and a connectivity rule escape the trade-off:
+
+| Magnitude | Verdict |
+|---|---|
+| `≥ high` | an edge, unconditionally — a **strong** pixel, used as a seed |
+| `≥ low` but `< high` | an edge **only if** it connects, through other above-`low` pixels, to a strong one |
+| `< low` | discarded |
+
+So a faint continuation of a real edge is kept, because it is attached to
+something confident; an equally faint speck of noise is discarded, because
+nothing vouches for it. Strength is decided locally; **membership is decided by
+company**.
+
+Implemented as a flood fill: mark every strong pixel, then walk outwards
+through above-`low` neighbours, marking as you go. What is never reached is
+dropped.
+
+### Why the name
+
+Borrowed from physics, where a hysteretic system's state depends on its
+history, not only on its present input — a thermostat that switches on at 18°C
+and off at 20°C, so it does not chatter around a single set point. Same shape
+here: whether a pixel counts as an edge depends on what it is attached to, not
+on its own value alone.
+
+### Three details that matter in practice
+
+**Connectivity must not wrap.** This project uses 8-connectivity — diagonal
+neighbours count — and, unlike a convolution, it does **not** reflect at the
+image border. Reflection is right for a filter and wrong here: the last pixel
+of one row does not touch the first pixel of the next, and treating them as
+neighbours would join unrelated edges.
+
+**It is order-independent, and therefore deterministic for free.** A pixel
+either reaches a strong seed or it does not, so the traversal order cannot
+change the answer. Unlike a reduction (`design-lab-model.md` §5, determinism
+rule 1), no care is needed about the order work happens in.
+
+**`low` must not exceed `high`.** The lab refuses rather than silently
+reinterpreting. A common starting point is a 1:2 or 1:3 ratio — `low=0.05,
+high=0.15` are this project's defaults — but the right values depend entirely
+on the image, which is what `stats` is for.
+
+**Elsewhere**: the same two-threshold-plus-connectivity idea appears as
+*hysteresis thresholding* in segmentation generally, not only in Canny.
+
+---
+
 ## Interleaved vs planar
 
 **Two ways to arrange multi-channel pixels in memory.**

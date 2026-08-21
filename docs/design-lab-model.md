@@ -217,6 +217,57 @@ mystery.
 What is *not* recorded per entry, because it belongs to the session as a whole:
 the application version and the addon build identity (see §5).
 
+### How big should an operation be?
+
+**Default to the smallest stage whose output is worth looking at.**
+
+The question arrives with the first multi-stage algorithm and never goes away.
+Canny is the worked example: it is five stages, and it could be one operation
+or six.
+
+```
+B  = gaussian(A, sigma=1.4)
+Gx = sobel(B, axis=x)
+Gy = sobel(B, axis=y)
+M  = sobel(B, axis=mag)
+N  = nms(M, Gx, Gy)
+E  = hysteresis(N, low=0.01, high=0.04)
+```
+
+versus `E = canny(A, sigma=1.4, low=0.01, high=0.04)`.
+
+**Staged wins, for three reasons specific to a lab:**
+
+- **You can see the middle.** Looking at `N` shows what non-maximum suppression
+  actually did. That is frequently the answer to "why are my edges wrong" — and
+  a monolithic operation makes it unobservable.
+- **You can re-run one stage.** Changing `low` re-runs `hysteresis` alone. With
+  a wrapper, every threshold tweak recomputes the blur and three convolutions.
+- **The log explains the result.** Seven entries describing what happened, not
+  one entry saying `canny` and leaving the reader to guess which variant.
+
+**What it costs**, stated honestly: three `sobel` calls convolve the same
+blurred image three times, which a fused implementation would do once. At lab
+scale that is milliseconds. If it ever stops being milliseconds, fuse *then* —
+and only with a benchmark saying so.
+
+**When a wrapper is the right call:** when the intermediates are genuinely
+meaningless on their own, or when fusing is required for performance rather
+than merely tidier. Neither applies to Canny.
+
+### If a convenience wrapper is added later
+
+Add it as a **macro that expands into the stage commands**, not as a kernel
+that hides them. Typing `canny(A)` would append the six entries above to the
+log, exactly as if they had been typed.
+
+That keeps both properties at once: one thing to type, and provenance that
+still explains itself. A wrapper implemented as its own kernel would produce a
+single opaque entry and quietly undo the reason for staging in the first place.
+
+The stages are the primitive; convenience is sugar over them, never a
+replacement.
+
 ### Purity
 
 Operations allocate their output by default. `A = blur(A)` is allowed but is
