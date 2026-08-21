@@ -119,9 +119,20 @@ async function collect(win, swatch) {
 
     // --- the rest of the lab ---
     await ui('P = pattern(kind=checker, width=256, height=256)');
+    await ui('W = pattern(kind=ramp, width=320, height=80)');
     await ui('B = gaussian(P, sigma=2)');
     await ui('E = sobel(B, axis=x)');
     await ui('M = threshold(E, t=0.02)');
+
+    // aspect ratio: the canvas must match the buffer, or the image is stretched
+    r.aspects = {};
+    for (const info of window.lab.slots()) {
+      const c = document.getElementById('tile-canvas-' + info.name);
+      r.aspects[info.name] = {
+        source: info.width / info.height,
+        canvas: c.width / c.height,
+      };
+    }
 
     r.tiles = [...document.querySelectorAll('.tile')].map(t => t.dataset.slot);
     r.drawn = {};
@@ -140,12 +151,41 @@ async function collect(win, swatch) {
     r.scaleP = scaleOf('P');
 
     // --- shared pan and zoom ---
+    // The readout is now screen-pixels-per-image-pixel, which differs per slot
+    // because slots differ in size. What must be shared is the FACTOR by which
+    // one wheel event changes them.
+    const readZooms = () => Object.fromEntries(
+      [...document.querySelectorAll('.tile')].map(t =>
+        [t.dataset.slot, parseFloat(t.querySelector('.zoom').textContent)]));
+    r.zoomBefore = readZooms();
     const cv = document.querySelector('.tile canvas');
     const box = cv.getBoundingClientRect();
     cv.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true,
       clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }));
     await new Promise(res => setTimeout(res, 50));
-    r.zooms = [...document.querySelectorAll('.tile .zoom')].map(z => z.textContent);
+    r.zoomAfter = readZooms();
+
+    // --- scaling modes ---
+    r.resetEnabledWhenZoomed = !document.getElementById('reset-view').disabled;
+    document.getElementById('reset-view').click();
+    await new Promise(res => setTimeout(res, 50));
+    r.resetDisabledAfterwards = document.getElementById('reset-view').disabled;
+    r.zoomAfterReset = readZooms();
+    await new Promise(res => setTimeout(res, 50));
+    const sizeOf = (slot) => {
+      const c = document.getElementById('tile-canvas-' + slot);
+      return [c.width, c.height];
+    };
+    const setScaling = async (mode) => {
+      const sel = document.getElementById('scaling');
+      sel.value = mode;
+      sel.dispatchEvent(new Event('change'));
+      await new Promise(res => setTimeout(res, 80));
+    };
+    await ui('T = pattern(kind=checker, width=64, height=64)');
+    await setScaling('smooth'); r.sizeSmooth = sizeOf('T'); r.zoomSmooth = readZooms().T;
+    await setScaling('actual'); r.sizeActual = sizeOf('T'); r.zoomActual = readZooms().T;
+    await setScaling('smooth');
 
     // --- histogram view ---
     const sel = document.querySelector('.tile[data-slot="P"] select');
@@ -154,7 +194,10 @@ async function collect(win, swatch) {
     await new Promise(res => setTimeout(res, 50));
     r.histogram = scaleOf('P');
 
+    // captured here, after every command, rather than reusing the earlier
+    // snapshot taken before the scaling-mode fixtures were created
     r.sessionEntries = window.lab.sessionJSON().entries.length;
+    r.slotsAtEnd = window.lab.slots().length;
 
     // --- reset, driven through the button ---
     r.beforeReset = { slots: window.lab.slots().length, tiles: document.querySelectorAll('.tile').length };
@@ -288,10 +331,23 @@ app.whenReady().then(async () => {
   /* --- the UI ------------------------------------------------------- */
 
   test('every command produces a tile, and every tile draws', () => {
-    assert.deepEqual(r.tiles, ['S', 'L', 'G', 'C', 'G2', 'P', 'B', 'E', 'M']);
+    assert.deepEqual(r.tiles, ['S', 'L', 'G', 'C', 'G2', 'P', 'W', 'B', 'E', 'M']);
     for (const [slot, drew] of Object.entries(r.drawn)) {
       assert.ok(drew, `tile ${slot} rendered blank`);
     }
+  });
+
+  test('each tile takes its aspect ratio from its slot', () => {
+    // A fixed 480x360 canvas stretched every image that was not 4:3 — a
+    // 256x256 buffer came out squashed to 0.75x vertically.
+    for (const [slot, a] of Object.entries(r.aspects)) {
+      assert.ok(Math.abs(a.canvas - a.source) / a.source < 0.02,
+        `${slot}: canvas aspect ${a.canvas.toFixed(3)} vs source ${a.source.toFixed(3)}`);
+    }
+    // and the fixtures actually cover square, wide and 2x2
+    const values = Object.values(r.aspects).map((a) => a.source);
+    assert.ok(values.some((v) => Math.abs(v - 1) < 0.01), 'no square slot tested');
+    assert.ok(values.some((v) => v > 2), 'no wide slot tested');
   });
 
   test('display defaults follow the data kind', () => {
@@ -300,9 +356,34 @@ app.whenReady().then(async () => {
     assert.match(r.scaleP, /gray/, 'plain intensity should default to gray');
   });
 
-  test('zoom is shared across every tile', () => {
-    assert.equal(new Set(r.zooms).size, 1, `tiles disagree: ${r.zooms.join(', ')}`);
-    assert.notEqual(r.zooms[0], '1.0×', 'the wheel event had no effect');
+  test('one wheel event changes every tile by the same factor', () => {
+    const slots = Object.keys(r.zoomBefore);
+    assert.ok(slots.length > 1, 'need several tiles to compare');
+    const factors = slots.map((s) => r.zoomAfter[s] / r.zoomBefore[s]);
+    assert.ok(factors.every((f) => f > 1.01), `the wheel event had no effect: ${factors}`);
+    const spread = Math.max(...factors) / Math.min(...factors);
+    assert.ok(spread < 1.02, `tiles zoomed by different factors: ${factors}`);
+  });
+
+  test('Reset view restores the whole image, and knows when it is a no-op', () => {
+    assert.equal(r.resetEnabledWhenZoomed, true, 'should be enabled while zoomed in');
+    assert.equal(r.resetDisabledAfterwards, true, 'should disable once the view is reset');
+    for (const [slot, before] of Object.entries(r.zoomBefore)) {
+      assert.ok(Math.abs(r.zoomAfterReset[slot] - before) < 0.01,
+        `${slot} did not return to its unzoomed scale`);
+    }
+  });
+
+  test('the zoom readout is screen pixels per image pixel', () => {
+    // A 64x64 slot fitted into a 420-ish tile is magnified about 6.5x. The old
+    // readout said 1.0x here, which is what made it confusing.
+    assert.ok(r.zoomSmooth > 5, `expected magnification, got ${r.zoomSmooth}`);
+    assert.ok(Math.abs(r.zoomActual - 1) < 0.01, `actual size should be 1x, got ${r.zoomActual}`);
+  });
+
+  test('actual size never magnifies', () => {
+    assert.deepEqual(r.sizeActual, [64, 64], 'a 64x64 slot should render at 64x64');
+    assert.ok(r.sizeSmooth[0] > 64, `fit should magnify, got ${r.sizeSmooth}`);
   });
 
   test('the histogram view renders', () => {
@@ -314,7 +395,7 @@ app.whenReady().then(async () => {
   });
 
   test('the session is complete and saveable', () => {
-    assert.equal(r.sessionEntries, r.tiles.length, 'one entry per slot produced');
+    assert.equal(r.sessionEntries, r.slotsAtEnd, 'one entry per slot produced');
   });
 
   test('reset clears every slot, tile and log line', () => {

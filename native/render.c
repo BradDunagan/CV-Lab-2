@@ -78,6 +78,41 @@ static Rgb apply_colormap(CvColormap map, double t, double raw) {
 /* value access and the display curve                                   */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Bilinear sample at a fractional source coordinate, edges clamped.
+ *
+ * Used when MAGNIFYING continuous data. Without it a magnified tile is
+ * nearest-neighbour -- the box filter degenerates to one sample once a
+ * destination pixel maps to less than a source pixel -- so a 128x128 image
+ * shown at 420x420 renders every source pixel as a hard 3.3-pixel block, and
+ * antialiasing already present in the data is thrown away on the way to the
+ * screen.
+ *
+ * Labels are excluded: interpolating between label 3 and label 9 gives 6,
+ * a region that may not exist (§6).
+ */
+static double element_at(const CvBuffer *b, int64_t x, int64_t y, int32_t c);
+
+static double sample_bilinear(const CvBuffer *b, double x, double y, int32_t c,
+                              const CvRect *rect) {
+  const int64_t x0 = (int64_t)floor(x);
+  const int64_t y0 = (int64_t)floor(y);
+  const double fx = x - (double)x0;
+  const double fy = y - (double)y0;
+
+  const int64_t lo_x = rect->x, hi_x = rect->x + rect->width - 1;
+  const int64_t lo_y = rect->y, hi_y = rect->y + rect->height - 1;
+
+  const int64_t xa = x0 < lo_x ? lo_x : (x0 > hi_x ? hi_x : x0);
+  const int64_t xb = (x0 + 1) < lo_x ? lo_x : ((x0 + 1) > hi_x ? hi_x : (x0 + 1));
+  const int64_t ya = y0 < lo_y ? lo_y : (y0 > hi_y ? hi_y : y0);
+  const int64_t yb = (y0 + 1) < lo_y ? lo_y : ((y0 + 1) > hi_y ? hi_y : (y0 + 1));
+
+  const double top = element_at(b, xa, ya, c) * (1.0 - fx) + element_at(b, xb, ya, c) * fx;
+  const double bottom = element_at(b, xa, yb, c) * (1.0 - fx) + element_at(b, xb, yb, c) * fx;
+  return top * (1.0 - fy) + bottom * fy;
+}
+
 static double element_at(const CvBuffer *b, int64_t x, int64_t y, int32_t c) {
   const size_t index = (size_t)((y * b->width + x) * b->channels + c);
   return (b->dtype == CV_DTYPE_I32) ? (double)((const int32_t *)b->data)[index]
@@ -232,6 +267,18 @@ CvStatus cv_render(const CvBuffer *src, const CvRenderSpec *spec,
    */
   const bool nearest = (spec->colormap == CV_MAP_CATEGORICAL) || (src->dtype == CV_DTYPE_I32);
 
+  /*
+   * Three sampling regimes, and the choice matters more than it looks:
+   *   labels          -> nearest, always
+   *   minifying       -> box average, so detail is not dropped on the floor
+   *   magnifying      -> bilinear, so antialiasing in the data survives
+   */
+  /* >= rather than >: at exactly 1:1 the sample centres land on integer
+   * coordinates, so bilinear returns the exact source value anyway, and a
+   * single-row or single-column buffer is not excluded by its own axis. */
+  const bool magnifying = !nearest && spec->interpolate &&
+      (spec->width >= rect.width) && (spec->height >= rect.height);
+
   for (int64_t dy = 0; dy < spec->height; dy++) {
     const double sy0 = rect.y + (double)dy * rect.height / (double)spec->height;
     const double sy1 = rect.y + (double)(dy + 1) * rect.height / (double)spec->height;
@@ -247,14 +294,21 @@ CvStatus cv_render(const CvBuffer *src, const CvRenderSpec *spec,
       if (y1 > rect.y + rect.height) y1 = rect.y + rect.height;
       if (x1 > rect.x + rect.width) x1 = rect.x + rect.width;
 
+      /* Centre of this destination pixel, in source coordinates. */
+      const double cx = (sx0 + sx1) * 0.5 - 0.5;
+      const double cy = (sy0 + sy1) * 0.5 - 0.5;
+
       Rgb colour;
       if (composite) {
         double acc[3] = {0, 0, 0};
-        int64_t n = 0;
+        int64_t n = 1;
         if (nearest) {
           for (int32_t c = 0; c < 3; c++) acc[c] = element_at(src, x0, y0, c);
-          n = 1;
+        } else if (magnifying) {
+          for (int32_t c = 0; c < 3; c++) acc[c] = sample_bilinear(src, cx, cy, c, &rect);
         } else {
+          acc[0] = acc[1] = acc[2] = 0.0;
+          n = 0;
           for (int64_t y = y0; y < y1; y++)
             for (int64_t x = x0; x < x1; x++) {
               for (int32_t c = 0; c < 3; c++) acc[c] += element_at(src, x, y, c);
@@ -272,6 +326,8 @@ CvStatus cv_render(const CvBuffer *src, const CvRenderSpec *spec,
         double raw;
         if (nearest) {
           raw = element_at(src, x0, y0, channel);
+        } else if (magnifying) {
+          raw = sample_bilinear(src, cx, cy, channel, &rect);
         } else {
           double acc = 0.0;
           int64_t n = 0;

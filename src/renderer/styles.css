@@ -71,6 +71,8 @@ main { flex: 1; overflow: auto; padding: 12px; }
   display: grid;
   grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
   gap: 12px;
+  /* Tiles take their height from their image, so rows must not stretch them. */
+  align-items: start;
 }
 
 #empty { color: var(--muted); text-align: center; margin-top: 12vh; }
@@ -108,8 +110,12 @@ main { flex: 1; overflow: auto; padding: 12px; }
 
 .tile canvas {
   display: block;
+  /* Never upscale past the drawn size, or a small image blurs across the
+     column; height: auto keeps the aspect the canvas was drawn at. */
   width: 100%;
+  max-width: max-content;
   height: auto;
+  margin: 0 auto;
   background: #0d0d10;
   cursor: crosshair;
   image-rendering: pixelated;

@@ -230,6 +230,7 @@ static void spec_from_params(const CvParams *params, CvRenderSpec *spec) {
   spec->curve = parse_curve(cv_param_str(params, "curve", "linear"));
   spec->colormap = parse_map(cv_param_str(params, "colormap", "gray"));
   spec->channel = (int32_t)cv_param_num(params, "channel", -1);
+  spec->interpolate = cv_param_bool(params, "interpolate", true);
 }
 
 static CvBuffer *handle_arg(napi_env env, napi_value value) {

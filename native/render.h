@@ -52,6 +52,13 @@ typedef struct {
   CvCurve curve;
   CvColormap colormap;
   int32_t channel;            /* -1 = composite (RGB shown as colour) */
+  /*
+   * When magnifying: interpolate (smooth) or take the nearest sample (crisp,
+   * showing true pixel boundaries). Neither is right for every purpose --
+   * smooth preserves antialiasing already in the data, nearest shows what is
+   * actually stored. Labels ignore this and are always nearest.
+   */
+  bool interpolate;
 } CvRenderSpec;
 
 typedef struct {

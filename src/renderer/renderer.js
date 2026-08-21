@@ -14,7 +14,8 @@ const els = {
   open: document.getElementById('open'),
   opMenu: document.getElementById('op-menu'),
   cols: document.getElementById('cols'),
-  fit: document.getElementById('fit'),
+  resetView: document.getElementById('reset-view'),
+  scaling: document.getElementById('scaling'),
   save: document.getElementById('save'),
   reset: document.getElementById('reset'),
   log: document.getElementById('log'),
@@ -30,8 +31,38 @@ const viewport = { x: 0, y: 0, w: 1, h: 1 };
 /** Per-slot display transform. Non-destructive: none of this touches a buffer. */
 const views = new Map();
 
-const TILE_W = 480;
-const TILE_H = 360;
+/**
+ * Tiles fit inside this box and take their ASPECT from the slot.
+ *
+ * A fixed canvas would stretch: renderTile maps the source rect onto whatever
+ * destination it is handed, so a 256x256 image in a 480x360 canvas came out
+ * squashed to 0.75x vertically.
+ */
+const TILE_MAX_W = 480;
+const TILE_MAX_H = 420;
+
+/**
+ * How slots are scaled into their tiles. Shared by every tile, since comparing
+ * two slots at different scales is misleading.
+ *
+ *   smooth  fit the box; interpolate when magnifying
+ *   pixels  fit the box; nearest when magnifying, so pixel edges stay crisp
+ *   actual  never magnify — a 128x128 slot simply appears small
+ *
+ * None is right for everything: smooth keeps antialiasing already in the data,
+ * pixels shows what is really stored, actual shows neither more nor less than
+ * the image is.
+ */
+let scaling = 'smooth';
+
+function tileSize(slot) {
+  let scale = Math.min(TILE_MAX_W / slot.width, TILE_MAX_H / slot.height);
+  if (scaling === 'actual') scale = Math.min(scale, 1);
+  return {
+    width: Math.max(1, Math.round(slot.width * scale)),
+    height: Math.max(1, Math.round(slot.height * scale)),
+  };
+}
 
 const v = window.lab.versions;
 els.versions.textContent =
@@ -176,8 +207,9 @@ function buildTile(slot) {
 
   const canvas = document.createElement('canvas');
   canvas.id = `tile-canvas-${slot.name}`;
-  canvas.width = TILE_W;
-  canvas.height = TILE_H;
+  const size = tileSize(slot);
+  canvas.width = size.width;
+  canvas.height = size.height;
 
   const footer = document.createElement('footer');
   footer.innerHTML = '<span class="scale"></span><span class="zoom"></span>';
@@ -197,11 +229,20 @@ function drawTile(slotName) {
     if (view.type === 'histogram') {
       drawHistogram(canvas, slotName, view);
       scale.textContent = 'histogram';
+      tile.querySelector('.zoom').textContent = '';
     } else {
-      const { lo, hi } = window.lab.draw(canvas.id, slotName, { ...view, viewport });
+      const { lo, hi, info } = window.lab.draw(canvas.id, slotName,
+        { ...view, viewport, interpolate: scaling !== 'pixels' });
       scale.textContent = `${fmt(lo)} … ${fmt(hi)}  ${view.colormap}`;
+
+      // Screen pixels per image pixel — the number actually worth showing.
+      // The old readout was 1 / viewport.w, which reported 1.0x while a
+      // 128x128 slot was being magnified 3.3x to fill its tile.
+      const perPixel = canvas.width / (viewport.w * info.width);
+      const zoom = tile.querySelector('.zoom');
+      zoom.textContent = `${perPixel >= 10 ? perPixel.toFixed(0) : perPixel.toFixed(2)}×`;
+      zoom.title = 'screen pixels per image pixel';
     }
-    tile.querySelector('.zoom').textContent = `${(1 / viewport.w).toFixed(1)}×`;
   } catch (err) {
     scale.textContent = err.message;
   }
@@ -254,6 +295,10 @@ function refreshTiles() {
 
 function redrawAll() {
   for (const name of views.keys()) drawTile(name);
+  // Only enabled when there is something to reset, so the button reflects
+  // state rather than sitting there looking inert.
+  els.resetView.disabled =
+    viewport.x === 0 && viewport.y === 0 && viewport.w === 1 && viewport.h === 1;
 }
 
 function zoomAt(nx, ny, factor) {
@@ -423,9 +468,15 @@ els.cols.addEventListener('input', () => {
   els.tiles.style.setProperty('--cols', els.cols.value);
 });
 
-els.fit.addEventListener('click', () => {
+els.scaling.addEventListener('change', () => {
+  scaling = els.scaling.value;
+  refreshTiles();   // tile dimensions change, so the canvases are rebuilt
+});
+
+els.resetView.addEventListener('click', () => {
   viewport.x = 0; viewport.y = 0; viewport.w = 1; viewport.h = 1;
   redrawAll();
+  setStatus('View reset to the whole image.');
 });
 
 els.save.addEventListener('click', async () => {
@@ -469,4 +520,6 @@ buildOpMenu();
 els.tiles.style.setProperty('--cols', els.cols.value);
 refreshTiles();
 els.command.focus();
-setStatus('Ready. Enter a command, or pick an operation to insert a template.');
+els.resetView.disabled = true;
+setStatus('Ready. Enter a command, or pick an operation to insert a template. ' +
+          'Scroll a tile to zoom, drag to pan.');

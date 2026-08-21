@@ -163,6 +163,7 @@ contextBridge.exposeInMainWorld('lab', {
       curve: spec.curve ?? 'linear',
       colormap: spec.colormap ?? 'gray',
       channel: spec.channel ?? -1,
+      interpolate: spec.interpolate !== false,
     });
 
     const ctx = canvas.getContext('2d');
@@ -179,6 +180,7 @@ contextBridge.exposeInMainWorld('lab', {
       lo: spec.lo ?? 0, hi: spec.hi ?? 1,
       percentile: spec.percentile ?? 2,
       channel: spec.channel ?? -1,
+      interpolate: spec.interpolate !== false,
     });
     return { counts: [...h.counts], lo: h.lo, hi: h.hi };
   },

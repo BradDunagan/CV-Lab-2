@@ -20,7 +20,12 @@
       <label class="cols">cols
         <input id="cols" type="range" min="1" max="4" value="2" />
       </label>
-      <button id="fit" title="Reset pan and zoom">Fit</button>
+      <select id="scaling" title="How a slot is scaled into its tile">
+        <option value="smooth">fit · smooth</option>
+        <option value="pixels">fit · pixels</option>
+        <option value="actual">actual size</option>
+      </select>
+      <button id="reset-view" title="Return to the whole image. Scroll a tile to zoom, drag to pan.">Reset view</button>
       <button id="save">Save session</button>
       <button id="reset" title="Discard every slot and the log">Reset</button>
     </header>

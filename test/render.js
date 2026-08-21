@@ -69,6 +69,38 @@ test('downsampling box-averages continuous data', () => {
   assert.ok(close(px(tile, 0)[0], expected), `got ${px(tile, 0)[0]}, expected ~${expected}`);
 });
 
+test('magnifying continuous data interpolates rather than blocking up', () => {
+  // A 4-pixel ramp shown 16 pixels wide. Nearest-neighbour would give four
+  // flat 4-pixel plateaus; bilinear gives a smooth climb. This is what made a
+  // 128x128 image look harsher than a 512x512 one at the same tile size.
+  const ramp = run('pattern', [], { kind: 'ramp', width: 4, height: 1 });
+  const tile = native.renderTile(ramp, { width: 16, height: 1, colormap: 'gray' });
+  const row = Array.from({ length: 16 }, (_, i) => px(tile, i)[0]);
+  const distinct = new Set(row).size;
+  assert.ok(distinct > 8, `expected a smooth ramp, got ${distinct} distinct values: ${row}`);
+  // and it must still be monotonic
+  for (let i = 1; i < row.length; i++) {
+    assert.ok(row[i] >= row[i - 1], `not monotonic at ${i}: ${row}`);
+  }
+});
+
+test('magnifying a label map still refuses to interpolate', () => {
+  // The exception that matters: interpolating between label 3 and label 9
+  // gives 6, which may be a region that does not exist.
+  const buf = native.createBuffer({ width: 4, height: 1, channels: 1, dtype: 'i32' });
+  native.bufferWrite(buf, Int32Array.from([1, 2, 3, 4]));
+  const tile = native.renderTile(buf, { width: 32, height: 1, colormap: 'categorical' });
+  const unique = new Set(Array.from({ length: 32 }, (_, i) => px(tile, i).join(',')));
+  assert.ok(unique.size <= 4, `interpolated labels: ${unique.size} colours`);
+});
+
+test('minifying still box-averages', () => {
+  const ramp = run('pattern', [], { kind: 'ramp', width: 64, height: 1 });
+  const tile = native.renderTile(ramp, { width: 8, height: 1, colormap: 'gray' });
+  const expected = Math.round((28 / 63 / 8) * 255);
+  assert.ok(close(px(tile, 0)[0], expected), `got ${px(tile, 0)[0]}, expected ~${expected}`);
+});
+
 test('a source rect crops rather than scaling the whole image', () => {
   const ramp = run('pattern', [], { kind: 'ramp', width: 16, height: 1 });
   const whole = native.renderTile(ramp, { width: 4, height: 1 });
