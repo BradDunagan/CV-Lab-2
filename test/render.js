@@ -118,6 +118,26 @@ test('auto range reports the actual extremes', () => {
   assert.ok(close(tile.lo, 0, 1e-6) && close(tile.hi, 1, 1e-6), `${tile.lo}..${tile.hi}`);
 });
 
+test('a uniform image renders at its own value, not black', () => {
+  // Auto range on a constant field has no range at all. Nudging hi by an
+  // epsilon maps everything to the bottom of the colormap, so flat white and
+  // flat black both came out black — indistinguishable.
+  for (const [value, expected] of [[0, 0], [0.25, 64], [0.75, 191], [1, 255]]) {
+    const flat = run('pattern', [], { kind: 'constant', width: 8, height: 8, value });
+    const tile = native.renderTile(flat, { width: 4, height: 4, colormap: 'gray' });
+    assert.ok(close(px(tile, 0)[0], expected, 1),
+      `constant ${value} rendered as ${px(tile, 0)[0]}, expected ~${expected}`);
+    assert.ok(tile.lo === 0 && tile.hi === 1, `range should fall back to 0..1, got ${tile.lo}..${tile.hi}`);
+  }
+});
+
+test('a uniform value outside 0..1 widens the fallback range', () => {
+  const flat = run('pattern', [], { kind: 'constant', width: 4, height: 4, value: 5 });
+  const tile = native.renderTile(flat, { width: 2, height: 2, colormap: 'gray' });
+  assert.equal(tile.hi, 5);
+  assert.equal(px(tile, 0)[0], 255);
+});
+
 test('fixed range clamps outside the stated window', () => {
   const ramp = run('pattern', [], { kind: 'ramp', width: 16, height: 1 });
   const tile = native.renderTile(ramp,

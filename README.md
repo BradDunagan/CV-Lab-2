@@ -11,7 +11,7 @@ every result is **reproducible** from a replayable log.
 
 ```bash
 npm install     # also compiles the addon
-npm test        # seven suites, ~150 tests
+npm test        # eight suites, ~200 tests
 npm start       # launch the app
 ```
 
@@ -108,9 +108,10 @@ Outstanding, in rough order:
 - **Higher-precision input** — `load` borrows Chromium's decoder, which returns
   8-bit RGBA. 16-bit PNG, TIFF and raw need a native decode path. See
   `docs/design-lab-model.md` §11.
-- **The colour policy** — buffers carry a `space` field and operations declare
-  what they need, but whether `load` should default to `linear` rather than
-  `srgb` is still open. §11 again.
+- **The colour policy** — buffers carry a `space` field, operations declare what
+  they need, and `load` reads PNG's colour chunks to check what a file claims.
+  Whether `load` should default to `as=linear` rather than `as=srgb` is still
+  open. §11 again.
 - **Kernels on the thread pool** — they run synchronously today. The contract is
   already async, so this touches only the binding.
 - **Cancellation UI** — the flag is threaded through every kernel already.

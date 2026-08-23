@@ -233,7 +233,19 @@ static void resolve_range(const CvBuffer *src, const CvRenderSpec *spec,
     lo = -m; hi = m;
   }
 
-  if (hi <= lo) hi = lo + 1e-12;
+  /*
+   * A uniform region has no range at all. Nudging hi by an epsilon would map
+   * every pixel to the bottom of the colormap, so a flat white image and a
+   * flat black one would render identically -- both black. Fall back to a
+   * range that still says something: [0,1] for ordinary intensity, widened if
+   * the value sits outside it.
+   */
+  if (hi <= lo) {
+    lo = fmin(lo, 0.0);
+    hi = fmax(hi, 1.0);
+    if (hi <= lo) hi = lo + 1.0;   /* only reachable for non-finite input */
+  }
+
   *out_lo = lo;
   *out_hi = hi;
 }

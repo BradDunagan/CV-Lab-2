@@ -210,12 +210,40 @@ async function main() {
     assert.deepEqual([...direct], [...converted]);
   });
 
+  await test('from says what the bytes mean, as says what the buffer holds', () => {
+    const grey = Uint8ClampedArray.from([128, 128, 128, 255]);
+    const value = (opts) => native.bufferRead(native.bufferFromRGBA8(grey, 1, 1, opts))[0];
+    const srgbToLinear = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+    const linearToSrgb = (v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+    const raw = 128 / 255;
+
+    // Matching from and as means no curve at all: bytes that already hold
+    // linear light are linear once divided by 255.
+    assert.ok(Math.abs(value({ from: 'srgb', as: 'srgb' }) - raw) < 1e-6);
+    assert.ok(Math.abs(value({ from: 'linear', as: 'linear' }) - raw) < 1e-6);
+
+    assert.ok(Math.abs(value({ from: 'srgb', as: 'linear' }) - srgbToLinear(raw)) < 1e-6);
+    assert.ok(Math.abs(value({ from: 'linear', as: 'srgb' }) - linearToSrgb(raw)) < 1e-6);
+  });
+
+  await test('from and as round-trip through each other', () => {
+    const bytes = Uint8ClampedArray.from(
+      Array.from({ length: 256 }, (_, i) => [i, i, i, 255]).flat());
+    const asIs = [...native.bufferRead(
+      native.bufferFromRGBA8(bytes, 256, 1, { from: 'linear', as: 'linear' }))];
+    const expected = Array.from({ length: 256 }, (_, i) => i / 255);
+    asIs.filter((_, i) => i % 3 === 0).forEach((v, i) => {
+      assert.ok(Math.abs(v - expected[i]) < 1e-6, `byte ${i}: ${v}`);
+    });
+  });
+
   await test('geometry is checked against the actual byte count', () => {
     const rgba = Uint8ClampedArray.from([0, 0, 0, 255]);
     assert.throws(() => native.bufferFromRGBA8(rgba, 2, 2), /does not match width \* height \* 4/);
     assert.throws(() => native.bufferFromRGBA8(rgba, 0, 1), /does not match|overflow/);
     assert.throws(() => native.bufferFromRGBA8([0, 0, 0, 255], 1, 1), /typed array/);
     assert.throws(() => native.bufferFromRGBA8(rgba, 1, 1, { as: 'cmyk' }), /srgb.*linear/);
+    assert.throws(() => native.bufferFromRGBA8(rgba, 1, 1, { from: 'cmyk' }), /srgb.*linear/);
   });
 
   console.log(failures === 0 ? '\nAll buffer tests passed.' : `\n${failures} failing.`);

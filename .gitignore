@@ -6,6 +6,7 @@ out/
 .DS_Store
 assets/
 sessions/
+tmp/
 
 # Personal reference notes live alongside the docs as .txt; the project's own
 # documentation is .md. Keeps `git add -A` from sweeping them in.

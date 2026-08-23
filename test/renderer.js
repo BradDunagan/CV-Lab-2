@@ -22,6 +22,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { encodePNG } = require('../scripts/png');
+const zlibCrc = require('node:zlib');
 const { parseStatement } = require('../src/lab/parser');
 
 const ROOT = path.join(__dirname, '..');
@@ -30,6 +31,36 @@ let failures = 0;
 function test(name, fn) {
   try { fn(); console.log(`  ok   ${name}`); }
   catch (err) { failures++; console.error(`  FAIL ${name}\n       ${err.message}`); }
+}
+
+/** Build a PNG that declares gAMA 1.0, i.e. linear samples. */
+function writeLinearDeclaringPng(dir) {
+  const CRC = (() => {
+    const t = new Int32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c;
+    }
+    return t;
+  })();
+  const crc32 = (b) => {
+    let c = 0xffffffff;
+    for (const x of b) c = CRC[(c ^ x) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const data = Buffer.alloc(4);
+  data.writeUInt32BE(100000);
+  const gAMA = Buffer.alloc(16);
+  gAMA.writeUInt32BE(4, 0);
+  gAMA.write('gAMA', 4, 'ascii');
+  data.copy(gAMA, 8);
+  gAMA.writeUInt32BE(crc32(gAMA.subarray(4, 12)), 12);
+
+  const base = encodePNG(1, 1, Buffer.from([128, 128, 128, 255]));
+  const file = path.join(dir, 'linear.png');
+  fs.writeFileSync(file, Buffer.concat([base.subarray(0, 33), gAMA, base.subarray(33)]));
+  return file;
 }
 
 /** A 2x2 image whose exact pixels we can assert on after decoding. */
@@ -50,12 +81,13 @@ function writeSwatch() {
   return file;
 }
 
-async function collect(win, swatch) {
+async function collect(win, swatch, linearPng) {
   // Everything the page can tell us, gathered in one round trip. Assertions
   // happen out here, where failures report properly.
   return win.webContents.executeJavaScript(`(async () => {
     const r = {};
     const swatch = ${JSON.stringify(swatch)};
+    const linearPng = ${JSON.stringify(linearPng)};
 
     // Drive the real UI rather than calling lab.run() directly: clicking Run
     // is what refreshes the tiles, and a test that skips it would not be
@@ -101,6 +133,12 @@ async function collect(win, swatch) {
     r.linearSpace = window.lab.log()[1].output.space;
     r.linearGrey = window.lab.probeAll(0.9, 0.9).L.values[0];
     r.linearRed = window.lab.probeAll(0.0, 0.0).L.values;
+
+    // --- a file that declares linear samples ---
+    r.linearDeclared = await ui('D = load(' + window.lab.quote(linearPng) + ')');
+    r.linearRefused = status.className === 'error';
+    r.linearAccepted = (await ui(
+      'D = load(' + window.lab.quote(linearPng) + ', from=linear)')).startsWith('#');
 
     // --- declared colour space is enforced ---
     r.grayOnSrgb = await ui('BAD = gray(S)');
@@ -222,6 +260,7 @@ app.whenReady().then(async () => {
   console.log(`cv-lab-2 renderer tests (${runtime}, ${process.platform}/${process.arch})`);
 
   const swatch = writeSwatch();
+  const linearPng = writeLinearDeclaringPng(path.dirname(swatch));
 
   /*
    * This harness runs its own main process, so src/main.js's IPC handlers are
@@ -253,7 +292,7 @@ app.whenReady().then(async () => {
   });
 
   await win.loadFile(path.join(ROOT, 'src', 'renderer', 'index.html'));
-  const r = await collect(win, swatch);
+  const r = await collect(win, swatch, linearPng);
 
   const close = (a, b, tol = 1e-4) => Math.abs(a - b) <= tol;
 
@@ -289,7 +328,8 @@ app.whenReady().then(async () => {
 
   test('load decodes to a 3-channel f32 buffer tagged srgb', () => {
     assert.deepEqual(r.loadShape, [2, 2, 3, 'f32', 'srgb']);
-    assert.match(r.loadText, /^load\(as=srgb, path=/);
+    // params sort alphabetically in the canonical form: as, from, path
+    assert.match(r.loadText, /^load\(as=srgb, from=srgb, path=/);
   });
 
   test('decoded values are exact', () => {
@@ -308,6 +348,15 @@ app.whenReady().then(async () => {
 
   /* --- declared colour space is enforced ---------------------------- */
 
+  test('a PNG declaring gAMA 1.0 is refused under the sRGB default', () => {
+    assert.equal(r.linearRefused, true, 'a linear-declaring file was accepted as sRGB');
+    assert.match(r.linearDeclared, /declares linear samples.*gamma 1\.0.*Pass from=linear/);
+  });
+
+  test('the same file loads once from=linear is stated', () => {
+    assert.equal(r.linearAccepted, true, `from=linear was not accepted: ${r.linearDeclared}`);
+  });
+
   test('gray refuses an srgb input and names the fix', () => {
     assert.ok(r.grayOnSrgb, 'gray accepted sRGB input');
     assert.match(r.grayOnSrgb, /needs linear input, but S#1 is srgb/);
@@ -315,7 +364,9 @@ app.whenReady().then(async () => {
   });
 
   test('a refused command appends nothing to the log', () => {
-    assert.equal(r.logAfterRefusal, 2, 'only the two loads should be recorded');
+    // S, L, and D-with-from=linear. The two refusals -- the linear-declaring
+    // file under the sRGB default, and gray on an sRGB input -- recorded nothing.
+    assert.equal(r.logAfterRefusal, 3, 'a refused command must leave no trace');
   });
 
   test('gray on linear input produces 1-channel linear', () => {
@@ -331,7 +382,7 @@ app.whenReady().then(async () => {
   /* --- the UI ------------------------------------------------------- */
 
   test('every command produces a tile, and every tile draws', () => {
-    assert.deepEqual(r.tiles, ['S', 'L', 'G', 'C', 'G2', 'P', 'W', 'B', 'E', 'M']);
+    assert.deepEqual(r.tiles, ['S', 'L', 'D', 'G', 'C', 'G2', 'P', 'W', 'B', 'E', 'M']);
     for (const [slot, drew] of Object.entries(r.drawn)) {
       assert.ok(drew, `tile ${slot} rendered blank`);
     }

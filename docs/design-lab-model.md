@@ -658,3 +658,22 @@ item genuinely deferrable.
   still need a native decode path, and that means a third-party library and all
   the build complexity `electron-guide.md` §5 describes avoiding. Worth doing
   only when an experiment actually needs the precision.
+
+  *Also settled:* what the stored bytes **mean** is now read from the file
+  rather than assumed. `load` takes a `from` parameter alongside `as` — `from`
+  says what the file holds, `as` says what the buffer should hold — and
+  `scripts/png.js` reads PNG's `cICP`, `iCCP`, `sRGB` and `gAMA` chunks in
+  specification precedence order to check it. Most files declare nothing, and
+  the universal convention is sRGB, which stays the default. But a file
+  declaring `gAMA 1.0` holds **linear** samples, and the lab refuses rather
+  than applying a curve that was never there:
+
+  ```
+  load: the file declares linear samples (gAMA 100000 (gamma 1.0)),
+        but from=srgb. Pass from=linear.
+  ```
+
+  An embedded ICC profile is reported, not interpreted — saying "there is a
+  profile" is honest; guessing at its transfer curve would not be. PNG only:
+  JPEG carries this in EXIF/ICC and WebP in its own chunks, and both fall back
+  to the convention.

@@ -45,10 +45,26 @@ function loadKernel(decodeFile) {
   return async ({ params }) => {
     if (!params.path) throw new Error('load: path is required');
     const native = require('../../native');
-    const { width, height, pixels } = await decodeFile(params.path);
+    const { width, height, pixels, declared, detail } = await decodeFile(params.path);
+
+    /*
+     * `from` says what the stored bytes mean. Most files declare nothing and
+     * the convention -- which every decoder follows -- is sRGB, so that is the
+     * default. When a file DOES declare, and disagrees, refuse rather than
+     * quietly applying a curve that was never there. Same rule as the colour
+     * space check in the session: an explicit correction beats a silent guess.
+     */
+    if ((declared === 'srgb' || declared === 'linear') && declared !== params.from) {
+      throw new Error(
+        `load: the file declares ${declared} samples (${detail}), but from=${params.from}. ` +
+          `Pass from=${declared}.`
+      );
+    }
+
     return {
       kind: 'buffer',
-      handle: native.bufferFromRGBA8(pixels, width, height, { as: params.as }),
+      handle: native.bufferFromRGBA8(pixels, width, height,
+        { from: params.from, as: params.as }),
     };
   };
 }
@@ -66,6 +82,11 @@ function buildOps({ decodeFile } = {}) {
         // linear on load is the open policy question in §11; until it is
         // settled, the caller states what it wants and the record says which
         // happened, so no session is ambiguous in retrospect.
+        // What the stored bytes mean. PNG can declare this (gAMA, sRGB, iCCP,
+        // cICP) but most files declare nothing, in which case sRGB is the
+        // universal convention.
+        { name: 'from', type: 'enum', values: ['srgb', 'linear'], default: 'srgb' },
+        // What the buffer should hold.
         { name: 'as', type: 'enum', values: ['srgb', 'linear'], default: 'srgb' },
       ],
       output: { channels: 3, dtype: 'f32' },

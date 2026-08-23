@@ -20,6 +20,7 @@ const path = require('node:path');
 
 const native = require('../native');
 const { createRegistry } = require('./lab/ops');
+const { readPngColour } = require('../scripts/png');
 const { Session } = require('./lab/session');
 const { quoteString } = require('./lab/parser');
 
@@ -47,6 +48,17 @@ const { quoteString } = require('./lab/parser');
  */
 async function decodeFile(filePath) {
   const bytes = await fs.readFile(filePath);
+
+  /*
+   * Read what the file says about its own encoding before decoding it.
+   * Chromium is told not to colour-manage (below), so it will not tell us --
+   * and the case that matters is a file holding LINEAR samples, which treated
+   * as sRGB gets a curve applied that was never there.
+   *
+   * PNG only. JPEG carries this in EXIF/ICC and WebP in its own chunks; both
+   * report `undeclared` here, which falls back to the sRGB convention.
+   */
+  const colour = readPngColour(bytes);
   const bitmap = await createImageBitmap(new Blob([bytes]), {
     colorSpaceConversion: 'none',
     premultiplyAlpha: 'none',
@@ -56,7 +68,13 @@ async function decodeFile(filePath) {
     const ctx = canvas.getContext('2d', { colorSpace: 'srgb', willReadFrequently: true });
     ctx.drawImage(bitmap, 0, 0);
     const image = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
-    return { width: bitmap.width, height: bitmap.height, pixels: image.data };
+    return {
+      width: bitmap.width,
+      height: bitmap.height,
+      pixels: image.data,
+      declared: colour.declared,
+      detail: colour.detail,
+    };
   } finally {
     bitmap.close();
   }

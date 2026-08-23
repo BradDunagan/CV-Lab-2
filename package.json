@@ -16,7 +16,7 @@
     "dev": "npm run rebuild:electron && electron .",
     "package": "electron-builder --publish never",
     "verify:package": "node scripts/verify-package.js",
-    "test:lab": "node test/registry.js && node test/session.js",
+    "test:lab": "node test/registry.js && node test/session.js && node test/png.js",
     "test": "npm run test:native && npm run test:lab && npm run test:renderer",
     "test:renderer": "electron test/renderer.js"
   },

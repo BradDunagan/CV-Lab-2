@@ -306,6 +306,11 @@ static float srgb_to_linear_byte(int i) {
   return (float)(s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4));
 }
 
+static float linear_to_srgb_byte(int i) {
+  const double l = (double)(float)((double)i / 255.0);
+  return (float)(l <= 0.0031308 ? 12.92 * l : 1.055 * pow(l, 1.0 / 2.4) - 0.055);
+}
+
 static napi_value BufferFromRGBA8(napi_env env, napi_callback_info info) {
   size_t argc = 4;
   napi_value argv[4];
@@ -349,26 +354,47 @@ static napi_value BufferFromRGBA8(napi_env env, napi_callback_info info) {
     return NULL;
   }
 
-  char space_name[16] = "srgb";
+  char as_name[16] = "srgb";
+  char from_name[16] = "srgb";
   if (argc >= 4) {
     napi_value value;
     napi_valuetype vt;
+    size_t written = 0;
     if (napi_get_named_property(env, argv[3], "as", &value) == napi_ok &&
         napi_typeof(env, value, &vt) == napi_ok && vt == napi_string) {
-      size_t written = 0;
-      napi_get_value_string_utf8(env, value, space_name, sizeof(space_name), &written);
+      napi_get_value_string_utf8(env, value, as_name, sizeof(as_name), &written);
+    }
+    if (napi_get_named_property(env, argv[3], "from", &value) == napi_ok &&
+        napi_typeof(env, value, &vt) == napi_ok && vt == napi_string) {
+      napi_get_value_string_utf8(env, value, from_name, sizeof(from_name), &written);
     }
   }
-  const bool to_linear = (strcmp(space_name, "linear") == 0);
-  if (!to_linear && strcmp(space_name, "srgb") != 0) {
-    THROW_RETURN(env, "bufferFromRGBA8: `as` must be \"srgb\" or \"linear\"");
+  const bool as_linear = (strcmp(as_name, "linear") == 0);
+  const bool from_linear = (strcmp(from_name, "linear") == 0);
+  if ((!as_linear && strcmp(as_name, "srgb") != 0) ||
+      (!from_linear && strcmp(from_name, "srgb") != 0)) {
+    THROW_RETURN(env, "bufferFromRGBA8: `as` and `from` must be \"srgb\" or \"linear\"");
   }
 
-  /* 8-bit input means the transfer function is exactly 256 values. */
+  /*
+   * 8-bit input means the whole transfer function is exactly 256 values, so
+   * every combination is a lookup rather than a per-pixel power function.
+   *
+   * `from` says what the stored bytes MEAN; `as` says what the buffer should
+   * hold. When they agree there is no curve to apply at all -- linear samples
+   * stored as bytes are already linear once divided by 255.
+   */
   float lut[256];
   for (int i = 0; i < 256; i++) {
-    lut[i] = to_linear ? srgb_to_linear_byte(i) : (float)((double)i / 255.0);
+    if (from_linear == as_linear) {
+      lut[i] = (float)((double)i / 255.0);
+    } else if (as_linear) {
+      lut[i] = srgb_to_linear_byte(i);      /* srgb bytes -> linear values */
+    } else {
+      lut[i] = linear_to_srgb_byte(i);      /* linear bytes -> srgb values */
+    }
   }
+  const bool to_linear = as_linear;
 
   CvBuffer *buffer = (CvBuffer *)calloc(1, sizeof(CvBuffer));
   if (buffer == NULL) THROW_RETURN(env, "out of memory");
