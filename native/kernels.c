@@ -421,6 +421,9 @@ static CvStatus k_nms(const CvBuffer *const *inputs, size_t n_inputs,
 static CvStatus k_hysteresis(const CvBuffer *const *inputs, size_t n_inputs,
                              const CvParams *params, CvBuffer *out,
                              CvScalars *scalars, const CvKernelCtx *ctx);
+static CvStatus k_orient(const CvBuffer *const *inputs, size_t n_inputs,
+                         const CvParams *params, CvBuffer *out,
+                         CvScalars *scalars, const CvKernelCtx *ctx);
 
 /* ------------------------------------------------------------------ */
 /* the table                                                            */
@@ -437,6 +440,7 @@ static const CvKernelEntry KERNELS[] = {
   { "toSrgb",    k_to_srgb,   1, true  },
   { "nms",        k_nms,        3, true },
   { "hysteresis", k_hysteresis, 1, true },
+  { "orient",     k_orient,     2, true },
 };
 
 const CvKernelEntry *cv_kernel_lookup(const char *name) {
@@ -627,5 +631,76 @@ static CvStatus k_hysteresis(const CvBuffer *const *inputs, size_t n_inputs,
   }
 
   free(stack);
+  return CV_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* orient(gx, gy) -- gradient direction, in radians                     */
+/*                                                                      */
+/* The angle of the gradient vector: which way brightness increases.    */
+/* Perpendicular to the edge itself, always.                            */
+/*                                                                      */
+/* `range=signed` keeps the full turn, (-pi, pi]. That distinguishes a  */
+/* dark-to-bright edge from a bright-to-dark one, which sit 180 degrees */
+/* apart -- so a thin bright line on a dark background yields two       */
+/* orientations, one per side. That is truthful: there really are two   */
+/* edges there.                                                         */
+/*                                                                      */
+/* `range=unsigned` folds onto [0, pi), merging the two sides. Cheap to */
+/* derive from signed; impossible to recover once discarded, which is   */
+/* why signed is the default.                                           */
+/*                                                                      */
+/* Where the gradient is ~0 the angle is meaningless -- a flat region    */
+/* has no direction. Zero is emitted deliberately rather than relying   */
+/* on atan2(0,0) incidentally returning it. Masking by magnitude is the */
+/* caller's job, not this kernel's (§3: do not fuse stages).            */
+/* ------------------------------------------------------------------ */
+
+#define CV_ORIENT_EPS 1e-12
+
+static CvStatus k_orient(const CvBuffer *const *inputs, size_t n_inputs,
+                         const CvParams *params, CvBuffer *out,
+                         CvScalars *scalars, const CvKernelCtx *ctx) {
+  (void)n_inputs; (void)scalars;
+  const CvBuffer *gx = inputs[0];
+  const CvBuffer *gy = inputs[1];
+
+  if (gx->channels != 1 || gy->channels != 1) return CV_ERR_CHANNELS;
+  if (gx->dtype != CV_DTYPE_F32 || gy->dtype != CV_DTYPE_F32) return CV_ERR_DTYPE;
+  if (gx->width != gy->width || gx->height != gy->height) return CV_ERR_SHAPE;
+
+  const char *range = cv_param_str(params, "range", "signed");
+  const bool unsigned_range = (strcmp(range, "unsigned") == 0);
+  if (!unsigned_range && strcmp(range, "signed") != 0) return CV_ERR_PARAM;
+
+  CvStatus status = cv_buffer_alloc(out, gx->width, gx->height, 1,
+                                    CV_DTYPE_F32, CV_SPACE_NONE);
+  if (status != CV_OK) return status;
+
+  const float *dx = f32(gx), *dy = f32(gy);
+  float *dst = f32(out);
+  const size_t n = cv_buffer_elements(gx);
+
+  for (size_t i = 0; i < n; i++) {
+    if ((i & 0xFFFF) == 0 && is_cancelled(ctx)) { cv_buffer_free(out); return CV_ERR_CANCELLED; }
+
+    const double x = (double)dx[i], y = (double)dy[i];
+    if (fabs(x) < CV_ORIENT_EPS && fabs(y) < CV_ORIENT_EPS) {
+      dst[i] = 0.0f;                 /* no gradient, so no direction */
+      continue;
+    }
+    double angle = atan2(y, x);      /* (-pi, pi] */
+    if (unsigned_range) {
+      /*
+       * Fold onto [0, pi). A plain `if (angle < 0) angle += pi` looks right
+       * and is not: atan2 returns exactly +pi for a gradient pointing along
+       * -x, which is not negative, so it survives the test and lands outside
+       * the range. Modulo first, then correct the sign.
+       */
+      angle = fmod(angle, CV_PI);
+      if (angle < 0.0) angle += CV_PI;
+    }
+    dst[i] = (float)angle;
+  }
   return CV_OK;
 }

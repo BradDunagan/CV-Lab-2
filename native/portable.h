@@ -47,6 +47,13 @@ static CV_INLINE void cv_aligned_free(void *ptr) { free(ptr); }
 #endif
 
 /*
+ * M_PI is POSIX, not ISO C. MSVC does not define it unless _USE_MATH_DEFINES
+ * is set before <math.h>, so a kernel using it compiles on clang and gcc and
+ * fails on Windows -- exactly the split this header exists to absorb.
+ */
+#define CV_PI 3.14159265358979323846
+
+/*
  * Reminder for when you start writing real kernels:
  *
  *   - `long` is 32-bit on Windows (LLP64) and 64-bit on macOS/Linux (LP64).

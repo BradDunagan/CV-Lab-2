@@ -177,8 +177,8 @@ test('reports every problem, not just the first', () => {
 test('the first slice registers cleanly', () => {
   const r = createRegistry();
   assert.deepEqual(r.names(),
-    ['gaussian', 'gray', 'hysteresis', 'load', 'nms', 'pattern', 'sobel', 'stats',
-     'threshold', 'toLinear', 'toSrgb']);
+    ['gaussian', 'gray', 'hysteresis', 'load', 'nms', 'orient', 'pattern', 'sobel',
+     'stats', 'threshold', 'toLinear', 'toSrgb']);
 });
 
 test('load is unimplemented without a decoder, implemented with one', () => {

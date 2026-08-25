@@ -212,6 +212,7 @@ static CvColormap parse_map(const char *s) {
   if (strcmp(s, "turbo") == 0) return CV_MAP_TURBO;
   if (strcmp(s, "diverging") == 0) return CV_MAP_DIVERGING;
   if (strcmp(s, "categorical") == 0) return CV_MAP_CATEGORICAL;
+  if (strcmp(s, "cyclic") == 0) return CV_MAP_CYCLIC;
   return CV_MAP_GRAY;
 }
 

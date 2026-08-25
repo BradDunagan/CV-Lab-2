@@ -40,7 +40,7 @@ console.log(`cv-lab-2 kernel tests (${runtime}, ${process.platform}/${process.ar
 test('every kernel is reachable by name', () => {
   assert.deepEqual(native.kernelNames(),
     ['pattern', 'gray', 'gaussian', 'sobel', 'threshold', 'stats', 'toLinear',
-     'toSrgb', 'nms', 'hysteresis']);
+     'toSrgb', 'nms', 'hysteresis', 'orient']);
 });
 
 test('an unknown kernel and a wrong input count are refused', () => {
@@ -288,6 +288,121 @@ test('values outside 0..1 pass through rather than being clamped', () => {
   assert.equal(out[0], -0.5);
   assert.equal(out[2], 2.0);
   assert.ok(out[1] < 0.5, 'in-range values still convert');
+});
+
+/* --- orient: gradient direction ---------------------------------------- */
+
+const DEG = 180 / Math.PI;
+
+function edge(fn, w = 8, h = 8) {
+  const b = native.createBuffer({ width: w, height: h, channels: 1, dtype: 'f32' });
+  const v = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) v.push(fn(x, y));
+  native.bufferWrite(b, Float32Array.from(v));
+  return b;
+}
+function angleAt(img, opts, x = 4, y = 4, w = 8) {
+  const gx = run('sobel', [img], { axis: 'x' });
+  const gy = run('sobel', [img], { axis: 'y' });
+  return read(run('orient', [gx, gy], opts))[y * w + x] * DEG;
+}
+
+test('orient gives the direction brightness increases', () => {
+  // The gradient points ACROSS the edge, never along it.
+  assert.ok(close(angleAt(edge((x) => (x < 4 ? 0 : 1)), {}), 0, 1e-3),
+    'dark left, bright right -> gradient points +x');
+  assert.ok(close(angleAt(edge((x, y) => (y < 4 ? 0 : 1)), {}), 90, 1e-3),
+    'dark top, bright below -> gradient points +y');
+});
+
+test('signed keeps the two sides of an edge 180 degrees apart', () => {
+  const a = angleAt(edge((x) => (x < 4 ? 0 : 1)), { range: 'signed' });
+  const b = angleAt(edge((x) => (x < 4 ? 1 : 0)), { range: 'signed' });
+  assert.ok(close(Math.abs(a - b), 180, 1e-3), `${a} and ${b} should differ by 180`);
+});
+
+test('unsigned folds them together', () => {
+  const a = angleAt(edge((x) => (x < 4 ? 0 : 1)), { range: 'unsigned' });
+  const b = angleAt(edge((x) => (x < 4 ? 1 : 0)), { range: 'unsigned' });
+  assert.ok(close(a, b, 1e-3), `${a} and ${b} should agree once folded`);
+});
+
+test('unsigned output stays inside [0, pi)', () => {
+  // A plain `if (angle < 0) angle += pi` passes every test but this one:
+  // atan2 returns exactly +pi for a gradient along -x, which is not negative.
+  for (const fn of [
+    (x) => (x < 4 ? 1 : 0),          // gradient along -x, atan2 = +pi exactly
+    (x) => (x < 4 ? 0 : 1),
+    (x, y) => (y < 4 ? 1 : 0),
+    (x, y) => (y < 4 ? 0 : 1),
+    (x, y) => ((x + y) < 8 ? 0 : 1),
+  ]) {
+    const gx = run('sobel', [edge(fn)], { axis: 'x' });
+    const gy = run('sobel', [edge(fn)], { axis: 'y' });
+    for (const v of read(run('orient', [gx, gy], { range: 'unsigned' }))) {
+      assert.ok(v >= 0 && v < Math.PI, `${v} is outside [0, pi)`);
+    }
+  }
+});
+
+test('a flat region gets a defined angle rather than noise', () => {
+  const flat = run('pattern', [], { kind: 'constant', width: 8, height: 8, value: 0.5 });
+  const gx = run('sobel', [flat], { axis: 'x' });
+  const gy = run('sobel', [flat], { axis: 'y' });
+  assert.ok(read(run('orient', [gx, gy])).every((v) => v === 0),
+    'no gradient means no direction; 0 is emitted deliberately');
+});
+
+test('orient rejects mismatched shapes and a bad range', () => {
+  const a = run('pattern', [], { kind: 'ramp', width: 8, height: 8 });
+  const b = run('pattern', [], { kind: 'ramp', width: 4, height: 4 });
+  assert.throws(() => run('orient', [a, b]), /same dimensions/);
+  assert.throws(() => run('orient', [a, a], { range: 'sideways' }), /parameter out of range/);
+});
+
+test('a straight edge has one constant orientation along its length', () => {
+  // The property the segment grower will depend on: pixels of the same
+  // straight edge agree on direction, so they can be grown into one region.
+  const W = 32;
+  const diagonal = edge((x, y) => ((x - y) < 0 ? 0 : 1), W, W);
+  const gx = run('sobel', [diagonal], { axis: 'x' });
+  const gy = run('sobel', [diagonal], { axis: 'y' });
+  const mag = read(run('sobel', [diagonal], { axis: 'mag' }));
+  const ang = read(run('orient', [gx, gy]));
+
+  // Excluding a one-pixel border, and that exclusion is the point rather than
+  // a convenience: at the image edge, reflect-padding fabricates neighbours
+  // that are not there, so the gradient — and therefore the orientation — is
+  // wrong. Measured on this fixture, the interior spread is 0.00 degrees and
+  // including the border makes it 53. Anything growing regions from this
+  // field has to ignore the border for the same reason.
+  const interior = [];
+  for (let y = 1; y < W - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      if (mag[i] > 0.05) interior.push(ang[i] * DEG);
+    }
+  }
+  assert.ok(interior.length > 100, `only ${interior.length} edge pixels found`);
+  const spread = Math.max(...interior) - Math.min(...interior);
+  assert.ok(spread < 0.01, `orientation varies by ${spread.toFixed(2)} degrees`);
+  assert.ok(close(interior[0], -45, 0.01),
+    `a 45-degree edge should have a -45-degree gradient, got ${interior[0]}`);
+});
+
+test('orientation is unreliable at the image border', () => {
+  // Recorded deliberately, because it is a property of reflect-padding rather
+  // than of orient, and the next stage needs to know it.
+  const W = 32;
+  const diagonal = edge((x, y) => ((x - y) < 0 ? 0 : 1), W, W);
+  const gx = run('sobel', [diagonal], { axis: 'x' });
+  const gy = run('sobel', [diagonal], { axis: 'y' });
+  const mag = read(run('sobel', [diagonal], { axis: 'mag' }));
+  const ang = read(run('orient', [gx, gy]));
+  const all = [];
+  for (let i = 0; i < ang.length; i++) if (mag[i] > 0.05) all.push(ang[i] * DEG);
+  assert.ok(Math.max(...all) - Math.min(...all) > 10,
+    'expected border pixels to disagree — if this fails, padding changed');
 });
 
 /* --- nms: Canny stage 3 ------------------------------------------------- */

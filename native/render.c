@@ -33,6 +33,22 @@ static const Rgb DIVERGING[] = {
   {0.129f,0.400f,0.675f},{0.969f,0.969f,0.969f},{0.698f,0.094f,0.169f},
 };
 
+/*
+ * A hue wheel, for data that wraps. An angle of -pi and an angle of +pi are
+ * the same direction, so the colormap's two ends must be the same colour --
+ * otherwise the display draws a hard seam across a perfectly smooth field.
+ * First and last stops are identical for exactly that reason.
+ */
+static const Rgb CYCLIC[] = {
+  {1.000f,0.000f,0.000f},  /* red     */
+  {1.000f,1.000f,0.000f},  /* yellow  */
+  {0.000f,1.000f,0.000f},  /* green   */
+  {0.000f,1.000f,1.000f},  /* cyan    */
+  {0.000f,0.000f,1.000f},  /* blue    */
+  {1.000f,0.000f,1.000f},  /* magenta */
+  {1.000f,0.000f,0.000f},  /* red again -- the wrap */
+};
+
 /* Unordered and distinct. Index 0 is reserved for background. */
 static const Rgb CATEGORICAL[] = {
   {0.000f,0.000f,0.000f},{0.894f,0.102f,0.110f},{0.216f,0.494f,0.722f},
@@ -60,6 +76,7 @@ static Rgb apply_colormap(CvColormap map, double t, double raw) {
     case CV_MAP_VIRIDIS:   return sample_stops(VIRIDIS, sizeof(VIRIDIS)/sizeof(Rgb), t);
     case CV_MAP_TURBO:     return sample_stops(TURBO, sizeof(TURBO)/sizeof(Rgb), t);
     case CV_MAP_DIVERGING: return sample_stops(DIVERGING, sizeof(DIVERGING)/sizeof(Rgb), t);
+    case CV_MAP_CYCLIC:    return sample_stops(CYCLIC, sizeof(CYCLIC)/sizeof(Rgb), t);
     case CV_MAP_CATEGORICAL: {
       /* Labels are names, not magnitudes: index by value, never interpolate. */
       const size_t count = sizeof(CATEGORICAL) / sizeof(Rgb);

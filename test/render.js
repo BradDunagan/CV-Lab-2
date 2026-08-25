@@ -251,6 +251,22 @@ test('viridis is monotonic in lightness; turbo is not', () => {
   assert.ok(tDrops > 0, 'turbo should not be lightness-monotonic');
 });
 
+test('the cyclic colormap has no seam: its two ends are the same colour', () => {
+  // Angles wrap. -pi and +pi are the same direction, so a map whose ends
+  // differed would draw a hard false edge across a perfectly smooth field.
+  const ramp = run('pattern', [], { kind: 'ramp', width: 64, height: 1 });
+  const tile = native.renderTile(ramp, { width: 64, height: 1, colormap: 'cyclic' });
+  assert.deepEqual(px(tile, 0), px(tile, 63), 'the ends of a cyclic map must meet');
+});
+
+test('the cyclic colormap moves through distinct hues', () => {
+  // Seamlessness must not be achieved by being flat.
+  const ramp = run('pattern', [], { kind: 'ramp', width: 32, height: 1 });
+  const tile = native.renderTile(ramp, { width: 32, height: 1, colormap: 'cyclic' });
+  const unique = new Set(Array.from({ length: 32 }, (_, i) => px(tile, i).join(',')));
+  assert.ok(unique.size > 20, `only ${unique.size} distinct colours`);
+});
+
 test('categorical uses only palette colours and never interpolates', () => {
   const buf = native.createBuffer({ width: 6, height: 1, channels: 1, dtype: 'i32' });
   native.bufferWrite(buf, Int32Array.from([0, 1, 2, 3, 1, 0]));

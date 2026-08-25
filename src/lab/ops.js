@@ -175,6 +175,29 @@ function buildOps({ decodeFile } = {}) {
     }),
 
     defineOp({
+      name: 'orient',
+      version: 1,
+      summary: 'Gradient direction in radians. Perpendicular to the edge.',
+      // Two inputs, because a direction needs both components. Magnitude is
+      // deliberately not consumed: where the gradient is ~0 the angle is
+      // meaningless, and masking that off is the caller's decision, not this
+      // operation's (§3, on not fusing stages).
+      inputs: [
+        { name: 'gx', channels: [1], space: 'any' },
+        { name: 'gy', channels: [1], space: 'any' },
+      ],
+      params: [
+        // signed keeps the full turn, so a dark-to-bright edge and a
+        // bright-to-dark one stay 180 degrees apart -- two sides of a thin
+        // line are two edges. unsigned folds them together. signed is the
+        // default because unsigned is derivable from it and not the reverse.
+        { name: 'range', type: 'enum', values: ['signed', 'unsigned'], default: 'signed' },
+      ],
+      output: { channels: 1, dtype: 'f32', space: 'none' },
+      kernel: nativeKernel('orient'),
+    }),
+
+    defineOp({
       name: 'nms',
       version: 1,
       summary: 'Non-maximum suppression: thin gradient ridges to one pixel.',

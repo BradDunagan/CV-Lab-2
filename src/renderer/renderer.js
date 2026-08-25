@@ -195,7 +195,7 @@ function buildTile(slot) {
 
   header.append(
     select('view', ['image', 'histogram'], view.type, redraw('type')),
-    select('colormap', ['gray', 'viridis', 'turbo', 'diverging', 'categorical'],
+    select('colormap', ['gray', 'viridis', 'turbo', 'diverging', 'categorical', 'cyclic'],
       view.colormap, redraw('colormap')),
     select('range', ['auto', 'percentile', 'symmetric'], view.range, redraw('range')),
     select('curve', ['linear', 'log', 'abs', 'sqrt'], view.curve, redraw('curve')),
