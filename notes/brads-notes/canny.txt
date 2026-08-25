@@ -1,0 +1,88 @@
+❯ Whould it be disruptive to our line of development if we add the canny edge detector operation now?
+
+Not disruptive — it fits the existing model without changing anything structural. Let me be specific about why, and about the one place it does push.
+
+It decomposes into what we already have
+
+Canny is five stages, and each maps to a single-input-or-multi-input, single-output operation:
+
+B  = gaussian(A, sigma=1.4)
+Gx = sobel(B, axis=x)
+Gy = sobel(B, axis=y)
+M  = sobel(B, axis=mag)
+N  = nms(M, Gx, Gy)              ← new kernel
+E  = hysteresis(N, low=0.05, high=0.15)   ← new kernel
+
+Two new kernels, two registry entries. No new dtype, no change to the session, the parser, the log, or the display path. hysteresis outputs an i32 mask, which already has a categorical default view.
+
+What it does exercise for the first time
+
+Worth knowing, because these are things we designed for and have never actually used:
+
+- A multi-input native kernel. nms takes three. The C table declares an input count and runKernel validates it, but every kernel so far takes 0 or 1. The plumbing exists and is untested.
+- Dynamic allocation inside a kernel. Hysteresis needs a stack for the flood fill. First kernel to allocate scratch beyond a fixed temp buffer.
+- Cancellation actually mattering. Hysteresis is the first kernel with data-dependent iteration rather than a fixed pixel loop. The flag has been threaded through every kernel from the start and never had a reason to be polled mid-work.
+
+Also convenient: hysteresis is order-independent — a pixel is either connected to a strong edge or it isn't — so it's deterministic by construction, no summation-order concern.
+
+The one real design question
+
+Whether to also add a convenience canny(src, sigma, low, high) that runs the whole chain in one kernel.
+
+I'd say no, not initially. The explicit chain is the point of a lab: you can look at N and see what non-maximum suppression actually did, change low and re-run only the last stage, and the provenance log shows five entries explaining the result instead of one opaque one. A monolithic canny is the thing you add once you're tired of typing it, and it costs you the ability to inspect the middle.
+
+The cost of explicit staging is that three sobel calls recompute the same convolution three times. At lab scale that's milliseconds and worth it.
+
+Want me to build it? I'd do nms first with tests against known cases — a diagonal edge, a ridge that should thin to one pixel — then hysteresis.
+
+✻ Cooked for 42s
+
+❯ Yes, build it.
+
+Building nms first. I need a new status code for parameter errors, then the two kernels:
+
+  Ran 2 shell commands
+
+All correct by hand. Now proper tests:
+
+  Ran 2 shell commands
+
+896 — and that's not a failure, it's the exactly correct answer. My 20% ceiling was an arbitrary guess. Let me look at the structure before fixing the assertion:
+
+  Ran 1 shell command
+
+The output is textbook-correct, and my assertion was the wrong shape. Row 4 — inside a block vertically, so it crosses only vertical boundaries — has exactly 7 lit pixels, one per internal boundary, each a single pixel wide. Replacing the percentage guess with the geometry:
+
+  Ran 2 shell commands
+
+Canny works, and it wasn't disruptive — two kernels, two registry entries, nothing structural changed.
+
+A  = pattern(kind=checker, width=256, height=256)
+B  = gaussian(A, sigma=1.4)
+Gx = sobel(B, axis=x)
+Gy = sobel(B, axis=y)
+M  = sobel(B, axis=mag)
+N  = nms(M, Gx, Gy)
+E  = hysteresis(N, low=0.01, high=0.04)
+
+The provenance graph shows the DAG doing real work: consumers of B#1: [3, 4, 5] — one blurred image feeding three Sobel calls, and E reaching back through all seven entries.
+
+The three firsts it exercised
+
+All worked without changes, which is the point of having designed for them:
+
+- A multi-input native kernel — nms takes three buffers. That path had never been used by anything but a test fixture.
+- Dynamic allocation in a kernel — hysteresis grows its flood-fill stack by doubling rather than allocating worst-case, which would be 96 MB for a 12 MP image to hold a few hundred kilobytes of actual edges.
+- Cancellation that matters — hysteresis is the first kernel whose work is data-dependent rather than a fixed pixel loop, so it polls mid-traversal. The flag has been in every kernel signature since the first one and finally had a reason to exist.
+
+One test that taught me something
+
+My Canny test asserted "fewer than 20% of pixels are edges." It failed at 896/4096 = 21.9%.
+
+896 is exactly right: a 64×64 checkerboard of 8-pixel blocks has 7 internal vertical and 7 internal horizontal boundaries, and 7×64 + 7×64 = 896. My tolerance was a guess and the code was correct.
+
+Replaced with assertions derived from the geometry: row 4 sits inside a block vertically, so it crosses only vertical boundaries — it must have exactly 7 lit pixels, no two adjacent (proving nms thinned to one pixel), each within one pixel of a block boundary. That's a real test of Canny; the percentage was a test of my guess.
+
+Two deliberate details worth knowing: nms compares asymmetrically (> one way, >= the other) so a ridge exactly two pixels wide thins to one; and hysteresis does not reflect at borders, because reflection is right for convolution and wrong for connectivity — the last pixel of a row doesn't touch the first pixel of the next.
+
+180 tests green. Commit?

@@ -1,0 +1,25 @@
+From Google/Gemini - 
+
+In computer vision and image processing, NMS stands for Non-Maximum Suppression. It is a critical post-processing algorithm used primarily in object detection to clear out redundant, overlapping bounding boxes so that each distinct object is represented by only one final box. [1, 2]  
+How NMS Works 
+
+• Filter by Confidence: The algorithm drops any predicted bounding boxes that fall below a minimum confidence score threshold. 
+• Sort by Score: It lists the remaining boxes in descending order based on their confidence values. 
+• Select the Highest: It picks the box with the highest confidence score and keeps it as a valid detection. 
+• Calculate Overlap: It computes the Intersection over Union (IoU) between this top-scoring box and all other remaining boxes. 
+• Suppress Duplicates: Any box that has an overlap (IoU) higher than a predefined threshold is discarded because it likely covers the same object. 
+• Repeat: The process moves to the next highest-scoring box among what remains and repeats until all boxes are processed. [3, 4]  
+
+Common Variations 
+
+• Greedy NMS: The standard approach described above, which completely deletes overlapping boxes. 
+• Soft-NMS: An alternative method that lowers (decays) the confidence scores of overlapping boxes rather than hard-deleting them, making it better for crowded scenes. [3, 5]  
+
+AI responses may include mistakes.
+
+[1] https://www.youtube.com/watch?v=FQEiS110PvA
+[2] https://www.youtube.com/watch?v=nOlFP5ke4-k
+[3] https://www.geeksforgeeks.org/computer-vision/what-is-non-maximum-suppression/
+[4] https://www.ultralytics.com/glossary/non-maximum-suppression-nms
+[5] https://www.abhik.ai/concepts/computer-vision/nms-soft-nms
+
