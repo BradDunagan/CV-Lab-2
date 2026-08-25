@@ -256,6 +256,22 @@ function buildOps({ decodeFile } = {}) {
     }),
 
     defineOp({
+      name: 'merge',
+      version: 1,
+      summary: 'Join segments that are collinear and nearly touching.',
+      // A separate operation rather than a flag on segments, so you can see
+      // what it joined by comparing the two label maps (§3).
+      inputs: [{ name: 'src', channels: [1], space: 'any' }],
+      params: [
+        { name: 'gap', type: 'number', default: 6.0, min: 0 },
+        { name: 'maxResidual', type: 'number', default: 1.0, min: 0.1 },
+        { name: 'angleTol', type: 'number', default: 15.0, min: 1, max: 90 },
+      ],
+      output: { channels: 1, dtype: 'i32', space: 'none' },
+      kernel: nativeKernel('merge'),
+    }),
+
+    defineOp({
       name: 'threshold',
       version: 1,
       summary: 'Binary mask: 1 where the input exceeds t, else 0.',

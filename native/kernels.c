@@ -427,6 +427,9 @@ static CvStatus k_orient(const CvBuffer *const *inputs, size_t n_inputs,
 static CvStatus k_segments(const CvBuffer *const *inputs, size_t n_inputs,
                            const CvParams *params, CvBuffer *out,
                            CvScalars *scalars, const CvKernelCtx *ctx);
+static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
+                        const CvParams *params, CvBuffer *out,
+                        CvScalars *scalars, const CvKernelCtx *ctx);
 
 /* ------------------------------------------------------------------ */
 /* the table                                                            */
@@ -445,6 +448,7 @@ static const CvKernelEntry KERNELS[] = {
   { "hysteresis", k_hysteresis, 1, true },
   { "orient",     k_orient,     2, true },
   { "segments",   k_segments,   3, true },
+  { "merge",      k_merge,      1, true },
 };
 
 const CvKernelEntry *cv_kernel_lookup(const char *name) {
@@ -956,5 +960,213 @@ static CvStatus k_segments(const CvBuffer *const *inputs, size_t n_inputs,
     }
     free(renumber);
   }
+  return CV_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* merge(labels) -- join segments that are collinear and nearly touching */
+/*                                                                      */
+/* A separate operation rather than a flag on `segments`, so the effect  */
+/* is visible: compare the two label maps and you can see exactly what   */
+/* was joined (§3, on operation granularity).                            */
+/*                                                                      */
+/* Two segments merge when three things hold: their fitted lines point   */
+/* the same way, their nearest endpoints are within `gap`, and -- the    */
+/* test that actually decides it -- the line fitted to BOTH sets still   */
+/* holds every pixel within `maxResidual`. The first two are cheap       */
+/* filters; the third is the claim.                                      */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+  CvTls fit;
+  int32_t next;        /* segments merged into this root, as a chain */
+  int32_t parent;
+  double ax, ay, bx, by;   /* the two extreme points along the fitted line */
+  bool alive;
+} CvSegment;
+
+static int32_t find_root(CvSegment *segs, int32_t i) {
+  while (segs[i].parent != i) {
+    segs[i].parent = segs[segs[i].parent].parent;   /* path halving */
+    i = segs[i].parent;
+  }
+  return i;
+}
+
+typedef struct { double gap; int32_t a, b; } CvMergeCandidate;
+
+static int candidate_compare(const void *p, const void *q) {
+  const CvMergeCandidate *x = (const CvMergeCandidate *)p;
+  const CvMergeCandidate *y = (const CvMergeCandidate *)q;
+  if (x->gap < y->gap) return -1;
+  if (x->gap > y->gap) return 1;
+  if (x->a != y->a) return (x->a < y->a) ? -1 : 1;
+  return (x->b < y->b) ? -1 : (x->b > y->b);
+}
+
+static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
+                        const CvParams *params, CvBuffer *out,
+                        CvScalars *scalars, const CvKernelCtx *ctx) {
+  (void)n_inputs; (void)scalars;
+  const CvBuffer *src = inputs[0];
+  if (src->channels != 1) return CV_ERR_CHANNELS;
+  if (src->dtype != CV_DTYPE_I32) return CV_ERR_DTYPE;
+
+  const double gap = cv_param_num(params, "gap", 6.0);
+  const double max_residual = cv_param_num(params, "maxResidual", 1.0);
+  const double angle_tol = cv_param_num(params, "angleTol", 15.0);
+  if (gap < 0.0 || max_residual <= 0.0 || angle_tol <= 0.0 || angle_tol > 90.0) {
+    return CV_ERR_PARAM;
+  }
+
+  const int64_t rows = src->height, cols = src->width;
+  const int32_t *in = (const int32_t *)src->data;
+  const size_t n = (size_t)rows * (size_t)cols;
+
+  CvStatus status = cv_buffer_alloc(out, cols, rows, 1, CV_DTYPE_I32, CV_SPACE_NONE);
+  if (status != CV_OK) return status;
+  int32_t *dst = (int32_t *)out->data;
+
+  int32_t count = 0;
+  for (size_t i = 0; i < n; i++) if (in[i] > count) count = in[i];
+  if (count < 2) {                       /* nothing to merge */
+    memcpy(dst, in, out->bytes);
+    return CV_OK;
+  }
+
+  CvSegment *segs = (CvSegment *)calloc((size_t)count + 1, sizeof(CvSegment));
+  if (segs == NULL) { cv_buffer_free(out); return CV_ERR_ALLOC; }
+
+  for (int32_t i = 1; i <= count; i++) {
+    segs[i].parent = i;
+    segs[i].next = -1;
+    segs[i].alive = false;
+  }
+  for (size_t i = 0; i < n; i++) {
+    const int32_t id = in[i];
+    if (id <= 0) continue;
+    segs[id].alive = true;
+    tls_add(&segs[id].fit, (double)(i % (size_t)cols), (double)(i / (size_t)cols));
+  }
+
+  /* Extremes along each fitted line: its endpoints. */
+  for (int32_t i = 1; i <= count; i++) {
+    if (!segs[i].alive || segs[i].fit.n < 2.0) { segs[i].alive = false; continue; }
+    double nx, ny, c;
+    tls_line(&segs[i].fit, &nx, &ny, &c);
+    const double tx = -ny, ty = nx;          /* along the line */
+    double lo = 1e300, hi = -1e300;
+    segs[i].ax = segs[i].ay = segs[i].bx = segs[i].by = 0.0;
+    for (size_t k = 0; k < n; k++) {
+      if (in[k] != i) continue;
+      const double x = (double)(k % (size_t)cols), y = (double)(k / (size_t)cols);
+      const double t = tx * x + ty * y;
+      if (t < lo) { lo = t; segs[i].ax = x; segs[i].ay = y; }
+      if (t > hi) { hi = t; segs[i].bx = x; segs[i].by = y; }
+    }
+  }
+
+  /* Candidate pairs: near endpoints and agreeing direction. */
+  size_t capacity = 256, candidates = 0;
+  CvMergeCandidate *pairs = (CvMergeCandidate *)malloc(capacity * sizeof(CvMergeCandidate));
+  if (pairs == NULL) { free(segs); cv_buffer_free(out); return CV_ERR_ALLOC; }
+
+  const double cos_tol = cos(angle_tol * CV_PI / 180.0);
+  for (int32_t i = 1; i <= count; i++) {
+    if (!segs[i].alive) continue;
+    if (is_cancelled(ctx)) { free(pairs); free(segs); cv_buffer_free(out); return CV_ERR_CANCELLED; }
+    double inx, iny, ic;
+    tls_line(&segs[i].fit, &inx, &iny, &ic);
+
+    for (int32_t j = i + 1; j <= count; j++) {
+      if (!segs[j].alive) continue;
+      double jnx, jny, jc;
+      tls_line(&segs[j].fit, &jnx, &jny, &jc);
+
+      /* Lines, not rays: opposite normals describe the same direction. */
+      if (fabs(inx * jnx + iny * jny) < cos_tol) continue;
+
+      double best = 1e300;
+      const double ex[4] = { segs[i].ax, segs[i].ax, segs[i].bx, segs[i].bx };
+      const double ey[4] = { segs[i].ay, segs[i].ay, segs[i].by, segs[i].by };
+      const double fx[4] = { segs[j].ax, segs[j].bx, segs[j].ax, segs[j].bx };
+      const double fy[4] = { segs[j].ay, segs[j].by, segs[j].ay, segs[j].by };
+      for (int k = 0; k < 4; k++) {
+        const double d = hypot(ex[k] - fx[k], ey[k] - fy[k]);
+        if (d < best) best = d;
+      }
+      if (best > gap) continue;
+
+      if (candidates == capacity) {
+        capacity *= 2;
+        CvMergeCandidate *bigger =
+            (CvMergeCandidate *)realloc(pairs, capacity * sizeof(CvMergeCandidate));
+        if (bigger == NULL) { free(pairs); free(segs); cv_buffer_free(out); return CV_ERR_ALLOC; }
+        pairs = bigger;
+      }
+      pairs[candidates].gap = best;
+      pairs[candidates].a = i;
+      pairs[candidates].b = j;
+      candidates++;
+    }
+  }
+
+  /* Closest first, ties broken by id: a total order, so the outcome does not
+   * depend on the sort implementation. */
+  qsort(pairs, candidates, sizeof(CvMergeCandidate), candidate_compare);
+
+  for (size_t p = 0; p < candidates; p++) {
+    const int32_t ra = find_root(segs, pairs[p].a);
+    const int32_t rb = find_root(segs, pairs[p].b);
+    if (ra == rb) continue;
+
+    CvTls combined = segs[ra].fit;
+    combined.n += segs[rb].fit.n;
+    combined.sx += segs[rb].fit.sx; combined.sy += segs[rb].fit.sy;
+    combined.sxx += segs[rb].fit.sxx; combined.syy += segs[rb].fit.syy;
+    combined.sxy += segs[rb].fit.sxy;
+
+    double nx, ny, c;
+    tls_line(&combined, &nx, &ny, &c);
+
+    /* The decisive test: does one line still hold every pixel of both? */
+    bool ok = true;
+    for (int side = 0; side < 2 && ok; side++) {
+      for (int32_t member = (side == 0 ? ra : rb); member != -1 && ok;
+           member = segs[member].next) {
+        for (size_t k = 0; k < n && ok; k++) {
+          if (in[k] != member) continue;
+          const double x = (double)(k % (size_t)cols), y = (double)(k / (size_t)cols);
+          if (tls_distance(nx, ny, c, x, y) > max_residual) ok = false;
+        }
+      }
+    }
+    if (!ok) continue;
+
+    /* Union, appending rb's chain to ra's. */
+    int32_t tail = ra;
+    while (segs[tail].next != -1) tail = segs[tail].next;
+    segs[tail].next = rb;
+    segs[rb].parent = ra;
+    segs[ra].fit = combined;
+  }
+
+  /* Write the merged labels, then renumber canonically -- raster order of
+   * each group's first pixel, exactly as `segments` does, so the result is
+   * named by the image rather than by the order merges happened to occur. */
+  int32_t *renumber = (int32_t *)calloc((size_t)count + 1, sizeof(int32_t));
+  if (renumber == NULL) { free(pairs); free(segs); cv_buffer_free(out); return CV_ERR_ALLOC; }
+  int32_t next_id = 0;
+  for (size_t i = 0; i < n; i++) {
+    const int32_t id = in[i];
+    if (id <= 0) { dst[i] = 0; continue; }
+    const int32_t root = find_root(segs, id);
+    if (renumber[root] == 0) renumber[root] = ++next_id;
+    dst[i] = renumber[root];
+  }
+
+  free(renumber);
+  free(pairs);
+  free(segs);
   return CV_OK;
 }

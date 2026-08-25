@@ -40,7 +40,7 @@ console.log(`cv-lab-2 kernel tests (${runtime}, ${process.platform}/${process.ar
 test('every kernel is reachable by name', () => {
   assert.deepEqual(native.kernelNames(),
     ['pattern', 'gray', 'gaussian', 'sobel', 'threshold', 'stats', 'toLinear',
-     'toSrgb', 'nms', 'hysteresis', 'orient', 'segments']);
+     'toSrgb', 'nms', 'hysteresis', 'orient', 'segments', 'merge']);
 });
 
 test('an unknown kernel and a wrong input count are refused', () => {
@@ -718,6 +718,136 @@ test('a blank field yields no segments rather than an error', () => {
   const gx = run('sobel', [flat], { axis: 'x' });
   const gy = run('sobel', [flat], { axis: 'y' });
   assert.deepEqual(segmentSizes(read(run('segments', [flat, gx, gy]))), []);
+});
+
+/* --- merge: joining collinear neighbours -------------------------------- */
+
+/** Build a label map directly, so the geometry under test is exact. */
+function labelMap(w, h, runs) {
+  const b = native.createBuffer({ width: w, height: h, channels: 1, dtype: 'i32' });
+  const v = new Int32Array(w * h);
+  runs.forEach(({ id, from, to }) => {
+    const steps = Math.max(Math.abs(to[0] - from[0]), Math.abs(to[1] - from[1]));
+    for (let s = 0; s <= steps; s++) {
+      const x = Math.round(from[0] + ((to[0] - from[0]) * s) / steps);
+      const y = Math.round(from[1] + ((to[1] - from[1]) * s) / steps);
+      v[y * w + x] = id;
+    }
+  });
+  native.bufferWrite(b, v);
+  return b;
+}
+const idsOf = (labels) => [...new Set(labels.filter((v) => v > 0))].sort((a, b) => a - b);
+
+test('two collinear runs with a small gap become one', () => {
+  const m = labelMap(32, 32, [
+    { id: 1, from: [5, 10], to: [12, 10] },
+    { id: 2, from: [16, 10], to: [23, 10] },   // 4px gap, same row
+  ]);
+  assert.equal(idsOf(read(run('merge', [m], { gap: 6 }))).length, 1);
+});
+
+test('a gap wider than the tolerance leaves them apart', () => {
+  const m = labelMap(32, 32, [
+    { id: 1, from: [5, 10], to: [12, 10] },
+    { id: 2, from: [16, 10], to: [23, 10] },
+  ]);
+  assert.equal(idsOf(read(run('merge', [m], { gap: 3 }))).length, 2);
+});
+
+test('runs that are not collinear stay apart however close', () => {
+  // Touching endpoints, but perpendicular: the combined set is a corner, and
+  // no line holds a corner.
+  const m = labelMap(32, 32, [
+    { id: 1, from: [5, 10], to: [15, 10] },
+    { id: 2, from: [16, 11], to: [16, 21] },
+  ]);
+  assert.equal(idsOf(read(run('merge', [m], { gap: 6 }))).length, 2);
+});
+
+test('parallel but offset runs stay apart', () => {
+  // Same direction, near endpoints, but a line through both would miss every
+  // pixel by more than the tolerance. This is the test that actually decides.
+  const m = labelMap(32, 32, [
+    { id: 1, from: [5, 10], to: [12, 10] },
+    { id: 2, from: [16, 16], to: [23, 16] },
+  ]);
+  assert.equal(idsOf(read(run('merge', [m], { gap: 8, maxResidual: 1.0 }))).length, 2);
+  // Loosen the straightness requirement and they do join.
+  assert.equal(idsOf(read(run('merge', [m], { gap: 8, maxResidual: 5.0 }))).length, 1);
+});
+
+test('merge chains three collinear runs into one', () => {
+  const m = labelMap(40, 40, [
+    { id: 1, from: [4, 20], to: [10, 20] },
+    { id: 2, from: [14, 20], to: [20, 20] },
+    { id: 3, from: [24, 20], to: [30, 20] },
+  ]);
+  assert.equal(idsOf(read(run('merge', [m], { gap: 6 }))).length, 1);
+});
+
+test('merge never gains or loses a pixel', () => {
+  const m = labelMap(32, 32, [
+    { id: 1, from: [5, 10], to: [12, 10] },
+    { id: 2, from: [16, 10], to: [23, 10] },
+    { id: 3, from: [5, 20], to: [12, 26] },
+  ]);
+  const before = read(m).filter((v) => v > 0).length;
+  const after = read(run('merge', [m], { gap: 6 })).filter((v) => v > 0).length;
+  assert.equal(after, before);
+});
+
+test('output is numbered 1..n in raster order of first pixel', () => {
+  const m = labelMap(32, 32, [
+    { id: 3, from: [5, 25], to: [12, 25] },
+    { id: 1, from: [5, 5], to: [12, 5] },
+  ]);
+  const labels = read(run('merge', [m], { gap: 2 }));
+  const firstSeen = new Map();
+  labels.forEach((v, i) => { if (v > 0 && !firstSeen.has(v)) firstSeen.set(v, i); });
+  const order = [...firstSeen.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+  assert.deepEqual(order, order.map((_, i) => i + 1));
+});
+
+test('merge is deterministic and idempotent', () => {
+  const m = labelMap(40, 40, [
+    { id: 1, from: [4, 20], to: [10, 20] },
+    { id: 2, from: [14, 20], to: [20, 20] },
+    { id: 3, from: [4, 30], to: [12, 34] },
+  ]);
+  const once = read(run('merge', [m], { gap: 6 }));
+  for (let i = 0; i < 3; i++) assert.deepEqual(read(run('merge', [m], { gap: 6 })), once);
+
+  const twice = native.createBuffer({ width: 40, height: 40, channels: 1, dtype: 'i32' });
+  native.bufferWrite(twice, Int32Array.from(once));
+  assert.deepEqual(read(run('merge', [twice], { gap: 6 })), once,
+    'merging an already-merged map should change nothing');
+});
+
+test('a map with one segment or none passes through unchanged', () => {
+  const one = labelMap(16, 16, [{ id: 1, from: [2, 8], to: [12, 8] }]);
+  assert.deepEqual(read(run('merge', [one])), read(one));
+  const empty = native.createBuffer({ width: 8, height: 8, channels: 1, dtype: 'i32' });
+  assert.deepEqual(read(run('merge', [empty])), read(empty));
+});
+
+test('merge leaves a square outline as four sides', () => {
+  // The end-to-end guard: perpendicular sides must not be joined.
+  const b = run('gaussian', [shape((x, y) =>
+    (x > 16 && x < 48 && y > 16 && y < 48 ? 1 : 0))], { sigma: 1.2 });
+  const gx = run('sobel', [b], { axis: 'x' });
+  const gy = run('sobel', [b], { axis: 'y' });
+  const thin = run('nms', [run('sobel', [b], { axis: 'mag' }), gx, gy]);
+  const seg = run('segments', [thin, gx, gy]);
+  assert.equal(idsOf(read(run('merge', [seg]))).length, 4);
+});
+
+test('merge refuses a float buffer and bad parameters', () => {
+  const f = run('pattern', [], { kind: 'ramp', width: 16, height: 16 });
+  assert.throws(() => run('merge', [f]), /dtype/);
+  const m = labelMap(16, 16, [{ id: 1, from: [2, 8], to: [12, 8] }]);
+  assert.throws(() => run('merge', [m], { angleTol: 0 }), /parameter out of range/);
+  assert.throws(() => run('merge', [m], { gap: -1 }), /parameter out of range/);
 });
 
 /* --- hostile inputs ---------------------------------------------------- */

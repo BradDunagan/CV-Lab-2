@@ -177,7 +177,7 @@ test('reports every problem, not just the first', () => {
 test('the first slice registers cleanly', () => {
   const r = createRegistry();
   assert.deepEqual(r.names(),
-    ['gaussian', 'gray', 'hysteresis', 'load', 'nms', 'orient', 'pattern',
+    ['gaussian', 'gray', 'hysteresis', 'load', 'merge', 'nms', 'orient', 'pattern',
      'segments', 'sobel', 'stats', 'threshold', 'toLinear', 'toSrgb']);
 });
 
