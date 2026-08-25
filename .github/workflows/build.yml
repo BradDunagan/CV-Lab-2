@@ -45,6 +45,15 @@ jobs:
 
       - run: npm ci
 
+      # Strict compile of the pure-C sources. Runs on Linux and macOS because
+      # it needs a POSIX compiler; the Linux run is the one that matters, since
+      # glibc gates POSIX declarations that Apple's libc exposes unconditionally
+      # -- which is exactly how an implicit posix_memalign declaration survived
+      # unnoticed on every Linux build for weeks.
+      - name: Lint native sources
+        if: runner.os != 'Windows'
+        run: npm run lint:native
+
       # Build against the Node ABI first so the smoke test can run headlessly.
       - name: Build addon (Node ABI)
         run: npm run build:native

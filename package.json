@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build:native": "node-gyp rebuild",
+    "lint:native": "node scripts/lint-native.js",
     "rebuild:electron": "node scripts/rebuild-electron.js",
     "test:native": "node test/smoke.js && node test/buffer.js && node test/kernels.js && node test/render.js",
     "sample": "node scripts/make-sample.js 12",

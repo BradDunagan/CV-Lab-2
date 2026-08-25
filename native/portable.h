@@ -38,10 +38,31 @@ static CV_INLINE void *cv_aligned_alloc(size_t alignment, size_t size) {
 }
 static CV_INLINE void cv_aligned_free(void *ptr) { _aligned_free(ptr); }
 #else
+/*
+ * C11's aligned_alloc, not POSIX's posix_memalign.
+ *
+ * posix_memalign is only declared by glibc when _POSIX_C_SOURCE >= 200112L,
+ * and building with -std=c11 asks for strict ISO C, which does not set it. So
+ * every Linux compile emitted `implicit declaration of function
+ * 'posix_memalign'` -- silently, because macOS declares it unconditionally and
+ * nothing here was reading Linux compiler output.
+ *
+ * That is not cosmetic. An implicitly declared function is assumed to return
+ * int with unspecified arguments; it happens to work on these ABIs and is
+ * undefined behaviour. gcc 14 rejects implicit declarations outright, so this
+ * was a build break waiting for a newer runner image.
+ *
+ * aligned_alloc is ISO C11 and therefore declared under -std=c11 with no
+ * feature-test macro anywhere. Its one requirement is that the size be a
+ * multiple of the alignment, which is enforced here rather than trusted to
+ * callers.
+ */
 static CV_INLINE void *cv_aligned_alloc(size_t alignment, size_t size) {
-  void *ptr = NULL;
-  if (posix_memalign(&ptr, alignment, size) != 0) return NULL;
-  return ptr;
+  if (alignment == 0) return NULL;
+  const size_t remainder = size % alignment;
+  const size_t rounded = remainder ? size + (alignment - remainder) : size;
+  if (rounded < size) return NULL;              /* rounding overflowed */
+  return aligned_alloc(alignment, rounded);
 }
 static CV_INLINE void cv_aligned_free(void *ptr) { free(ptr); }
 #endif
