@@ -1046,6 +1046,37 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
     cv_tls_add(&segs[id].fit, (double)(i % (size_t)cols), (double)(i / (size_t)cols));
   }
 
+  /*
+   * A pixel index, built once.
+   *
+   * Every place below needs "the pixels of segment i". Scanning the whole
+   * image each time made this O(segments^2 * pixels): measured at four
+   * minutes on a 768x768 checkerboard with 18240 segments, against 13 ms for
+   * every other stage in the pipeline combined, and it did not finish at all
+   * at 1024x1024.
+   *
+   * Counts, then offsets, then one filling pass -- the usual compressed-row
+   * layout. After this, "the pixels of segment i" is a contiguous slice and
+   * the cost tracks the segments' actual size rather than the image's.
+   */
+  size_t *offset = (size_t *)calloc((size_t)count + 2, sizeof(size_t));
+  if (offset == NULL) { free(segs); cv_buffer_free(out); return CV_ERR_ALLOC; }
+  for (size_t i = 0; i < n; i++) if (in[i] > 0) offset[in[i] + 1]++;
+  for (int32_t i = 1; i <= count + 1; i++) offset[i] += offset[i - 1];
+  const size_t labelled = offset[count + 1];
+
+  int64_t *member_px = (int64_t *)malloc((labelled ? labelled : 1) * sizeof(int64_t));
+  if (member_px == NULL) { free(offset); free(segs); cv_buffer_free(out); return CV_ERR_ALLOC; }
+  {
+    size_t *cursor = (size_t *)malloc(((size_t)count + 2) * sizeof(size_t));
+    if (cursor == NULL) {
+      free(member_px); free(offset); free(segs); cv_buffer_free(out); return CV_ERR_ALLOC;
+    }
+    memcpy(cursor, offset, ((size_t)count + 2) * sizeof(size_t));
+    for (size_t i = 0; i < n; i++) if (in[i] > 0) member_px[cursor[in[i]]++] = (int64_t)i;
+    free(cursor);
+  }
+
   /* Extremes along each fitted line: its endpoints. */
   for (int32_t i = 1; i <= count; i++) {
     if (!segs[i].alive || segs[i].fit.n < 2.0) { segs[i].alive = false; continue; }
@@ -1054,9 +1085,9 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
     const double tx = -ny, ty = nx;          /* along the line */
     double lo = 1e300, hi = -1e300;
     segs[i].ax = segs[i].ay = segs[i].bx = segs[i].by = 0.0;
-    for (size_t k = 0; k < n; k++) {
-      if (in[k] != i) continue;
-      const double x = (double)(k % (size_t)cols), y = (double)(k / (size_t)cols);
+    for (size_t k = offset[i]; k < offset[i + 1]; k++) {
+      const size_t px = (size_t)member_px[k];
+      const double x = (double)(px % (size_t)cols), y = (double)(px / (size_t)cols);
       const double t = tx * x + ty * y;
       if (t < lo) { lo = t; segs[i].ax = x; segs[i].ay = y; }
       if (t > hi) { hi = t; segs[i].bx = x; segs[i].by = y; }
@@ -1066,12 +1097,17 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
   /* Candidate pairs: near endpoints and agreeing direction. */
   size_t capacity = 256, candidates = 0;
   CvMergeCandidate *pairs = (CvMergeCandidate *)malloc(capacity * sizeof(CvMergeCandidate));
-  if (pairs == NULL) { free(segs); cv_buffer_free(out); return CV_ERR_ALLOC; }
+  if (pairs == NULL) {
+    free(member_px); free(offset); free(segs); cv_buffer_free(out); return CV_ERR_ALLOC;
+  }
 
   const double cos_tol = cos(angle_tol * CV_PI / 180.0);
   for (int32_t i = 1; i <= count; i++) {
     if (!segs[i].alive) continue;
-    if (is_cancelled(ctx)) { free(pairs); free(segs); cv_buffer_free(out); return CV_ERR_CANCELLED; }
+    if (is_cancelled(ctx)) {
+      free(pairs); free(member_px); free(offset); free(segs);
+      cv_buffer_free(out); return CV_ERR_CANCELLED;
+    }
     double inx, iny, ic;
     cv_tls_line(&segs[i].fit, &inx, &iny, &ic);
 
@@ -1098,7 +1134,10 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
         capacity *= 2;
         CvMergeCandidate *bigger =
             (CvMergeCandidate *)realloc(pairs, capacity * sizeof(CvMergeCandidate));
-        if (bigger == NULL) { free(pairs); free(segs); cv_buffer_free(out); return CV_ERR_ALLOC; }
+        if (bigger == NULL) {
+          free(pairs); free(member_px); free(offset); free(segs);
+          cv_buffer_free(out); return CV_ERR_ALLOC;
+        }
         pairs = bigger;
       }
       pairs[candidates].gap = best;
@@ -1131,9 +1170,9 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
     for (int side = 0; side < 2 && ok; side++) {
       for (int32_t member = (side == 0 ? ra : rb); member != -1 && ok;
            member = segs[member].next) {
-        for (size_t k = 0; k < n && ok; k++) {
-          if (in[k] != member) continue;
-          const double x = (double)(k % (size_t)cols), y = (double)(k / (size_t)cols);
+        for (size_t k = offset[member]; k < offset[member + 1] && ok; k++) {
+          const size_t px = (size_t)member_px[k];
+          const double x = (double)(px % (size_t)cols), y = (double)(px / (size_t)cols);
           if (cv_tls_distance(nx, ny, c, x, y) > max_residual) ok = false;
         }
       }
@@ -1152,7 +1191,10 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
    * each group's first pixel, exactly as `segments` does, so the result is
    * named by the image rather than by the order merges happened to occur. */
   int32_t *renumber = (int32_t *)calloc((size_t)count + 1, sizeof(int32_t));
-  if (renumber == NULL) { free(pairs); free(segs); cv_buffer_free(out); return CV_ERR_ALLOC; }
+  if (renumber == NULL) {
+    free(pairs); free(member_px); free(offset); free(segs);
+    cv_buffer_free(out); return CV_ERR_ALLOC;
+  }
   int32_t next_id = 0;
   for (size_t i = 0; i < n; i++) {
     const int32_t id = in[i];
@@ -1164,6 +1206,8 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
 
   free(renumber);
   free(pairs);
+  free(member_px);
+  free(offset);
   free(segs);
   return CV_OK;
 }

@@ -473,6 +473,32 @@ pixels themselves. That is where sub-pixel accuracy comes from: the line is an
 average over every pixel in the segment, so it localises better than any single
 pixel centre can.
 
+### Cost, measured
+
+Timings on a checkerboard, which is close to a worst case — every block
+boundary fragments, so the segment count is far above what a photograph
+produces:
+
+| image | segments | pixel stages | `segments` | `merge` | `fit` | `corners` |
+|---|---|---|---|---|---|---|
+| 256² | 1,984 | 2 ms | 1 ms | 26 ms | 2 ms | 18 ms |
+| 512² | 8,064 | 8 ms | 6 ms | 415 ms | 11 ms | 155 ms |
+| 768² | 18,240 | 18 ms | 13 ms | 2.1 s | 36 ms | 0.7 s |
+| 1024² | 32,512 | 32 ms | 24 ms | 6.7 s | 84 ms | 2.7 s |
+
+**The pixel stages are not the cost.** Blur, gradients and thinning together
+are 32 ms on a megapixel. Everything expensive is quadratic in the number of
+*segments*, which is a property of the scene rather than the resolution.
+
+`merge` was 100× worse than this until the pixel index went in: three loops
+scanned the whole image per segment or per candidate pair, making it
+O(segments² × pixels). It took four minutes on 768² and never finished at
+1024². Building the index once turned it into O(segments²), which the ratios
+confirm — a 1.78× rise in segments now costs 3.18×, against 3.18 predicted.
+
+`corners` is the next thing to reach if segment counts get high; it is also
+quadratic and its clustering pass is quadratic again in candidates.
+
 ### Corners are hypotheses, not detections
 
 `corners` intersects fitted segments pairwise. What it deliberately does *not*
