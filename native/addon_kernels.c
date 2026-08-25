@@ -459,6 +459,10 @@ static napi_value FitSegments(napi_env env, napi_callback_info info) {
 
     napi_value entry, v;
     napi_create_object(env, &entry);
+    /* Namespaced: `edge-` leaves room for region-, blob- or flow- features
+     * later without two unrelated things both calling themselves "segment". */
+    napi_create_string_utf8(env, "edge-segment", NAPI_AUTO_LENGTH, &v);
+    napi_set_named_property(env, entry, "type", v);
     napi_create_int32(env, id, &v);                    napi_set_named_property(env, entry, "id", v);
     napi_create_int64(env, (int64_t)fits[id].n, &v);   napi_set_named_property(env, entry, "pixels", v);
     napi_create_double(env, px0, &v);                  napi_set_named_property(env, entry, "x0", v);

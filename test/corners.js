@@ -173,6 +173,15 @@ test('sigma measures precision, not correctness', () => {
   assert.ok(absurd.sigma < 1, `and yet a tight sigma, got ${absurd.sigma}`);
 });
 
+/* --- typing -------------------------------------------------------------- */
+
+test('every corner is tagged edge-corner', () => {
+  // Namespaced so that a future region- or flow- feature cannot collide with
+  // an edge one just by both being called "corner".
+  const c = findCorners([seg(1, 0, 40, 40, 40), seg(2, 40, 40, 40, 80)]);
+  assert.ok(c.every((k) => k.type === 'edge-corner'));
+});
+
 /* --- determinism -------------------------------------------------------- */
 
 test('corners is deterministic and independent of input order', () => {

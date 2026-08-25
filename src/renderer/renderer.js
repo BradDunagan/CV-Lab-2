@@ -213,6 +213,10 @@ function buildTile(slot) {
   const size = tileSize(slot);
   canvas.width = size.width;
   canvas.height = size.height;
+  // Establish the context up front. These canvases are only ever written to
+  // with putImageData and read back by tests, so CPU backing is the right
+  // choice and it stops Chromium advising about repeated readback.
+  canvas.getContext('2d', { willReadFrequently: true });
 
   const footer = document.createElement('footer');
   footer.innerHTML = '<span class="scale"></span><span class="zoom"></span>';
@@ -275,23 +279,57 @@ function drawOverlays(canvas, slotName) {
   const toY = (y) => (y - viewport.y * slot.height) * sy;
 
   ctx.save();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = '#ff5c8a';
-  ctx.fillStyle = '#ffd166';
   for (const list of lists) {
     for (const f of list.features) {
-      ctx.beginPath();
-      ctx.moveTo(toX(f.x0), toY(f.y0));
-      ctx.lineTo(toX(f.x1), toY(f.y1));
-      ctx.stroke();
-      for (const [px, py] of [[f.x0, f.y0], [f.x1, f.y1]]) {
-        ctx.beginPath();
-        ctx.arc(toX(px), toY(py), 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      // Drawn by type. The first version assumed every feature was a line
+      // segment, so corners -- which have x,y rather than x0,y0,x1,y1 --
+      // produced NaN coordinates and canvas silently discarded them. They were
+      // computed, logged, and invisible.
+      if (f.type === 'edge-corner') drawCorner(ctx, f, toX, toY, sx);
+      else drawSegment(ctx, f, toX, toY);
     }
   }
   ctx.restore();
+}
+
+function drawSegment(ctx, f, toX, toY) {
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#ff5c8a';
+  ctx.fillStyle = '#ffd166';
+  ctx.beginPath();
+  ctx.moveTo(toX(f.x0), toY(f.y0));
+  ctx.lineTo(toX(f.x1), toY(f.y1));
+  ctx.stroke();
+  for (const [px, py] of [[f.x0, f.y0], [f.x1, f.y1]]) {
+    ctx.beginPath();
+    ctx.arc(toX(px), toY(py), 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawCorner(ctx, f, toX, toY, scale) {
+  const x = toX(f.x), y = toY(f.y);
+
+  // The uncertainty circle is drawn in IMAGE units, so it grows with zoom the
+  // way the image does -- a corner known to a tenth of a pixel should look
+  // tight when you zoom in on it, not stay a fixed blob.
+  const radius = Math.max(2, (f.sigma ?? 0) * scale);
+  ctx.strokeStyle = 'rgba(126, 231, 135, 0.55)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Corroborated corners are drawn solidly; a lone pair is drawn faintly,
+  // because support is the number that separates real from invented.
+  const strong = (f.support ?? 1) >= 2;
+  ctx.strokeStyle = strong ? '#7ee787' : 'rgba(126, 231, 135, 0.45)';
+  ctx.lineWidth = strong ? 2 : 1;
+  const arm = 5;
+  ctx.beginPath();
+  ctx.moveTo(x - arm, y); ctx.lineTo(x + arm, y);
+  ctx.moveTo(x, y - arm); ctx.lineTo(x, y + arm);
+  ctx.stroke();
 }
 
 function drawHistogram(canvas, slotName, view) {

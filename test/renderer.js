@@ -244,6 +244,7 @@ async function collect(win, swatch, linearPng) {
     await ui('PR = merge(PS)');
     const fitEntry = await ui('PF = fit(PR)');
     r.fitStatus = fitEntry;
+    await ui('PC = corners(PF)');
     const featureLists = window.lab.features();
     r.featureSlots = featureLists.map((f) => f.slot);
     r.featureCount = featureLists[0] ? featureLists[0].features.length : 0;
@@ -251,6 +252,27 @@ async function collect(win, swatch, linearPng) {
     r.featureSlotHasNoTile = !document.querySelector('.tile[data-slot="PF"]');
     r.featureSlotSummary = window.lab.slots().find((s) => s.name === 'PF');
     r.probeSkipsFeatures = !('PF' in window.lab.probeAll(0.5, 0.5));
+    r.featureTypes = Object.fromEntries(
+      window.lab.slots().filter((s) => s.kind === 'features').map((s) => [s.name, s.types]));
+
+    // Does the overlay actually draw? Compare the tile with it on and off.
+    // PB rather than P: an earlier step switches tile P to the histogram view,
+    // and the histogram branch draws no overlay -- so toggling would compare
+    // two identical histograms and conclude the overlay does nothing.
+    const snapshot = () => {
+      const c = document.getElementById('tile-canvas-PB');
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] * 3 + d[i + 2] * 7;
+      return sum;
+    };
+    const overlayBox = document.getElementById('overlay');
+    overlayBox.checked = false; overlayBox.dispatchEvent(new Event('change'));
+    await new Promise((res) => setTimeout(res, 60));
+    r.withoutOverlay = snapshot();
+    overlayBox.checked = true; overlayBox.dispatchEvent(new Event('change'));
+    await new Promise((res) => setTimeout(res, 60));
+    r.withOverlay = snapshot();
     try { window.lab.draw('tile-canvas-P', 'PF', {}); r.drawOnFeatures = 'accepted'; }
     catch (e) { r.drawOnFeatures = e.message; }
 
@@ -481,7 +503,7 @@ app.whenReady().then(async () => {
 
   test('a features slot binds, hashes and reports a count', () => {
     assert.match(r.fitStatus, /^#\d+ in/, `fit failed: ${r.fitStatus}`);
-    assert.deepEqual(r.featureSlots, ['PF']);
+    assert.deepEqual(r.featureSlots, ['PF', 'PC']);
     assert.ok(r.featureCount > 0, 'no features produced');
     assert.equal(r.featureSlotSummary.kind, 'features');
     assert.equal(r.featureSlotSummary.count, r.featureCount);
@@ -502,6 +524,17 @@ app.whenReady().then(async () => {
     assert.equal(r.featureSlotHasNoTile, true, 'features should not get an image tile');
     assert.equal(r.probeSkipsFeatures, true, 'the probe should skip a slot with no pixels');
     assert.match(r.drawOnFeatures, /holds features, not pixels/);
+  });
+
+  test('feature slots report what kind of features they hold', () => {
+    assert.deepEqual(r.featureTypes.PF && Object.keys(r.featureTypes.PF), ['edge-segment']);
+    assert.deepEqual(r.featureTypes.PC && Object.keys(r.featureTypes.PC), ['edge-corner']);
+  });
+
+  test('the overlay actually changes the tile', () => {
+    // Corners were previously drawn with a line segment's fields, giving NaN
+    // coordinates that canvas silently discards -- computed, logged, invisible.
+    assert.notEqual(r.withOverlay, r.withoutOverlay, 'the overlay drew nothing');
   });
 
   test('the page logged no errors', () => {

@@ -331,6 +331,24 @@ test('features still need a target, unlike scalars', async () => {
   await assert.rejects(async () => s.execute('describe(A)'), /needs a target/);
 });
 
+test('a features hash covers every field, whatever the record shape', async () => {
+  // The first version hashed a hardcoded list of line-segment fields, so
+  // corner records -- which share only id and angle -- all collapsed onto the
+  // same hash. Two entirely different sets of corners hashed identically,
+  // which is worse than no hash at all.
+  const s = newSession();
+  const hashOf = (features) => s._describeResult(
+    { kind: 'features', features }, 'features').hash;
+
+  const a = [{ type: 'edge-corner', id: 1, x: 10, y: 20, support: 3, sigma: 0.1 }];
+  const b = [{ type: 'edge-corner', id: 1, x: 99, y: 99, support: 1, sigma: 9.9 }];
+  assert.notEqual(hashOf(a), hashOf(b), 'different corners must hash differently');
+
+  // and it must not depend on the order the producer built the object in
+  const reordered = [{ sigma: 0.1, support: 3, y: 20, x: 10, id: 1, type: 'edge-corner' }];
+  assert.equal(hashOf(a), hashOf(reordered));
+});
+
 test('a features hash depends on the geometry, not on key order', async () => {
   const a = newSession(); await a.execute('A = ramp(n=4)');
   const b = newSession(); await b.execute('A = ramp(n=4)');

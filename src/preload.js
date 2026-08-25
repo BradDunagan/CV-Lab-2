@@ -99,8 +99,13 @@ function slotSummaries() {
     const base = { name, version: binding.version, kind: binding.value.kind };
     if (binding.value.kind !== 'buffer') {
       // A feature list has no pixels, so no dtype, channels or colour space.
+      const types = {};
+      for (const f of binding.value.features) {
+        const t = f.type ?? 'untyped';
+        types[t] = (types[t] ?? 0) + 1;
+      }
       return { ...base, width: binding.value.width, height: binding.value.height,
-               count: binding.value.features.length };
+               count: binding.value.features.length, types };
     }
     return { ...base, ...native.bufferInfo(binding.value.handle) };
   });

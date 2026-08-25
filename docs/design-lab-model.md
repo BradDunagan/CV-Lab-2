@@ -41,6 +41,23 @@ session, the log and the display:
 | **`features`** | geometry: line segments with endpoints, angles, lengths | yes |
 | **`scalars`** | a measurement, like `stats` | no |
 
+**Every feature record carries a `type`**, namespaced: `edge-segment` and
+`edge-corner` today. The prefix is deliberate — a future region, blob or flow
+feature must not collide with an edge one merely by both wanting the word
+"corner".
+
+Two defects came from omitting it initially, both silent. Feature hashing used
+a key list written for line segments, so corner records — which share only `id`
+and `angle` — all collapsed onto the same hash: two entirely different sets of
+corners were indistinguishable, which is worse than having no hash, because a
+matching hash is supposed to mean matching results. And the overlay drew every
+feature as a line, so corners produced `NaN` coordinates that canvas silently
+discards — computed, logged, and invisible.
+
+The hash now sorts and includes *every* field of *every* record rather than a
+list someone maintains, because a hardcoded list silently drops whatever it was
+not written for.
+
 `features` exists because a line segment is not an image. Everything up to
 `segments` answers *which pixels belong to which edge*; `fit` answers *what
 each edge is*, and that answer has no pixels, no dimensions and no colour

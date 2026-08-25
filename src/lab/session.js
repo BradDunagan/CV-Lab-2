@@ -57,16 +57,24 @@ function hashScalars(values) {
 /**
  * Hash a feature list.
  *
- * Keys are emitted in a fixed order rather than whatever order the producer
- * happened to build the object in, so the hash describes the geometry and not
- * the construction. Numbers go in at full precision: rounding would hide real
- * changes, which is the opposite of what this is for.
+ * Every field of every record, with keys SORTED rather than taken in whatever
+ * order the producer happened to build the object in — so the hash describes
+ * the geometry and not the construction, and cannot depend on insertion order.
+ *
+ * Sorted rather than a fixed key list, and that is a correction: the first
+ * version listed the fields of a line segment, so when corner records arrived
+ * with different fields entirely, every one of them hashed on `id` and `angle`
+ * alone. Two completely different sets of corners produced the same hash, which
+ * is worse than having no hash, because a matching hash is supposed to mean
+ * matching results. A hardcoded list silently drops whatever it was not written
+ * for; sorting the keys cannot.
+ *
+ * Numbers go in at full precision: rounding would hide real changes, which is
+ * the opposite of the point.
  */
-const FEATURE_KEYS = ['id', 'pixels', 'x0', 'y0', 'x1', 'y1', 'length', 'angle',
-                      'residual', 'cx', 'cy'];
-
 function hashFeatures(features) {
-  const canonical = features.map((f) => FEATURE_KEYS.map((k) => f[k] ?? null));
+  const canonical = features.map((f) =>
+    Object.keys(f).sort().map((k) => [k, f[k]]));
   return crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 

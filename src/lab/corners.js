@@ -150,7 +150,7 @@ function findCorners(features, opts = {}) {
   // Best evidence first: most agreement, then tightest estimate.
   corners.sort((p, q) => q.support - p.support || p.sigma - q.sigma
     || p.x - q.x || p.y - q.y);
-  return corners.map((c, i) => ({ id: i + 1, ...c }));
+  return corners.map((c, i) => ({ type: 'edge-corner', id: i + 1, ...c }));
 }
 
 module.exports = { findCorners };
