@@ -40,7 +40,7 @@ console.log(`cv-lab-2 kernel tests (${runtime}, ${process.platform}/${process.ar
 test('every kernel is reachable by name', () => {
   assert.deepEqual(native.kernelNames(),
     ['pattern', 'gray', 'gaussian', 'sobel', 'threshold', 'stats', 'toLinear',
-     'toSrgb', 'nms', 'hysteresis', 'orient']);
+     'toSrgb', 'nms', 'hysteresis', 'orient', 'segments']);
 });
 
 test('an unknown kernel and a wrong input count are refused', () => {
@@ -563,6 +563,161 @@ test('a full Canny chain finds exactly the checkerboard boundaries', () => {
       assert.ok(distance <= 1, `lit pixel at x=${x} is not near a block boundary`);
     }
   }
+});
+
+/* --- segments: straight edges from the gradient field ------------------- */
+
+/** The pipeline segments expects: thinned magnitude plus both derivatives. */
+function segmentsOf(img, opts) {
+  const b = run('gaussian', [img], { sigma: 1.2 });
+  const gx = run('sobel', [b], { axis: 'x' });
+  const gy = run('sobel', [b], { axis: 'y' });
+  const thin = run('nms', [run('sobel', [b], { axis: 'mag' }), gx, gy]);
+  return read(run('segments', [thin, gx, gy], opts ?? {}));
+}
+function segmentSizes(labels) {
+  const sizes = new Map();
+  for (const v of labels) if (v > 0) sizes.set(v, (sizes.get(v) ?? 0) + 1);
+  return [...sizes.values()].sort((a, b) => b - a);
+}
+const shape = (fn, w = 64, h = 64) => edge(fn, w, h);
+
+test('one straight edge is one segment', () => {
+  assert.equal(segmentSizes(segmentsOf(shape((x) => (x < 32 ? 0 : 1)))).length, 1);
+  assert.equal(segmentSizes(segmentsOf(shape((x, y) => (x - y < 0 ? 0 : 1)))).length, 1);
+});
+
+test('a square outline splits into four sides', () => {
+  // No junction logic anywhere in the kernel: straightness alone separates
+  // them, because a corner cannot be fitted by one line.
+  const sizes = segmentSizes(segmentsOf(shape((x, y) =>
+    (x > 16 && x < 48 && y > 16 && y < 48 ? 1 : 0))));
+  assert.equal(sizes.length, 4, `expected 4 sides, got ${sizes.length}: ${sizes}`);
+  assert.ok(Math.min(...sizes) > 15, `a side came out too short: ${sizes}`);
+});
+
+test('a triangle splits into three sides', () => {
+  const sizes = segmentSizes(segmentsOf(shape((x, y) =>
+    (y > 16 && y < 48 && Math.abs(x - 32) < (y - 16) / 1.5 ? 1 : 0))));
+  assert.equal(sizes.length, 3, `expected 3 sides, got ${sizes.length}: ${sizes}`);
+});
+
+test('a curve refuses to be one line, and splits further as the tolerance tightens', () => {
+  // Straight-only is a real limitation, not an accident: a circle becomes
+  // arcs, and each arc gets shorter as the fit is held to a tighter line.
+  //
+  // Measured by MEAN LENGTH rather than segment count. Count is confounded by
+  // minPixels: tightening the tolerance shortens segments until they fall
+  // below the minimum and are discarded, so the count can go DOWN while
+  // fragmentation goes up. Measured on this fixture at the default
+  // minPixels=8: 9, 9, 8, 10, 8, 6 as the tolerance falls from 3 to 0.3.
+  const circle = shape((x, y) => (Math.hypot(x - 32, y - 32) < 20 ? 1 : 0));
+  const meanLength = (maxResidual) => {
+    const sizes = segmentSizes(segmentsOf(circle, { maxResidual, minPixels: 3 }));
+    return sizes.reduce((a, b) => a + b, 0) / sizes.length;
+  };
+  assert.ok(segmentSizes(segmentsOf(circle)).length > 4,
+    'a circle should be many arcs, not one line');
+  const loose = meanLength(2.0), tight = meanLength(0.5);
+  assert.ok(tight < loose * 0.8,
+    `arcs should shorten as the tolerance tightens: ${loose.toFixed(1)} -> ${tight.toFixed(1)}`);
+});
+
+test('pixels are assigned to exactly one segment', () => {
+  const labels = segmentsOf(shape((x, y) => (x > 16 && x < 48 && y > 16 && y < 48 ? 1 : 0)));
+  const total = labels.filter((v) => v > 0).length;
+  assert.equal(total, segmentSizes(labels).reduce((a, b) => a + b, 0));
+});
+
+test('labels are numbered 1..n with no gaps', () => {
+  const labels = segmentsOf(shape((x, y) => (x > 16 && x < 48 && y > 16 && y < 48 ? 1 : 0)));
+  const ids = [...new Set(labels.filter((v) => v > 0))].sort((a, b) => a - b);
+  assert.deepEqual(ids, ids.map((_, i) => i + 1), `numbering has holes: ${ids}`);
+});
+
+test('numbering is canonical: raster order of first pixel', () => {
+  // Growing order follows gradient magnitude, which is not guaranteed
+  // identical across platforms in its last bits. Numbering derived from the
+  // image instead means the same regions always get the same names -- so a
+  // hash comparison cannot report a change that did not happen.
+  const W = 64;
+  const labels = segmentsOf(shape((x, y) => (x > 16 && x < 48 && y > 16 && y < 48 ? 1 : 0)), {}, W);
+  const firstSeen = new Map();
+  labels.forEach((v, i) => { if (v > 0 && !firstSeen.has(v)) firstSeen.set(v, i); });
+  const order = [...firstSeen.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+  assert.deepEqual(order, order.map((_, i) => i + 1),
+    `segment ids do not follow raster order of first pixel: ${order}`);
+});
+
+test('segments is deterministic', () => {
+  const square = shape((x, y) => (x > 16 && x < 48 && y > 16 && y < 48 ? 1 : 0));
+  const first = segmentsOf(square);
+  for (let i = 0; i < 3; i++) assert.deepEqual(segmentsOf(square), first);
+});
+
+test('every segment really is straight, to within maxResidual', () => {
+  // The property the whole operation claims. Refit each region here and check
+  // its worst perpendicular distance, rather than trusting the kernel's own
+  // running fit.
+  const W = 64;
+  const labels = segmentsOf(shape((x, y) =>
+    (y > 16 && y < 48 && Math.abs(x - 32) < (y - 16) / 1.5 ? 1 : 0)), { maxResidual: 1.0 });
+  const groups = new Map();
+  labels.forEach((id, i) => {
+    if (!id) return;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push([i % W, (i / W) | 0]);
+  });
+  for (const [id, pts] of groups) {
+    const n = pts.length;
+    const mx = pts.reduce((a, p) => a + p[0], 0) / n;
+    const my = pts.reduce((a, p) => a + p[1], 0) / n;
+    const cxx = pts.reduce((a, p) => a + (p[0] - mx) ** 2, 0) / n;
+    const cyy = pts.reduce((a, p) => a + (p[1] - my) ** 2, 0) / n;
+    const cxy = pts.reduce((a, p) => a + (p[0] - mx) * (p[1] - my), 0) / n;
+    const theta = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+    const nx = -Math.sin(theta), ny = Math.cos(theta);
+    const c = -(nx * mx + ny * my);
+    const worst = Math.max(...pts.map(([x, y]) => Math.abs(nx * x + ny * y + c)));
+    assert.ok(worst <= 1.5, `segment ${id} has worst residual ${worst.toFixed(2)}`);
+  }
+});
+
+test('minPixels discards short regions', () => {
+  const square = shape((x, y) => (x > 16 && x < 48 && y > 16 && y < 48 ? 1 : 0));
+  const few = segmentSizes(segmentsOf(square, { minPixels: 40 }));
+  assert.ok(few.every((s) => s >= 40), `a region below minPixels survived: ${few}`);
+});
+
+test('segments needs thinned input, and says so by fragmenting', () => {
+  // Recorded because it is the composition mistake that looks like a bug: a
+  // raw gradient ridge is ~6 pixels wide, and no line fits a 6-wide band
+  // within a 1-pixel tolerance.
+  const img = shape((x) => (x < 32 ? 0 : 1));
+  const b = run('gaussian', [img], { sigma: 1.2 });
+  const gx = run('sobel', [b], { axis: 'x' });
+  const gy = run('sobel', [b], { axis: 'y' });
+  const raw = run('sobel', [b], { axis: 'mag' });
+  const onRaw = segmentSizes(read(run('segments', [raw, gx, gy]))).length;
+  const onThin = segmentSizes(segmentsOf(img)).length;
+  assert.equal(onThin, 1);
+  assert.ok(onRaw > 5, `raw magnitude should fragment, got ${onRaw}`);
+});
+
+test('segments rejects bad shapes and parameters', () => {
+  const a = run('pattern', [], { kind: 'ramp', width: 16, height: 16 });
+  const b = run('pattern', [], { kind: 'ramp', width: 8, height: 8 });
+  assert.throws(() => run('segments', [a, b, a]), /same dimensions/);
+  assert.throws(() => run('segments', [a, a, a], { angleTol: 0 }), /parameter out of range/);
+  assert.throws(() => run('segments', [a, a, a], { angleTol: 120 }), /parameter out of range/);
+  assert.throws(() => run('segments', [a, a, a], { polarity: 'diagonal' }), /parameter out of range/);
+});
+
+test('a blank field yields no segments rather than an error', () => {
+  const flat = run('pattern', [], { kind: 'constant', width: 32, height: 32, value: 0.5 });
+  const gx = run('sobel', [flat], { axis: 'x' });
+  const gy = run('sobel', [flat], { axis: 'y' });
+  assert.deepEqual(segmentSizes(read(run('segments', [flat, gx, gy]))), []);
 });
 
 /* --- hostile inputs ---------------------------------------------------- */

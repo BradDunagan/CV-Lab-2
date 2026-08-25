@@ -227,6 +227,35 @@ function buildOps({ decodeFile } = {}) {
     }),
 
     defineOp({
+      name: 'segments',
+      version: 1,
+      summary: 'Grow straight edges from the gradient field, one label per segment.',
+      // Expects a THINNED magnitude -- nms output, not raw. A raw gradient
+      // ridge is several pixels wide, and no line fits a wide band within a
+      // one-pixel tolerance, so the regions fragment.
+      inputs: [
+        { name: 'mag', channels: [1], space: 'any' },
+        { name: 'gx', channels: [1], space: 'any' },
+        { name: 'gy', channels: [1], space: 'any' },
+      ],
+      params: [
+        { name: 'angleTol', type: 'number', default: 22.5, min: 1, max: 90 },
+        // 0.005, not 0.02. Tuned against a real render rather than synthetic
+        // shapes: a hard 0->1 step gives gradient magnitudes near 0.5, but a
+        // shaded cube peaks at 0.0585 after thinning -- an order of magnitude
+        // weaker. Run `stats` on the thinned input to choose it for an image.
+        { name: 'minMag', type: 'number', default: 0.005, min: 0 },
+        { name: 'maxResidual', type: 'number', default: 1.0, min: 0.1 },
+        { name: 'minPixels', type: 'int', default: 8, min: 2 },
+        // Whether a gradient pointing the opposite way is the same edge seen
+        // from its other side. Mirrors orient's `range`.
+        { name: 'polarity', type: 'enum', values: ['signed', 'unsigned'], default: 'signed' },
+      ],
+      output: { channels: 1, dtype: 'i32', space: 'none' },
+      kernel: nativeKernel('segments'),
+    }),
+
+    defineOp({
       name: 'threshold',
       version: 1,
       summary: 'Binary mask: 1 where the input exceeds t, else 0.',

@@ -424,6 +424,9 @@ static CvStatus k_hysteresis(const CvBuffer *const *inputs, size_t n_inputs,
 static CvStatus k_orient(const CvBuffer *const *inputs, size_t n_inputs,
                          const CvParams *params, CvBuffer *out,
                          CvScalars *scalars, const CvKernelCtx *ctx);
+static CvStatus k_segments(const CvBuffer *const *inputs, size_t n_inputs,
+                           const CvParams *params, CvBuffer *out,
+                           CvScalars *scalars, const CvKernelCtx *ctx);
 
 /* ------------------------------------------------------------------ */
 /* the table                                                            */
@@ -441,6 +444,7 @@ static const CvKernelEntry KERNELS[] = {
   { "nms",        k_nms,        3, true },
   { "hysteresis", k_hysteresis, 1, true },
   { "orient",     k_orient,     2, true },
+  { "segments",   k_segments,   3, true },
 };
 
 const CvKernelEntry *cv_kernel_lookup(const char *name) {
@@ -701,6 +705,256 @@ static CvStatus k_orient(const CvBuffer *const *inputs, size_t n_inputs,
       if (angle < 0.0) angle += CV_PI;
     }
     dst[i] = (float)angle;
+  }
+  return CV_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* segments(mag, gx, gy) -- straight edges, grown then fitted           */
+/*                                                                      */
+/* Region growing on gradient DIRECTION, in the spirit of LSD: pixels   */
+/* of one straight edge point the same way, so they can be collected    */
+/* into one region. Straightness is then enforced by orthogonal         */
+/* regression -- total least squares -- with a pixel refused when its   */
+/* perpendicular distance to the region's fitted line exceeds a         */
+/* tolerance.                                                           */
+/*                                                                      */
+/* TLS rather than ordinary least squares because OLS minimises VERTICAL*/
+/* residuals and so degenerates as a line approaches vertical. TLS      */
+/* minimises perpendicular distance and is rotation-invariant, which an */
+/* edge at an arbitrary angle requires.                                 */
+/*                                                                      */
+/* Directions are compared by dot product of unit gradient vectors, not */
+/* by subtracting angles: no wraparound, no convention to keep in step  */
+/* with whoever produced the field.                                     */
+/* ------------------------------------------------------------------ */
+
+/* Running sums for incremental TLS. Adding a point is O(1); the line is
+ * recovered in closed form from the 2x2 covariance, so refitting after every
+ * addition costs nothing. */
+typedef struct { double n, sx, sy, sxx, syy, sxy; } CvTls;
+
+static void tls_add(CvTls *t, double x, double y) {
+  t->n += 1.0; t->sx += x; t->sy += y;
+  t->sxx += x * x; t->syy += y * y; t->sxy += x * y;
+}
+
+/* Unit normal (nx, ny) and offset c, so that nx*x + ny*y + c = 0 is the line. */
+static void tls_line(const CvTls *t, double *nx, double *ny, double *c) {
+  const double mx = t->sx / t->n, my = t->sy / t->n;
+  const double cxx = t->sxx / t->n - mx * mx;
+  const double cyy = t->syy / t->n - my * my;
+  const double cxy = t->sxy / t->n - mx * my;
+  const double theta = 0.5 * atan2(2.0 * cxy, cxx - cyy);
+  *nx = -sin(theta);
+  *ny = cos(theta);
+  *c = -(*nx * mx + *ny * my);
+}
+
+static double tls_distance(double nx, double ny, double c, double x, double y) {
+  return fabs(nx * x + ny * y + c);
+}
+
+typedef struct { double magnitude; int64_t index; } CvSeed;
+
+static int seed_compare(const void *a, const void *b) {
+  const CvSeed *p = (const CvSeed *)a, *q = (const CvSeed *)b;
+  /* Strongest first. Ties broken by index so the order is a total order and
+   * cannot depend on the sort implementation. */
+  if (p->magnitude > q->magnitude) return -1;
+  if (p->magnitude < q->magnitude) return 1;
+  return (p->index < q->index) ? -1 : (p->index > q->index);
+}
+
+static CvStatus k_segments(const CvBuffer *const *inputs, size_t n_inputs,
+                           const CvParams *params, CvBuffer *out,
+                           CvScalars *scalars, const CvKernelCtx *ctx) {
+  (void)n_inputs; (void)scalars;
+  const CvBuffer *mag = inputs[0];
+  const CvBuffer *gx = inputs[1];
+  const CvBuffer *gy = inputs[2];
+
+  if (mag->channels != 1 || gx->channels != 1 || gy->channels != 1) return CV_ERR_CHANNELS;
+  if (mag->dtype != CV_DTYPE_F32 || gx->dtype != CV_DTYPE_F32 || gy->dtype != CV_DTYPE_F32) {
+    return CV_ERR_DTYPE;
+  }
+  if (gx->width != mag->width || gx->height != mag->height ||
+      gy->width != mag->width || gy->height != mag->height) {
+    return CV_ERR_SHAPE;
+  }
+
+  const double angle_tol = cv_param_num(params, "angleTol", 22.5);
+  const double min_mag = cv_param_num(params, "minMag", 0.005);
+  const double max_residual = cv_param_num(params, "maxResidual", 1.0);
+  const int64_t min_pixels = (int64_t)cv_param_num(params, "minPixels", 8);
+  const char *polarity = cv_param_str(params, "polarity", "signed");
+  const bool ignore_polarity = (strcmp(polarity, "unsigned") == 0);
+  if (!ignore_polarity && strcmp(polarity, "signed") != 0) return CV_ERR_PARAM;
+  if (angle_tol <= 0.0 || angle_tol > 90.0 || max_residual <= 0.0 || min_pixels < 2) {
+    return CV_ERR_PARAM;
+  }
+  const double cos_tol = cos(angle_tol * CV_PI / 180.0);
+
+  const int64_t rows = mag->height, cols = mag->width;
+  if (rows < 3 || cols < 3) return CV_ERR_DIMS;
+
+  CvStatus status = cv_buffer_alloc(out, cols, rows, 1, CV_DTYPE_I32, CV_SPACE_NONE);
+  if (status != CV_OK) return status;
+
+  const float *m = f32(mag), *dx = f32(gx), *dy = f32(gy);
+  int32_t *label = (int32_t *)out->data;
+  const size_t n = (size_t)rows * (size_t)cols;
+
+  /*
+   * Candidates, excluding a one-pixel border: reflect-padding fabricates
+   * neighbours that are not there, so the gradient -- and therefore the
+   * direction -- is wrong at the image edge. Measured: on a diagonal edge the
+   * interior orientation spread is 0.00 degrees and the whole-image spread is
+   * 53, entirely from the boundary.
+   */
+  size_t candidate_count = 0;
+  for (int64_t y = 1; y < rows - 1; y++) {
+    for (int64_t x = 1; x < cols - 1; x++) {
+      if ((double)m[y * cols + x] >= min_mag) candidate_count++;
+    }
+  }
+  if (candidate_count == 0) return CV_OK;   /* a blank field is not an error */
+
+  CvSeed *seeds = (CvSeed *)malloc(candidate_count * sizeof(CvSeed));
+  int64_t *stack = (int64_t *)malloc(candidate_count * sizeof(int64_t));
+  int64_t *members = (int64_t *)malloc(candidate_count * sizeof(int64_t));
+  if (seeds == NULL || stack == NULL || members == NULL) {
+    free(seeds); free(stack); free(members);
+    cv_buffer_free(out);
+    return CV_ERR_ALLOC;
+  }
+
+  size_t s = 0;
+  for (int64_t y = 1; y < rows - 1; y++) {
+    for (int64_t x = 1; x < cols - 1; x++) {
+      const int64_t i = y * cols + x;
+      if ((double)m[i] >= min_mag) {
+        seeds[s].magnitude = (double)m[i];
+        seeds[s].index = i;
+        s++;
+      }
+    }
+  }
+  /* Strongest edges seeded first, so a region starts from its most confident
+   * pixel rather than from wherever a raster scan happened to land. */
+  qsort(seeds, candidate_count, sizeof(CvSeed), seed_compare);
+
+  int32_t region = 0;
+  for (size_t k = 0; k < candidate_count; k++) {
+    if ((k & 0x3FF) == 0 && is_cancelled(ctx)) {
+      free(seeds); free(stack); free(members);
+      cv_buffer_free(out);
+      return CV_ERR_CANCELLED;
+    }
+
+    const int64_t seed = seeds[k].index;
+    if (label[seed] != 0) continue;
+
+    region++;
+    CvTls fit;
+    memset(&fit, 0, sizeof(fit));
+
+    /* The region's direction, accumulated as a vector sum rather than an
+     * average of angles -- averaging angles is meaningless across a wrap. */
+    double dirx = 0.0, diry = 0.0;
+
+    size_t top = 0, count = 0;
+    label[seed] = region;
+    stack[top++] = seed;
+    members[count++] = seed;
+    {
+      const double len = hypot((double)dx[seed], (double)dy[seed]);
+      if (len > 0.0) { dirx += dx[seed] / len; diry += dy[seed] / len; }
+      tls_add(&fit, (double)(seed % cols), (double)(seed / cols));
+    }
+
+    while (top > 0) {
+      const int64_t current = stack[--top];
+      const int64_t cy = current / cols, cx = current % cols;
+
+      for (int64_t ny = cy - 1; ny <= cy + 1; ny++) {
+        for (int64_t nx2 = cx - 1; nx2 <= cx + 1; nx2++) {
+          if (ny < 1 || nx2 < 1 || ny >= rows - 1 || nx2 >= cols - 1) continue;
+          const int64_t j = ny * cols + nx2;
+          if (label[j] != 0) continue;
+          if ((double)m[j] < min_mag) continue;
+
+          /* Direction agreement, by dot product of unit vectors. */
+          const double len = hypot((double)dx[j], (double)dy[j]);
+          if (len <= 0.0) continue;
+          double ux = dx[j] / len, uy = dy[j] / len;
+          const double rlen = hypot(dirx, diry);
+          if (rlen <= 0.0) continue;
+          double agreement = (ux * dirx + uy * diry) / rlen;
+
+          /*
+           * With polarity=unsigned, a gradient pointing the opposite way is
+           * the same edge seen from its other side. Flip the contribution to
+           * match the region before testing, or the vector sum would cancel
+           * itself out. This is what lets a boundary between alternating
+           * blocks -- a checkerboard -- grow as one line instead of breaking
+           * wherever the contrast reverses.
+           */
+          if (ignore_polarity && agreement < 0.0) {
+            agreement = -agreement;
+            ux = -ux; uy = -uy;
+          }
+          if (agreement < cos_tol) continue;
+
+          /* Straightness: the new pixel must lie close to the line fitted to
+           * what the region already contains. Only meaningful once there are
+           * enough points to define one. */
+          if (fit.n >= 3.0) {
+            double lnx, lny, lc;
+            tls_line(&fit, &lnx, &lny, &lc);
+            if (tls_distance(lnx, lny, lc, (double)nx2, (double)ny) > max_residual) continue;
+          }
+
+          label[j] = region;
+          stack[top++] = j;
+          members[count++] = j;
+          dirx += ux; diry += uy;
+          tls_add(&fit, (double)nx2, (double)ny);
+        }
+      }
+    }
+
+    /* Too small to be an edge: give the pixels back, so they can join another
+     * region rather than being stranded. */
+    if ((int64_t)count < min_pixels) {
+      for (size_t i = 0; i < count; i++) label[members[i]] = 0;
+      region--;
+    }
+  }
+
+  free(seeds); free(stack); free(members);
+
+  /*
+   * Renumber canonically.
+   *
+   * Growing order depends on magnitude ordering, which is not guaranteed
+   * identical across platforms in its last bits. Two runs finding the SAME
+   * regions but numbering them differently would produce different content
+   * hashes and a replay would report a change that did not happen. So the
+   * final numbering is derived from the image alone: regions are numbered in
+   * raster order of their first pixel.
+   */
+  if (region > 0) {
+    int32_t *renumber = (int32_t *)calloc((size_t)region + 1, sizeof(int32_t));
+    if (renumber == NULL) { cv_buffer_free(out); return CV_ERR_ALLOC; }
+    int32_t next = 0;
+    for (size_t i = 0; i < n; i++) {
+      const int32_t old = label[i];
+      if (old == 0) continue;
+      if (renumber[old] == 0) renumber[old] = ++next;
+      label[i] = renumber[old];
+    }
+    free(renumber);
   }
   return CV_OK;
 }
