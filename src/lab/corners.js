@@ -83,6 +83,26 @@ function findCorners(features, opts = {}) {
       };
       const reachA = reach(features[i]), reachB = reach(features[j]);
 
+      /*
+       * How far apart the two segments' NEAREST ends actually are.
+       *
+       * This asks a different question from `reach`, and a better one. `reach`
+       * measures how far a line was extended; two unrelated lines can both be
+       * extended a long way and still meet somewhere precise and meaningless.
+       * `endpointGap` asks whether the two edges actually STOPPED near each
+       * other, which is what "they meet here" physically means.
+       *
+       * A corner eroded by blur and non-maximum suppression leaves both edges
+       * terminating a few pixels short of it, so their ends stay close to each
+       * other even when the extrapolation is long.
+       */
+      let endpointGap = Infinity;
+      for (const [ax, ay] of [[features[i].x0, features[i].y0], [features[i].x1, features[i].y1]]) {
+        for (const [bx, by] of [[features[j].x0, features[j].y0], [features[j].x1, features[j].y1]]) {
+          endpointGap = Math.min(endpointGap, Math.hypot(ax - bx, ay - by));
+        }
+      }
+
       if (Math.max(reachA, 0) > maxReachRatio * features[i].length) continue;
       if (Math.max(reachB, 0) > maxReachRatio * features[j].length) continue;
 
@@ -97,7 +117,7 @@ function findCorners(features, opts = {}) {
 
       raw.push({
         x, y, a: features[i].id, b: features[j].id,
-        angle: between, reachA, reachB, sigma,
+        angle: between, reachA, reachB, endpointGap, sigma,
       });
     }
   }
@@ -143,6 +163,9 @@ function findCorners(features, opts = {}) {
       segments,
       sigma: Math.min(...group.map((g) => g.sigma)),
       reach: Math.max(...group.map((g) => Math.max(g.reachA, g.reachB))),
+      // The best-supported pair in the cluster: if any two of the edges
+      // meeting here stopped close together, that is the evidence.
+      endpointGap: Math.min(...group.map((g) => g.endpointGap)),
       angle: Math.max(...group.map((g) => g.angle)),
     });
   }

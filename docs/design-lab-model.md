@@ -491,9 +491,19 @@ effort only where the geometry says it might pay off:
 
 | Field | What it measures |
 |---|---|
-| `support` | how many segment pairs agree at this location — the best single indicator |
-| `reach` | how far past its own end each line had to be extended. Negative means they genuinely cross |
+| `support` | how many segment pairs agree at this location |
+| `endpointGap` | how far apart the two edges' **nearest ends** actually are |
+| `reach` | how far past its own end each line had to be **extended**. Negative means they genuinely cross |
 | `sigma` | propagated positional uncertainty, in pixels |
+
+`endpointGap` and `reach` sound similar and ask different questions. `reach`
+measures how far a line was *extended*; two unrelated lines can each be
+extended a long way and still meet somewhere perfectly precise and entirely
+meaningless. `endpointGap` measures whether the two edges actually **stopped
+near each other**, which is what "they meet here" physically means. A corner
+eroded by blur and non-maximum suppression leaves both edges terminating a few
+pixels short of it, so their ends stay close even when the extrapolation is
+long.
 
 `sigma` comes from the fits rather than from a guessed weighting. A TLS fit
 over *n* pixels of length *L* with RMS residual *s* has angular slop of about
@@ -506,21 +516,54 @@ guarantee about the worst pixel, the RMS is what propagation needs.
 likely to be misread. On the cube, all fourteen candidates located to better
 than one pixel — including nonsense at 92 px of reach. Two long, clean,
 well-determined lines extended a long way still intersect *precisely*; they
-simply intersect somewhere that is not a corner. `reach` and `support` separate
-real from invented; `sigma` says how well-located an answer is once you already
-believe it.
+simply intersect somewhere that is not a corner. `endpointGap` and `support` separate real from invented; `sigma` says how
+well-located an answer is once you already believe it. **`reach` does not
+separate them** — see the measurement below.
 
-On the cube this reads out the geometry: four corners with three agreeing pairs
-each — a cube in general position has exactly four vertices where three visible
-edges meet — plus two more with a reach of 1.1 and 1.4 px, which are the
-silhouette vertices where only two edges meet. The other eight all reach 46–92
-px.
+### What the cube measured
 
-The expensive follow-up this enables — going back to the image to check whether
-gradient magnitude is elevated along an extrapolated path, or re-running
-`segments` locally with a lower threshold near a predicted corner — belongs in
-a separate operation that consumes corners, so that it runs only where a
-hypothesis already exists.
+Fourteen candidates from nine segments. Seven are real, and a cube in general
+position has exactly seven visible vertices — four where three edges meet and
+three where two do, giving the nine edges a degree sum of eighteen.
+
+| | `endpointGap` | `reach` |
+|---|---|---|
+| the seven real corners | **1.3 – 3.5** | 1.1 – 33.2 |
+| the seven spurious ones | **49.2 – 65.4** | 46.4 – 92.1 |
+
+`endpointGap` separates them with a **14× margin and no overlap**. `reach` does
+not: two of the genuine three-way vertices reach 33.2 and 22.2 px, inside the
+spurious range, because a corner can lie well past the far end of one of the
+edges that meets there.
+
+That was an error in an earlier version of this section, which named `reach` as
+a discriminator. It measures how much geometry was invented, which is worth
+reporting; it is not what tells you whether the corner is real.
+
+**Caveat**: one image, of a synthetic cube, with clean edges. The margin is
+striking and it is a single data point. Re-check on a photograph before
+relying on it.
+
+### The expensive follow-up, and why it may never be needed
+
+The obvious next step was to go back to the image and test a hypothesis: check
+whether gradient magnitude is elevated along an extrapolated path, or re-run
+`segments` locally with a lower threshold near a predicted corner. A separate
+operation consuming corners, so that it runs only where a hypothesis already
+exists.
+
+**It has not been built, and on present evidence it is not needed.** A free
+geometric signal — `endpointGap`, computed from endpoints that were already to
+hand — separated real from spurious perfectly on the one image tested. Spending
+an image pass to recover information that costs nothing would be the wrong
+trade.
+
+What would justify revisiting it: a case where two edges genuinely meet but
+both erode so far back that their endpoints are no longer near each other.
+Heavy blur, a low-contrast junction, or a corner where three edges converge so
+steeply that non-maximum suppression removes a long stretch of all of them.
+If that turns up, the follow-up is the answer and this note explains why it was
+deferred rather than forgotten.
 
 ### Two directions
 

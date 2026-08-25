@@ -135,6 +135,40 @@ test('results are ordered by evidence: support first, then tightness', () => {
   }
 });
 
+/* --- endpointGap: did the edges actually stop near each other? ----------- */
+
+test('endpointGap is small when both edges stop near the same place', () => {
+  // A corner eroded by blur and nms: both edges terminate a few pixels short
+  // of it, so their ends stay close to each other.
+  const c = findCorners([seg(1, 0, 40, 35, 40), seg(2, 40, 45, 40, 80)])[0];
+  assert.ok(c.endpointGap < 8, `expected a small gap, got ${c.endpointGap}`);
+});
+
+test('endpointGap is large for two unrelated lines that merely intersect', () => {
+  const c = findCorners([seg(1, 0, 40, 20, 40), seg(2, 200, 60, 200, 140)],
+    { maxReachRatio: 100 })[0];
+  assert.ok(c.endpointGap > 100, `expected a large gap, got ${c.endpointGap}`);
+});
+
+test('endpointGap can be small while reach is large', () => {
+  // The case that makes it a better discriminator than reach. Two long edges
+  // both ending near a corner give a small gap; but if the corner lies past
+  // the FAR end of one of them, its nearest-endpoint reach is large. On the
+  // cube two genuine three-way vertices had reaches of 33.2 and 22.2 -- inside
+  // the range of the spurious candidates -- while their endpoint gaps were
+  // 1.3 and 1.6, against 49-65 for every spurious one.
+  const c = findCorners([
+    seg(1, 0, 40, 30, 40),      // ends at (30,40)
+    seg(2, 33, 43, 33, 120),    // ends at (33,43): 4.2px away
+  ], { maxReachRatio: 100 })[0];
+  assert.ok(c.endpointGap < 6, `gap should be small, got ${c.endpointGap}`);
+});
+
+test('every corner reports endpointGap', () => {
+  const c = findCorners([seg(1, 0, 50, 45, 50), seg(2, 50, 0, 50, 45), seg(3, 85, 85, 55, 55)]);
+  assert.ok(c.every((k) => typeof k.endpointGap === 'number' && k.endpointGap >= 0));
+});
+
 /* --- the uncertainty model ---------------------------------------------- */
 
 test('sigma grows with how far the lines had to reach', () => {
