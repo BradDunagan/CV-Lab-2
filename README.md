@@ -85,6 +85,7 @@ test/                  six suites under plain node, plus test/renderer.js
 docs/electron-guide.md   builds, CI, packaging, signing, costs (written after doing it)
 docs/design-lab-model.md slots, ops, commands, reproducibility (written before)
 docs/glossary.md         terms used in both, explained from scratch
+notes/                   working notes; unlike docs/, never obliged to be current
 ```
 
 ## Scripts
