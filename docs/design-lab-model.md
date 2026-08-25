@@ -22,13 +22,42 @@ Three concepts. Keeping them separate is the central decision of the design.
 | Concept | What it is | Named |
 |---|---|---|
 | **Buffer** | Raw pixel data: `width, height, channels, dtype, space`, plus the bytes | — |
-| **Slot** | A named container holding one buffer, plus its provenance | `A`, `B`, `edges`, … |
+| **Slot** | A named container holding one buffer *or feature list*, plus its provenance | `A`, `B`, `edges`, … |
 | **View** | A tile displaying one slot, with a non-destructive display transform | — |
 
 All slots are identical in kind. There is no "input canvas" and no "result
 canvas" — any slot can hold any image, and operations read and write them
 interchangeably. Slots are created by the user (or implicitly, on assignment),
 so there is no fixed number to get right.
+
+### Three output kinds
+
+An operation produces one of three things, and the distinction reaches into the
+session, the log and the display:
+
+| Kind | What it is | Binds to a slot? |
+|---|---|---|
+| **`buffer`** | pixels — the common case | yes |
+| **`features`** | geometry: line segments with endpoints, angles, lengths | yes |
+| **`scalars`** | a measurement, like `stats` | no |
+
+`features` exists because a line segment is not an image. Everything up to
+`segments` answers *which pixels belong to which edge*; `fit` answers *what
+each edge is*, and that answer has no pixels, no dimensions and no colour
+space.
+
+It was added late and deliberately. Everything before it stayed inside the
+buffer model, which is why the change was contained: about fifteen sites across
+four files, and no existing operation, kernel or saved session became wrong.
+The load-bearing assumption was a single line —
+`const producesBuffer = op.output.kind !== 'scalars'` — the boolean form of
+"anything that is not scalars is a buffer", which is exactly what a third kind
+invalidates.
+
+Feature lists carry the **dimensions of the image they were measured in**,
+because they have none of their own. That is what lets the display draw them
+over the right tile, and it is why they get no tile of their own: a segment
+list belongs *on* a picture, not beside one.
 
 ### Why slots are not canvases
 
@@ -382,6 +411,50 @@ Names move; history does not.
 This is why references are `(slot, version)` pairs rather than bare names. A
 provenance chain built from bare names would be ambiguous the moment a slot was
 reassigned.
+
+### Reading a fitted segment
+
+`fit` reports, per segment: `id`, `pixels`, `x0 y0`, `x1 y1`, `length`,
+`angle`, `residual`, and the centroid `cx cy`. Two of those need their
+conventions stated, because both are easy to read wrongly.
+
+**`angle` is measured from horizontal, anticlockwise, in image coordinates —
+where y increases DOWNWARD.** So the sense is inverted from graph paper:
+
+| Angle | The line runs | On screen it looks |
+|---|---|---|
+| 0° | right, same row | horizontal |
+| 45° | right and down | **descending** to the right |
+| 90° | down a column | vertical |
+| 135° | right and up | **ascending** to the right |
+
+Reported in `[0, 180)`, because a line has no direction: 10° and 190° describe
+the same line.
+
+**`residual` is the largest PERPENDICULAR distance from any of the segment's
+pixel centres to its fitted line, in pixels.** Perpendicular is the point —
+that is what makes it total least squares rather than ordinary least squares,
+which measures vertically and misbehaves on near-vertical edges. It is a
+maximum rather than a mean, so it is a guarantee: no pixel lies further out
+than this.
+
+Measured on constructed cases:
+
+| | residual |
+|---|---|
+| a perfectly straight run | 0.000 |
+| a one-pixel zigzag | 0.564 |
+| a single one-pixel step | 0.461 |
+| a 45° bend halfway along | 2.242 |
+
+Real segments from a rendered cube run 0.00–0.83 — quantisation noise from
+drawing a straight line onto a pixel grid, nothing more. `maxResidual = 1.0`
+is the gate that admits those and rejects the bend.
+
+**Endpoints are projected onto the fitted line**, not reported as the extreme
+pixels themselves. That is where sub-pixel accuracy comes from: the line is an
+average over every pixel in the segment, so it localises better than any single
+pixel centre can.
 
 ### Two directions
 

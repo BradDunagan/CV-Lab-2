@@ -89,6 +89,15 @@ function buildRegistry() {
     kernel: () => ({ kind: 'buffer', handle: { values: [1, 2], space: 'none' } }),
   }));
   r.register(defineOp({
+    name: 'describe', version: 1, inputs: [{ name: 'src' }], params: [],
+    output: { kind: 'features' },
+    kernel: ({ inputs }) => ({
+      kind: 'features',
+      features: inputs[0].handle.values.map((v, i) => ({ id: i + 1, angle: v, length: v * 2 })),
+      width: inputs[0].handle.values.length, height: 1,
+    }),
+  }));
+  r.register(defineOp({
     name: 'total', version: 1, inputs: [{ name: 'src' }], params: [],
     output: { kind: 'scalars' },
     kernel: ({ inputs }) => ({
@@ -296,6 +305,83 @@ test('log entries are frozen', async () => {
   const s = newSession();
   const entry = await s.execute('A = ramp()');
   assert.throws(() => { entry.n = 99; }, TypeError);
+});
+
+/* --- the features output kind ------------------------------------------ */
+
+test('a features op binds to a slot and records a count', async () => {
+  const s = newSession();
+  await s.execute('A = ramp(n=4)');
+  const entry = await s.execute('F = describe(A)');
+  assert.deepEqual(entry.produced, { slot: 'F', version: 1 });
+  assert.equal(entry.output.kind, 'features');
+  assert.equal(entry.output.count, 4);
+  assert.match(entry.output.hash, /^[0-9a-f]{64}$/);
+});
+
+test('features still need a target, unlike scalars', async () => {
+  const s = newSession();
+  await s.execute('A = ramp(n=4)');
+  await assert.rejects(async () => s.execute('describe(A)'), /needs a target/);
+});
+
+test('a features hash depends on the geometry, not on key order', async () => {
+  const a = newSession(); await a.execute('A = ramp(n=4)');
+  const b = newSession(); await b.execute('A = ramp(n=4)');
+  const first = await a.execute('F = describe(A)');
+  const second = await b.execute('F = describe(A)');
+  assert.equal(first.output.hash, second.output.hash);
+
+  const c = newSession(); await c.execute('A = ramp(n=5)');
+  const different = await c.execute('F = describe(A)');
+  assert.notEqual(different.output.hash, first.output.hash);
+});
+
+test('a features slot is never handed to the buffer allocator', async () => {
+  // The rebind and reset paths both free buffers. A feature list has none,
+  // and passing it to release() would be a crash rather than a leak.
+  const s = newSession();
+  await s.execute('A = ramp(n=4)');
+  await s.execute('F = describe(A)');
+
+  released.length = 0;
+  await s.execute('F = describe(A)');            // rebinding F#1 -> F#2
+  assert.deepEqual(released, [], 'rebinding a feature list freed something');
+
+  released.length = 0;
+  const live = s.slots.get('A').value.handle;    // only A holds a buffer
+  s.reset();
+  assert.deepEqual(released, [live], 'reset should free exactly the one buffer');
+});
+
+test('features appear in the log and survive a round trip', async () => {
+  const s = newSession();
+  await s.execute('A = ramp(n=4)');
+  await s.execute('F = describe(A)');
+  assert.match(s.format(), /F#1 ← describe\(A#1\)/);
+  assert.match(s.format(), /4 features/);
+  const saved = s.toJSON();
+  assert.equal(saved.entries[1].output.kind, 'features');
+  assert.equal(saved.entries[1].output.count, 4);
+});
+
+test('replaying a features op reproduces its hash', async () => {
+  const s = newSession();
+  await s.run('A = ramp(n=4)\nF = describe(A)');
+  const { mismatches } = await Session.replay(s.toJSON(),
+    { registry: buildRegistry(), buffers: fakeBuffers });
+  assert.deepEqual(mismatches, []);
+});
+
+test('a kernel returning the wrong kind is refused', async () => {
+  const r = buildRegistry();
+  const broken = { ...r.get('describe'),
+    kernel: () => ({ kind: 'buffer', handle: { values: [1], space: 'none' } }) };
+  r._ops.set('describe', Object.freeze(broken));
+  const s = new Session({ registry: r, buffers: fakeBuffers });
+  await s.execute('A = ramp(n=4)');
+  await assert.rejects(async () => s.execute('F = describe(A)'),
+    /expected to return \{ kind: "features"/);
 });
 
 /* --- freeing memory ---------------------------------------------------- */

@@ -11,7 +11,7 @@ every result is **reproducible** from a replayable log.
 
 ```bash
 npm install     # also compiles the addon
-npm test        # eight suites, ~200 tests
+npm test        # eight suites, ~250 tests
 npm start       # launch the app
 ```
 
@@ -23,6 +23,17 @@ B = gaussian(A, sigma=3)
 E = sobel(B, axis=x)
 M = threshold(E, t=0.02)
 stats(E)
+```
+
+Or all the way to geometry:
+
+```
+Gx = sobel(B, axis=x)
+Gy = sobel(B, axis=y)
+N  = nms(E, Gx, Gy)
+S  = segments(N, Gx, Gy)
+R  = merge(S)
+F  = fit(R)
 ```
 
 Each command creates a tile. Hover anywhere to read that pixel **in every slot
@@ -40,9 +51,11 @@ identity rather than a measurement.
 only, so slots-as-canvases would clamp away half a gradient. `f32` is the
 working format, with `i32` for label maps.
 
-**Operations** are one registry entry plus one C kernel. The registry is the
-single source of truth for the menus, the parser's validation, generated help,
-and the shape of a provenance record.
+**Operations** are one registry entry plus one C kernel, and produce one of
+three things: a **buffer** of pixels, a **feature** list (line segments with
+endpoints, angles and lengths), or **scalars**. The registry is the single
+source of truth for the menus, the parser's validation, generated help, and the
+shape of a provenance record.
 
 **The log is the point.** Every command appends an immutable entry with fully
 resolved parameters and a content hash of the output. `A = gaussian(A)` produces
@@ -99,9 +112,11 @@ All three are explained in `docs/electron-guide.md`.
 ## Status
 
 Working: the buffer type, the operation registry, the command language, the
-session log with provenance and replay, the display path, and the UI. Nine
+session log with provenance and replay, the display path, and the UI. Fifteen
 operations — `load`, `pattern`, `gray`, `gaussian`, `sobel`, `threshold`,
-`stats`, `toLinear`, `toSrgb`. Three-platform CI produces unsigned installers.
+`stats`, `toLinear`, `toSrgb`, `nms`, `hysteresis`, `orient`, `segments`,
+`merge`, `fit` — enough for Canny end to end, and for straight edges with
+sub-pixel endpoints. Three-platform CI produces unsigned installers.
 
 Outstanding, in rough order:
 

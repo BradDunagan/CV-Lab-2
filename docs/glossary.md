@@ -895,6 +895,43 @@ it critical.
 
 ---
 
+## Residual
+
+**How far a data point sits from the model that claims to describe it.**
+
+Here, specifically: the **perpendicular** distance from a pixel centre to the
+line fitted through its segment, in pixels.
+
+Perpendicular is the whole point. *Ordinary* least squares minimises **vertical**
+residuals, which is fine for a graph where x is an input and y is a
+measurement — and wrong for an image, where a line can run in any direction
+and a near-vertical one has residuals approaching infinity. **Total least
+squares** minimises perpendicular distance instead and is rotation-invariant.
+That is why `segments` and `merge` fit with TLS.
+
+`fit` reports the **maximum** residual over a segment, not the mean, so it
+reads as a guarantee: *no pixel of this segment lies further than this from its
+line.* A mean would let one badly-placed pixel hide behind fifty good ones.
+
+Calibration, from constructed cases:
+
+| Shape | Worst residual |
+|---|---|
+| a perfectly straight run | 0.000 |
+| a one-pixel zigzag | 0.564 |
+| a single one-pixel step | 0.461 |
+| a 45° bend halfway along | 2.242 |
+
+So sub-pixel values are just the noise of drawing a line onto a grid; values
+above about 1 mean the thing is not a line. That is what `maxResidual` gates.
+
+**Elsewhere**: any fitting procedure has residuals — regression, bundle
+adjustment, calibration. The word always means *what the model failed to
+explain*, and the interesting question is always which distance is being
+measured.
+
+---
+
 ## Sidecar (sidecar file)
 
 **A separate file stored next to a main file, holding information *about* it,

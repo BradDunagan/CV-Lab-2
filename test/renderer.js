@@ -234,6 +234,26 @@ async function collect(win, swatch, linearPng) {
 
     // captured here, after every command, rather than reusing the earlier
     // snapshot taken before the scaling-mode fixtures were created
+    // --- the features output kind ---
+    await ui('PB = gaussian(P, sigma=1.2)');
+    await ui('PGx = sobel(PB, axis=x)');
+    await ui('PGy = sobel(PB, axis=y)');
+    await ui('PM = sobel(PB, axis=mag)');
+    await ui('PN = nms(PM, PGx, PGy)');
+    await ui('PS = segments(PN, PGx, PGy, minPixels=5)');
+    await ui('PR = merge(PS)');
+    const fitEntry = await ui('PF = fit(PR)');
+    r.fitStatus = fitEntry;
+    const featureLists = window.lab.features();
+    r.featureSlots = featureLists.map((f) => f.slot);
+    r.featureCount = featureLists[0] ? featureLists[0].features.length : 0;
+    r.featureSample = featureLists[0] ? featureLists[0].features[0] : null;
+    r.featureSlotHasNoTile = !document.querySelector('.tile[data-slot="PF"]');
+    r.featureSlotSummary = window.lab.slots().find((s) => s.name === 'PF');
+    r.probeSkipsFeatures = !('PF' in window.lab.probeAll(0.5, 0.5));
+    try { window.lab.draw('tile-canvas-P', 'PF', {}); r.drawOnFeatures = 'accepted'; }
+    catch (e) { r.drawOnFeatures = e.message; }
+
     r.sessionEntries = window.lab.sessionJSON().entries.length;
     r.slotsAtEnd = window.lab.slots().length;
 
@@ -299,9 +319,9 @@ app.whenReady().then(async () => {
   /* --- the bridge --------------------------------------------------- */
 
   test('the bridge exposes only the lab API', () => {
-    assert.deepEqual(r.bridge, ['basename', 'confirmReset', 'draw', 'histogram', 'log',
-      'openImage', 'ops', 'probeAll', 'quote', 'reset', 'run', 'saveSession',
-      'sessionJSON', 'slots', 'versions']);
+    assert.deepEqual(r.bridge, ['basename', 'confirmReset', 'draw', 'features',
+      'histogram', 'log', 'openImage', 'ops', 'probeAll', 'quote', 'reset', 'run',
+      'saveSession', 'sessionJSON', 'slots', 'versions']);
   });
 
   test('no Node globals leak into page script', () => {
@@ -457,6 +477,31 @@ app.whenReady().then(async () => {
 
   test('the lab works again after a reset', () => {
     assert.equal(r.afterResetEntry, 1, 'the log should restart at one entry');
+  });
+
+  test('a features slot binds, hashes and reports a count', () => {
+    assert.match(r.fitStatus, /^#\d+ in/, `fit failed: ${r.fitStatus}`);
+    assert.deepEqual(r.featureSlots, ['PF']);
+    assert.ok(r.featureCount > 0, 'no features produced');
+    assert.equal(r.featureSlotSummary.kind, 'features');
+    assert.equal(r.featureSlotSummary.count, r.featureCount);
+  });
+
+  test('a feature carries geometry, not pixels', () => {
+    const f = r.featureSample;
+    for (const key of ['id', 'pixels', 'x0', 'y0', 'x1', 'y1', 'length', 'angle',
+                       'residual', 'cx', 'cy']) {
+      assert.ok(typeof f[key] === 'number', `missing ${key}`);
+    }
+    assert.ok(f.angle >= 0 && f.angle < 180, `angle ${f.angle} outside [0,180)`);
+    assert.ok(f.residual >= 0, 'residual must be non-negative');
+    assert.ok(f.length > 0, 'length must be positive');
+  });
+
+  test('a features slot has no tile and no pixels to probe', () => {
+    assert.equal(r.featureSlotHasNoTile, true, 'features should not get an image tile');
+    assert.equal(r.probeSkipsFeatures, true, 'the probe should skip a slot with no pixels');
+    assert.match(r.drawOnFeatures, /holds features, not pixels/);
   });
 
   test('the page logged no errors', () => {

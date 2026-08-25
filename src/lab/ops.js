@@ -272,6 +272,30 @@ function buildOps({ decodeFile } = {}) {
     }),
 
     defineOp({
+      name: 'fit',
+      version: 1,
+      summary: 'Describe each segment: endpoints, angle, length, straightness.',
+      // The first operation whose result is not pixels. A label map says which
+      // edge a pixel belongs to; this says what each edge IS.
+      inputs: [{ name: 'src', channels: [1], space: 'any' }],
+      params: [],
+      output: { kind: 'features' },
+      kernel: ({ inputs }) => {
+        const native = require('../../native');
+        const info = native.bufferInfo(inputs[0].handle);
+        return {
+          kind: 'features',
+          features: native.fitSegments(inputs[0].handle),
+          // A feature list has no dimensions of its own -- it lives in the
+          // coordinate space of the image it came from. Carrying that here is
+          // what lets a viewer draw it over the right tile.
+          width: info.width,
+          height: info.height,
+        };
+      },
+    }),
+
+    defineOp({
       name: 'threshold',
       version: 1,
       summary: 'Binary mask: 1 where the input exceeds t, else 0.',

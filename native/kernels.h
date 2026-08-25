@@ -78,6 +78,27 @@ typedef struct {
   bool produces_buffer; /* false means it fills `scalars` instead */
 } CvKernelEntry;
 
+/* --- orthogonal regression ----------------------------------------- */
+
+/*
+ * Running sums for total least squares. Adding a point is O(1) and the line
+ * comes back in closed form from the 2x2 covariance, so a fit can be
+ * maintained incrementally as a region grows.
+ *
+ * TLS rather than ordinary least squares because OLS minimises VERTICAL
+ * residuals and degenerates as a line approaches vertical; TLS minimises
+ * perpendicular distance and is rotation-invariant.
+ */
+typedef struct { double n, sx, sy, sxx, syy, sxy; } CvTls;
+
+void cv_tls_add(CvTls *t, double x, double y);
+
+/** Unit normal and offset, so nx*x + ny*y + c = 0 is the line. */
+void cv_tls_line(const CvTls *t, double *nx, double *ny, double *c);
+
+/** Perpendicular distance from a point to that line, in pixels. */
+double cv_tls_distance(double nx, double ny, double c, double x, double y);
+
 /** @returns NULL if there is no kernel of that name. */
 const CvKernelEntry *cv_kernel_lookup(const char *name);
 

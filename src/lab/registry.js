@@ -103,6 +103,11 @@ function defineOp(spec) {
     }
   }
 
+  const outputKind = spec.output.kind ?? 'buffer';
+  if (!['buffer', 'scalars', 'features'].includes(outputKind)) {
+    throw new OpDefinitionError(
+      `op "${spec.name}": output.kind must be buffer, scalars or features`);
+  }
   if (spec.output.dtype !== undefined && !DTYPES.has(spec.output.dtype)) {
     throw new OpDefinitionError(`op "${spec.name}": output.dtype must be f32 or i32`);
   }

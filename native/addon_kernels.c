@@ -8,6 +8,7 @@
 
 #include "addon_kernels.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -373,6 +374,112 @@ static napi_value SamplePixel(napi_env env, napi_callback_info info) {
   return out;
 }
 
+/* ------------------------------------------------------------------ */
+/* fitSegments(labels) -- geometry out of a segment label map           */
+/*                                                                      */
+/* The first operation whose result is not pixels. A label map says      */
+/* WHICH edge each pixel belongs to; this says what each edge IS: where  */
+/* it starts and ends, which way it runs, and how straight it really is. */
+/*                                                                      */
+/* Angles are measured from +x, anticlockwise, in IMAGE coordinates --   */
+/* where y increases DOWNWARD, so 45 degrees descends to the right on    */
+/* screen. Reported in [0, 180), because a line has no direction.        */
+/*                                                                      */
+/* `residual` is the largest PERPENDICULAR distance from any of the      */
+/* segment's pixel centres to its fitted line, in pixels. A maximum      */
+/* rather than a mean, so it is a guarantee: no pixel lies further out.  */
+/* ------------------------------------------------------------------ */
+
+static napi_value FitSegments(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argv[1];
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 1) {
+    THROW_RETURN(env, "fitSegments(handle) requires a buffer handle");
+  }
+  CvBuffer *src = handle_arg(env, argv[0]);
+  if (src == NULL) return NULL;
+  if (src->dtype != CV_DTYPE_I32) THROW_RETURN(env, "fitSegments: expects an i32 label map");
+  if (src->channels != 1) THROW_RETURN(env, "fitSegments: expects 1 channel");
+
+  const int64_t cols = src->width, rows = src->height;
+  const int32_t *in = (const int32_t *)src->data;
+  const size_t n = (size_t)rows * (size_t)cols;
+
+  int32_t count = 0;
+  for (size_t i = 0; i < n; i++) if (in[i] > count) count = in[i];
+
+  napi_value list;
+  if (napi_create_array(env, &list) != napi_ok) THROW_RETURN(env, "out of memory");
+  if (count <= 0) return list;
+
+  CvTls *fits = (CvTls *)calloc((size_t)count + 1, sizeof(CvTls));
+  if (fits == NULL) THROW_RETURN(env, "out of memory");
+  for (size_t i = 0; i < n; i++) {
+    const int32_t id = in[i];
+    if (id > 0) cv_tls_add(&fits[id], (double)(i % (size_t)cols), (double)(i / (size_t)cols));
+  }
+
+  uint32_t emitted = 0;
+  for (int32_t id = 1; id <= count; id++) {
+    if (fits[id].n < 2.0) continue;
+
+    double nx, ny, c;
+    cv_tls_line(&fits[id], &nx, &ny, &c);
+    const double tx = -ny, ty = nx;          /* along the line */
+
+    double lo = 1e300, hi = -1e300, worst = 0.0;
+    double ax = 0, ay = 0, bx = 0, by = 0;
+    for (size_t i = 0; i < n; i++) {
+      if (in[i] != id) continue;
+      const double x = (double)(i % (size_t)cols), y = (double)(i / (size_t)cols);
+      const double t = tx * x + ty * y;
+      if (t < lo) { lo = t; ax = x; ay = y; }
+      if (t > hi) { hi = t; bx = x; by = y; }
+      const double d = cv_tls_distance(nx, ny, c, x, y);
+      if (d > worst) worst = d;
+    }
+
+    /*
+     * Endpoints projected ONTO the fitted line rather than reported as the
+     * extreme pixels themselves. That is where the sub-pixel accuracy comes
+     * from: the line is an average over every pixel in the segment, so it
+     * localises better than any single pixel centre can.
+     */
+    const double da = cv_tls_distance(nx, ny, c, ax, ay);
+    const double db = cv_tls_distance(nx, ny, c, bx, by);
+    const double sa = (nx * ax + ny * ay + c) >= 0 ? -da : da;
+    const double sb = (nx * bx + ny * by + c) >= 0 ? -db : db;
+    const double px0 = ax + nx * sa, py0 = ay + ny * sa;
+    const double px1 = bx + nx * sb, py1 = by + ny * sb;
+
+    double angle = atan2(-nx, ny) * 180.0 / CV_PI;
+    angle = fmod(angle, 180.0);
+    if (angle < 0.0) angle += 180.0;
+
+    napi_value entry, v;
+    napi_create_object(env, &entry);
+    napi_create_int32(env, id, &v);                    napi_set_named_property(env, entry, "id", v);
+    napi_create_int64(env, (int64_t)fits[id].n, &v);   napi_set_named_property(env, entry, "pixels", v);
+    napi_create_double(env, px0, &v);                  napi_set_named_property(env, entry, "x0", v);
+    napi_create_double(env, py0, &v);                  napi_set_named_property(env, entry, "y0", v);
+    napi_create_double(env, px1, &v);                  napi_set_named_property(env, entry, "x1", v);
+    napi_create_double(env, py1, &v);                  napi_set_named_property(env, entry, "y1", v);
+    napi_create_double(env, hypot(px1 - px0, py1 - py0), &v);
+    napi_set_named_property(env, entry, "length", v);
+    napi_create_double(env, angle, &v);                napi_set_named_property(env, entry, "angle", v);
+    napi_create_double(env, worst, &v);                napi_set_named_property(env, entry, "residual", v);
+    napi_create_double(env, fits[id].sx / fits[id].n, &v);
+    napi_set_named_property(env, entry, "cx", v);
+    napi_create_double(env, fits[id].sy / fits[id].n, &v);
+    napi_set_named_property(env, entry, "cy", v);
+
+    napi_set_element(env, list, emitted++, entry);
+  }
+
+  free(fits);
+  return list;
+}
+
 static napi_value KernelNames(napi_env env, napi_callback_info info) {
   (void)info;
   napi_value out;
@@ -411,5 +518,10 @@ napi_status cv_register_kernel_api(napi_env env, napi_value exports) {
 
   status = napi_create_function(env, "samplePixel", NAPI_AUTO_LENGTH, SamplePixel, NULL, &fn);
   if (status != napi_ok) return status;
-  return napi_set_named_property(env, exports, "samplePixel", fn);
+  status = napi_set_named_property(env, exports, "samplePixel", fn);
+  if (status != napi_ok) return status;
+
+  status = napi_create_function(env, "fitSegments", NAPI_AUTO_LENGTH, FitSegments, NULL, &fn);
+  if (status != napi_ok) return status;
+  return napi_set_named_property(env, exports, "fitSegments", fn);
 }

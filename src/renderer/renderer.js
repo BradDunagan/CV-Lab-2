@@ -17,6 +17,7 @@ const els = {
   resetView: document.getElementById('reset-view'),
   scaling: document.getElementById('scaling'),
   save: document.getElementById('save'),
+  overlay: document.getElementById('overlay'),
   reset: document.getElementById('reset'),
   log: document.getElementById('log'),
   probe: document.getElementById('probe'),
@@ -90,6 +91,8 @@ function logEntry(entry) {
   const out = entry.output;
   const shape = out.kind === 'buffer'
     ? `${out.width}×${out.height}×${out.channels} ${out.dtype} ${out.space}`
+    : out.kind === 'features'
+    ? `${out.count} feature${out.count === 1 ? '' : 's'}`
     : `{ ${Object.entries(out.values).map(([k, x]) =>
         `${k}: ${typeof x === 'number' ? x.toPrecision(6) : x}`).join(', ')} }`;
   const target = entry.produced
@@ -242,10 +245,53 @@ function drawTile(slotName) {
       const zoom = tile.querySelector('.zoom');
       zoom.textContent = `${perPixel >= 10 ? perPixel.toFixed(0) : perPixel.toFixed(2)}×`;
       zoom.title = 'screen pixels per image pixel';
+      drawOverlays(canvas, slotName);
     }
   } catch (err) {
     scale.textContent = err.message;
   }
+}
+
+/**
+ * Draw fitted segments over a tile.
+ *
+ * Features carry the size of the image they were measured in, so they are
+ * drawn on any tile of that size — which is how you check a fit against the
+ * picture it came from rather than against its own label map.
+ */
+function drawOverlays(canvas, slotName) {
+  if (!els.overlay.checked) return;
+  const slot = window.lab.slots().find((s) => s.name === slotName);
+  if (!slot) return;
+
+  const lists = window.lab.features()
+    .filter((f) => f.width === slot.width && f.height === slot.height);
+  if (lists.length === 0) return;
+
+  const ctx = canvas.getContext('2d');
+  const sx = canvas.width / (viewport.w * slot.width);
+  const sy = canvas.height / (viewport.h * slot.height);
+  const toX = (x) => (x - viewport.x * slot.width) * sx;
+  const toY = (y) => (y - viewport.y * slot.height) * sy;
+
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#ff5c8a';
+  ctx.fillStyle = '#ffd166';
+  for (const list of lists) {
+    for (const f of list.features) {
+      ctx.beginPath();
+      ctx.moveTo(toX(f.x0), toY(f.y0));
+      ctx.lineTo(toX(f.x1), toY(f.y1));
+      ctx.stroke();
+      for (const [px, py] of [[f.x0, f.y0], [f.x1, f.y1]]) {
+        ctx.beginPath();
+        ctx.arc(toX(px), toY(py), 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
 }
 
 function drawHistogram(canvas, slotName, view) {
@@ -278,15 +324,17 @@ function refreshTiles() {
   els.empty.hidden = slots.length > 0;
 
   for (const slot of slots) {
-    if (!views.has(slot.name)) views.set(slot.name, defaultView(slot));
+    if (slot.kind === 'buffer' && !views.has(slot.name)) views.set(slot.name, defaultView(slot));
   }
   for (const name of [...views.keys()]) {
     if (!slots.some((s) => s.name === name)) views.delete(name);
   }
 
   els.tiles.textContent = '';
-  for (const slot of slots) els.tiles.append(buildTile(slot));
-  for (const slot of slots) drawTile(slot.name);
+  // Feature lists get no tile: they have no pixels and no dimensions of their
+  // own, and belong drawn OVER the image they describe.
+  for (const slot of slots) if (slot.kind === 'buffer') els.tiles.append(buildTile(slot));
+  for (const slot of slots) if (slot.kind === 'buffer') drawTile(slot.name);
 }
 
 /* ------------------------------------------------------------------ */
@@ -463,6 +511,8 @@ els.command.addEventListener('keydown', (event) => {
     event.preventDefault();
   }
 });
+
+els.overlay.addEventListener('change', redrawAll);
 
 els.cols.addEventListener('input', () => {
   els.tiles.style.setProperty('--cols', els.cols.value);

@@ -736,15 +736,12 @@ static CvStatus k_orient(const CvBuffer *const *inputs, size_t n_inputs,
 /* Running sums for incremental TLS. Adding a point is O(1); the line is
  * recovered in closed form from the 2x2 covariance, so refitting after every
  * addition costs nothing. */
-typedef struct { double n, sx, sy, sxx, syy, sxy; } CvTls;
-
-static void tls_add(CvTls *t, double x, double y) {
+void cv_tls_add(CvTls *t, double x, double y) {
   t->n += 1.0; t->sx += x; t->sy += y;
   t->sxx += x * x; t->syy += y * y; t->sxy += x * y;
 }
 
-/* Unit normal (nx, ny) and offset c, so that nx*x + ny*y + c = 0 is the line. */
-static void tls_line(const CvTls *t, double *nx, double *ny, double *c) {
+void cv_tls_line(const CvTls *t, double *nx, double *ny, double *c) {
   const double mx = t->sx / t->n, my = t->sy / t->n;
   const double cxx = t->sxx / t->n - mx * mx;
   const double cyy = t->syy / t->n - my * my;
@@ -755,7 +752,7 @@ static void tls_line(const CvTls *t, double *nx, double *ny, double *c) {
   *c = -(*nx * mx + *ny * my);
 }
 
-static double tls_distance(double nx, double ny, double c, double x, double y) {
+double cv_tls_distance(double nx, double ny, double c, double x, double y) {
   return fabs(nx * x + ny * y + c);
 }
 
@@ -874,7 +871,7 @@ static CvStatus k_segments(const CvBuffer *const *inputs, size_t n_inputs,
     {
       const double len = hypot((double)dx[seed], (double)dy[seed]);
       if (len > 0.0) { dirx += dx[seed] / len; diry += dy[seed] / len; }
-      tls_add(&fit, (double)(seed % cols), (double)(seed / cols));
+      cv_tls_add(&fit, (double)(seed % cols), (double)(seed / cols));
     }
 
     while (top > 0) {
@@ -915,15 +912,15 @@ static CvStatus k_segments(const CvBuffer *const *inputs, size_t n_inputs,
            * enough points to define one. */
           if (fit.n >= 3.0) {
             double lnx, lny, lc;
-            tls_line(&fit, &lnx, &lny, &lc);
-            if (tls_distance(lnx, lny, lc, (double)nx2, (double)ny) > max_residual) continue;
+            cv_tls_line(&fit, &lnx, &lny, &lc);
+            if (cv_tls_distance(lnx, lny, lc, (double)nx2, (double)ny) > max_residual) continue;
           }
 
           label[j] = region;
           stack[top++] = j;
           members[count++] = j;
           dirx += ux; diry += uy;
-          tls_add(&fit, (double)nx2, (double)ny);
+          cv_tls_add(&fit, (double)nx2, (double)ny);
         }
       }
     }
@@ -1046,14 +1043,14 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
     const int32_t id = in[i];
     if (id <= 0) continue;
     segs[id].alive = true;
-    tls_add(&segs[id].fit, (double)(i % (size_t)cols), (double)(i / (size_t)cols));
+    cv_tls_add(&segs[id].fit, (double)(i % (size_t)cols), (double)(i / (size_t)cols));
   }
 
   /* Extremes along each fitted line: its endpoints. */
   for (int32_t i = 1; i <= count; i++) {
     if (!segs[i].alive || segs[i].fit.n < 2.0) { segs[i].alive = false; continue; }
     double nx, ny, c;
-    tls_line(&segs[i].fit, &nx, &ny, &c);
+    cv_tls_line(&segs[i].fit, &nx, &ny, &c);
     const double tx = -ny, ty = nx;          /* along the line */
     double lo = 1e300, hi = -1e300;
     segs[i].ax = segs[i].ay = segs[i].bx = segs[i].by = 0.0;
@@ -1076,12 +1073,12 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
     if (!segs[i].alive) continue;
     if (is_cancelled(ctx)) { free(pairs); free(segs); cv_buffer_free(out); return CV_ERR_CANCELLED; }
     double inx, iny, ic;
-    tls_line(&segs[i].fit, &inx, &iny, &ic);
+    cv_tls_line(&segs[i].fit, &inx, &iny, &ic);
 
     for (int32_t j = i + 1; j <= count; j++) {
       if (!segs[j].alive) continue;
       double jnx, jny, jc;
-      tls_line(&segs[j].fit, &jnx, &jny, &jc);
+      cv_tls_line(&segs[j].fit, &jnx, &jny, &jc);
 
       /* Lines, not rays: opposite normals describe the same direction. */
       if (fabs(inx * jnx + iny * jny) < cos_tol) continue;
@@ -1127,7 +1124,7 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
     combined.sxy += segs[rb].fit.sxy;
 
     double nx, ny, c;
-    tls_line(&combined, &nx, &ny, &c);
+    cv_tls_line(&combined, &nx, &ny, &c);
 
     /* The decisive test: does one line still hold every pixel of both? */
     bool ok = true;
@@ -1137,7 +1134,7 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
         for (size_t k = 0; k < n && ok; k++) {
           if (in[k] != member) continue;
           const double x = (double)(k % (size_t)cols), y = (double)(k / (size_t)cols);
-          if (tls_distance(nx, ny, c, x, y) > max_residual) ok = false;
+          if (cv_tls_distance(nx, ny, c, x, y) > max_residual) ok = false;
         }
       }
     }

@@ -58,6 +58,16 @@ test('rejects an enum default outside its values', () => {
   }), /default is invalid/);
 });
 
+test('rejects an unknown output kind', () => {
+  assert.throws(() => defineOp({
+    name: 'x', version: 1, inputs: [], output: { kind: 'pixels' },
+  }), /buffer, scalars or features/);
+  // and accepts the three that exist
+  for (const kind of [undefined, 'buffer', 'scalars', 'features']) {
+    defineOp({ name: 'x', version: 1, inputs: [], output: kind ? { kind } : {} });
+  }
+});
+
 test('rejects a bad name, version, dtype or duplicate param', () => {
   assert.throws(() => defineOp({ name: 'Not Valid', version: 1, inputs: [], output: {} }), /identifier/);
   assert.throws(() => defineOp({ name: 'x', version: 0, inputs: [], output: {} }), /integer/);
@@ -177,8 +187,8 @@ test('reports every problem, not just the first', () => {
 test('the first slice registers cleanly', () => {
   const r = createRegistry();
   assert.deepEqual(r.names(),
-    ['gaussian', 'gray', 'hysteresis', 'load', 'merge', 'nms', 'orient', 'pattern',
-     'segments', 'sobel', 'stats', 'threshold', 'toLinear', 'toSrgb']);
+    ['fit', 'gaussian', 'gray', 'hysteresis', 'load', 'merge', 'nms', 'orient',
+     'pattern', 'segments', 'sobel', 'stats', 'threshold', 'toLinear', 'toSrgb']);
 });
 
 test('load is unimplemented without a decoder, implemented with one', () => {

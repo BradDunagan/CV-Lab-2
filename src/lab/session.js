@@ -54,6 +54,22 @@ function hashScalars(values) {
     .digest('hex');
 }
 
+/**
+ * Hash a feature list.
+ *
+ * Keys are emitted in a fixed order rather than whatever order the producer
+ * happened to build the object in, so the hash describes the geometry and not
+ * the construction. Numbers go in at full precision: rounding would hide real
+ * changes, which is the opposite of what this is for.
+ */
+const FEATURE_KEYS = ['id', 'pixels', 'x0', 'y0', 'x1', 'y1', 'length', 'angle',
+                      'residual', 'cx', 'cy'];
+
+function hashFeatures(features) {
+  const canonical = features.map((f) => FEATURE_KEYS.map((k) => f[k] ?? null));
+  return crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+}
+
 class Session {
   /**
    * @param {object} options
@@ -126,11 +142,18 @@ class Session {
    * `A#1` for the reader's benefit and is not itself re-parseable.
    */
   async _apply(op, record, target, source = '') {
-    const producesBuffer = op.output.kind !== 'scalars';
-    if (producesBuffer && !target) {
-      throw new SessionError(`${op.name} produces a buffer, so it needs a target: X = ${op.name}(...)`);
+    /*
+     * Three output kinds. `scalars` is a measurement and binds to nothing;
+     * `buffer` and `features` both occupy a slot. Written as a kind rather
+     * than a boolean because the boolean -- "anything that is not scalars is
+     * a buffer" -- is exactly the assumption a third kind invalidates.
+     */
+    const outputKind = op.output.kind ?? 'buffer';
+    const bindsToSlot = outputKind !== 'scalars';
+    if (bindsToSlot && !target) {
+      throw new SessionError(`${op.name} produces a ${outputKind}, so it needs a target: X = ${op.name}(...)`);
     }
-    if (!producesBuffer && target) {
+    if (!bindsToSlot && target) {
       throw new SessionError(`${op.name} produces no buffer, so it cannot be assigned to "${target}"`);
     }
     if (!op.implemented) {
@@ -161,11 +184,11 @@ class Session {
       source: source.trim(),
       text: formatCall(record),
       record,
-      output: this._describeResult(result, producesBuffer),
+      output: this._describeResult(result, outputKind),
       produced: null,
     };
 
-    if (producesBuffer) {
+    if (bindsToSlot) {
       const previous = this.slots.get(target);
       const version = (previous?.version ?? 0) + 1;
 
@@ -222,18 +245,24 @@ class Session {
     );
   }
 
-  _describeResult(result, producesBuffer) {
-    if (producesBuffer) {
-      if (!result || result.kind !== 'buffer') {
-        throw new SessionError('kernel was expected to return { kind: "buffer", handle }');
-      }
-      return { kind: 'buffer', ...this.buffers.describe(result.handle),
-               hash: this.buffers.hash(result.handle) };
+  _describeResult(result, outputKind) {
+    if (!result || result.kind !== outputKind) {
+      throw new SessionError(
+        `kernel was expected to return { kind: "${outputKind}", ... }, got ` +
+          `${result ? `"${result.kind}"` : 'nothing'}`);
     }
-    if (!result || result.kind !== 'scalars') {
-      throw new SessionError('kernel was expected to return { kind: "scalars", values }');
+    switch (outputKind) {
+      case 'buffer':
+        return { kind: 'buffer', ...this.buffers.describe(result.handle),
+                 hash: this.buffers.hash(result.handle) };
+      case 'features':
+        return { kind: 'features', count: result.features.length,
+                 hash: hashFeatures(result.features) };
+      case 'scalars':
+        return { kind: 'scalars', values: result.values, hash: hashScalars(result.values) };
+      default:
+        throw new SessionError(`unknown output kind "${outputKind}"`);
     }
-    return { kind: 'scalars', values: result.values, hash: hashScalars(result.values) };
   }
 
   /** Run a whole script, stopping at the first failure. */
@@ -385,7 +414,9 @@ class Session {
       const out = e.output;
       const shape = out.kind === 'buffer'
         ? `${out.width}×${out.height}×${out.channels} ${out.dtype} ${out.space}`
-        : 'scalars';
+        : out.kind === 'features'
+          ? `${out.count} feature${out.count === 1 ? '' : 's'}`
+          : 'scalars';
       const target = e.produced ? `${e.produced.slot}#${e.produced.version} ← ` : '';
       return `#${e.n}  ${target}${e.text}`.padEnd(58) +
              `sha256:${out.hash.slice(0, 8)}…  ${shape}  [v${e.record.version}]`;

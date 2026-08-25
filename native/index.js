@@ -151,4 +151,12 @@ module.exports = {
 
   /** @returns {number[]|null} one value per channel, or null outside the image */
   samplePixel: addon.samplePixel,
+
+  /**
+   * Geometry out of a segment label map — the first result that is not pixels.
+   * @param {object} handle an i32 label map
+   * @returns {Array<{id:number, pixels:number, x0:number, y0:number, x1:number,
+   *   y1:number, length:number, angle:number, residual:number, cx:number, cy:number}>}
+   */
+  fitSegments: addon.fitSegments,
 };

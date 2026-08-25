@@ -95,16 +95,23 @@ const session = new Session({
 /* ------------------------------------------------------------------ */
 
 function slotSummaries() {
-  return [...session.slots.entries()].map(([name, binding]) => ({
-    name,
-    version: binding.version,
-    ...native.bufferInfo(binding.value.handle),
-  }));
+  return [...session.slots.entries()].map(([name, binding]) => {
+    const base = { name, version: binding.version, kind: binding.value.kind };
+    if (binding.value.kind !== 'buffer') {
+      // A feature list has no pixels, so no dtype, channels or colour space.
+      return { ...base, width: binding.value.width, height: binding.value.height,
+               count: binding.value.features.length };
+    }
+    return { ...base, ...native.bufferInfo(binding.value.handle) };
+  });
 }
 
 function handleFor(slot) {
   const binding = session.slots.get(slot);
   if (!binding) throw new Error(`unknown slot "${slot}"`);
+  if (binding.value.kind !== 'buffer') {
+    throw new Error(`slot "${slot}" holds ${binding.value.kind}, not pixels`);
+  }
   return binding.value.handle;
 }
 
@@ -211,6 +218,7 @@ contextBridge.exposeInMainWorld('lab', {
   probeAll: (nx, ny) => {
     const out = {};
     for (const [name, binding] of session.slots.entries()) {
+      if (binding.value.kind !== 'buffer') continue;   /* nothing to sample */
       const info = native.bufferInfo(binding.value.handle);
       const x = Math.floor(nx * info.width);
       const y = Math.floor(ny * info.height);
@@ -228,6 +236,17 @@ contextBridge.exposeInMainWorld('lab', {
 
   /** Ask the main process to confirm, since reset destroys the log. */
   confirmReset: (entries) => ipcRenderer.invoke('session:confirmReset', entries),
+
+  /**
+   * Every feature list currently bound, with the coordinate space it belongs
+   * to, so the renderer can draw them over a tile of matching size.
+   */
+  features: () => [...session.slots.entries()]
+    .filter(([, b]) => b.value.kind === 'features')
+    .map(([name, b]) => ({
+      slot: name, width: b.value.width, height: b.value.height,
+      features: b.value.features,
+    })),
 
   /** The whole session, ready to write to disk. */
   sessionJSON: () => session.toJSON(),
