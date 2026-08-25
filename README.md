@@ -11,7 +11,7 @@ every result is **reproducible** from a replayable log.
 
 ```bash
 npm install     # also compiles the addon
-npm test        # eight suites, ~250 tests
+npm test        # nine suites, ~270 tests
 npm start       # launch the app
 ```
 
@@ -34,7 +34,11 @@ N  = nms(E, Gx, Gy)
 S  = segments(N, Gx, Gy)
 R  = merge(S)
 F  = fit(R)
+C  = corners(F)
 ```
+
+Turn on **fits** in the toolbar to draw the results over the image they came
+from.
 
 Each command creates a tile. Hover anywhere to read that pixel **in every slot
 at once**; scroll to zoom — all tiles move together. Pick an operation from the
@@ -115,8 +119,9 @@ Working: the buffer type, the operation registry, the command language, the
 session log with provenance and replay, the display path, and the UI. Fifteen
 operations — `load`, `pattern`, `gray`, `gaussian`, `sobel`, `threshold`,
 `stats`, `toLinear`, `toSrgb`, `nms`, `hysteresis`, `orient`, `segments`,
-`merge`, `fit` — enough for Canny end to end, and for straight edges with
-sub-pixel endpoints. Three-platform CI produces unsigned installers.
+`merge`, `fit`, `corners` — enough for Canny end to end, for straight edges
+with sub-pixel endpoints, and for corner hypotheses carrying their own
+uncertainty. Three-platform CI produces unsigned installers.
 
 Outstanding, in rough order:
 

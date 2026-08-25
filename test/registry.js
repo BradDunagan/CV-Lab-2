@@ -58,6 +58,15 @@ test('rejects an enum default outside its values', () => {
   }), /default is invalid/);
 });
 
+test('rejects an unknown input kind, and defaults it to buffer', () => {
+  assert.throws(() => defineOp({
+    name: 'x', version: 1, output: {},
+    inputs: [{ name: 'src', kind: 'pixels' }],
+  }), /kind must be buffer or features/);
+  const op = defineOp({ name: 'x', version: 1, output: {}, inputs: [{ name: 'src' }] });
+  assert.equal(op.inputs[0].kind, 'buffer');
+});
+
 test('rejects an unknown output kind', () => {
   assert.throws(() => defineOp({
     name: 'x', version: 1, inputs: [], output: { kind: 'pixels' },
@@ -187,8 +196,9 @@ test('reports every problem, not just the first', () => {
 test('the first slice registers cleanly', () => {
   const r = createRegistry();
   assert.deepEqual(r.names(),
-    ['fit', 'gaussian', 'gray', 'hysteresis', 'load', 'merge', 'nms', 'orient',
-     'pattern', 'segments', 'sobel', 'stats', 'threshold', 'toLinear', 'toSrgb']);
+    ['corners', 'fit', 'gaussian', 'gray', 'hysteresis', 'load', 'merge', 'nms',
+     'orient', 'pattern', 'segments', 'sobel', 'stats', 'threshold', 'toLinear',
+     'toSrgb']);
 });
 
 test('load is unimplemented without a decoder, implemented with one', () => {

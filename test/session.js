@@ -98,6 +98,12 @@ function buildRegistry() {
     }),
   }));
   r.register(defineOp({
+    name: 'countFeatures', version: 1,
+    inputs: [{ name: 'src', kind: 'features' }], params: [],
+    output: { kind: 'scalars' },
+    kernel: ({ inputs }) => ({ kind: 'scalars', values: { n: inputs[0].features.length } }),
+  }));
+  r.register(defineOp({
     name: 'total', version: 1, inputs: [{ name: 'src' }], params: [],
     output: { kind: 'scalars' },
     kernel: ({ inputs }) => ({
@@ -382,6 +388,25 @@ test('a kernel returning the wrong kind is refused', async () => {
   await s.execute('A = ramp(n=4)');
   await assert.rejects(async () => s.execute('F = describe(A)'),
     /expected to return \{ kind: "features"/);
+});
+
+test('an op can consume a features slot', async () => {
+  const s = newSession();
+  await s.execute('A = ramp(n=4)');
+  await s.execute('F = describe(A)');
+  const entry = await s.execute('countFeatures(F)');
+  assert.deepEqual(entry.output.values, { n: 4 });
+});
+
+test('a declared input kind is enforced, not merely recorded', async () => {
+  // The same lesson as the colour space check: declaring is not enforcing.
+  const s = newSession();
+  await s.execute('A = ramp(n=4)');
+  await s.execute('F = describe(A)');
+  await assert.rejects(async () => s.execute('countFeatures(A)'),
+    /needs features, but A#1 holds buffer/);
+  await assert.rejects(async () => s.execute('X = scale(F)'),
+    /needs buffer, but F#1 holds features/);
 });
 
 /* --- freeing memory ---------------------------------------------------- */

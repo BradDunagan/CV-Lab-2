@@ -11,6 +11,7 @@
  */
 
 const { Registry, defineOp } = require('./registry');
+const { findCorners } = require('./corners');
 
 /**
  * Bind a declared operation to its C kernel.
@@ -293,6 +294,31 @@ function buildOps({ decodeFile } = {}) {
           height: info.height,
         };
       },
+    }),
+
+    defineOp({
+      name: 'corners',
+      version: 1,
+      summary: 'Where fitted segments would meet, with how far each had to reach.',
+      // Features in, features out -- the first operation to consume the kind
+      // rather than only produce it.
+      inputs: [{ name: 'src', kind: 'features' }],
+      params: [
+        // Near-parallel lines intersect far away and wrongly: error goes as
+        // 1/sin(angle between).
+        { name: 'minAngle', type: 'number', default: 15, min: 1, max: 89 },
+        // Scale-free rather than a pixel count: reaching 5px off a 60px
+        // segment is cheap, off a 7px segment is not.
+        { name: 'maxReachRatio', type: 'number', default: 2, min: 0 },
+        { name: 'cluster', type: 'number', default: 3, min: 0 },
+      ],
+      output: { kind: 'features' },
+      kernel: ({ inputs, params }) => ({
+        kind: 'features',
+        features: findCorners(inputs[0].features, params),
+        width: inputs[0].width,
+        height: inputs[0].height,
+      }),
     }),
 
     defineOp({

@@ -89,6 +89,11 @@ function defineOp(spec) {
     if (!input || typeof input.name !== 'string') {
       throw new OpDefinitionError(`op "${spec.name}": each input needs a name`);
     }
+    const inputKind = input.kind ?? 'buffer';
+    if (!['buffer', 'features'].includes(inputKind)) {
+      throw new OpDefinitionError(
+        `op "${spec.name}" input "${input.name}": kind must be buffer or features`);
+    }
     if (input.channels !== undefined &&
         !(Array.isArray(input.channels) && input.channels.every(Number.isInteger))) {
       throw new OpDefinitionError(
@@ -133,7 +138,7 @@ function defineOp(spec) {
     version: spec.version,
     summary: spec.summary ?? '',
     inputs: Object.freeze(spec.inputs.map((i) =>
-      Object.freeze({ ...i, space: i.space ?? 'any' }))),
+      Object.freeze({ ...i, kind: i.kind ?? 'buffer', space: i.space ?? 'any' }))),
     params: Object.freeze(params.map((p) =>
       // Semantic unless explicitly opted out: §3 makes opting out deliberate.
       Object.freeze({ ...p, semantic: p.semantic !== false }))),

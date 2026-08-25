@@ -456,6 +456,55 @@ pixels themselves. That is where sub-pixel accuracy comes from: the line is an
 average over every pixel in the segment, so it localises better than any single
 pixel centre can.
 
+### Corners are hypotheses, not detections
+
+`corners` intersects fitted segments pairwise. What it deliberately does *not*
+do is decide which intersections are real.
+
+**Real edges systematically stop short of their corners**, and for three
+measured reasons: blur rounds the vertex so the gradient direction rotates and
+`segments` stops growing; non-maximum suppression deletes junction pixels
+outright (21% of the cube's edge pixels had four neighbours, and a checkerboard
+mask has literal gaps where lines cross); and weak ends fall below `minMag`.
+A gap between a segment's end and a true corner is the normal case, so a fixed
+pixel threshold is wrong for half of any image.
+
+So each candidate carries the evidence instead, and a later stage can spend
+effort only where the geometry says it might pay off:
+
+| Field | What it measures |
+|---|---|
+| `support` | how many segment pairs agree at this location — the best single indicator |
+| `reach` | how far past its own end each line had to be extended. Negative means they genuinely cross |
+| `sigma` | propagated positional uncertainty, in pixels |
+
+`sigma` comes from the fits rather than from a guessed weighting. A TLS fit
+over *n* pixels of length *L* with RMS residual *s* has angular slop of about
+`s·√12 / (L·√n)`; extrapolating a distance *d* smears the endpoint by `d·δθ`;
+and two lines crossing at angle θ combine as `√(e₁²+e₂²)/|sin θ|`. Which is why
+`fit` reports `rms` as well as the maximum `residual` — the maximum is a
+guarantee about the worst pixel, the RMS is what propagation needs.
+
+**`sigma` measures precision, not correctness**, and that is the thing most
+likely to be misread. On the cube, all fourteen candidates located to better
+than one pixel — including nonsense at 92 px of reach. Two long, clean,
+well-determined lines extended a long way still intersect *precisely*; they
+simply intersect somewhere that is not a corner. `reach` and `support` separate
+real from invented; `sigma` says how well-located an answer is once you already
+believe it.
+
+On the cube this reads out the geometry: four corners with three agreeing pairs
+each — a cube in general position has exactly four vertices where three visible
+edges meet — plus two more with a reach of 1.1 and 1.4 px, which are the
+silhouette vertices where only two edges meet. The other eight all reach 46–92
+px.
+
+The expensive follow-up this enables — going back to the image to check whether
+gradient magnitude is elevated along an extrapolated path, or re-running
+`segments` locally with a lower threshold near a predicted corner — belongs in
+a separate operation that consumes corners, so that it runs only where a
+hypothesis already exists.
+
 ### Two directions
 
 | Direction | Question it answers | Used for |

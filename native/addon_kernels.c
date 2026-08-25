@@ -427,7 +427,7 @@ static napi_value FitSegments(napi_env env, napi_callback_info info) {
     cv_tls_line(&fits[id], &nx, &ny, &c);
     const double tx = -ny, ty = nx;          /* along the line */
 
-    double lo = 1e300, hi = -1e300, worst = 0.0;
+    double lo = 1e300, hi = -1e300, worst = 0.0, sum_sq = 0.0;
     double ax = 0, ay = 0, bx = 0, by = 0;
     for (size_t i = 0; i < n; i++) {
       if (in[i] != id) continue;
@@ -437,6 +437,7 @@ static napi_value FitSegments(napi_env env, napi_callback_info info) {
       if (t > hi) { hi = t; bx = x; by = y; }
       const double d = cv_tls_distance(nx, ny, c, x, y);
       if (d > worst) worst = d;
+      sum_sq += d * d;
     }
 
     /*
@@ -468,6 +469,11 @@ static napi_value FitSegments(napi_env env, napi_callback_info info) {
     napi_set_named_property(env, entry, "length", v);
     napi_create_double(env, angle, &v);                napi_set_named_property(env, entry, "angle", v);
     napi_create_double(env, worst, &v);                napi_set_named_property(env, entry, "residual", v);
+    /* RMS as well as the maximum: the maximum is a guarantee about the worst
+     * pixel, the RMS is what error propagation needs when this line gets
+     * extrapolated beyond its own extent. */
+    napi_create_double(env, sqrt(sum_sq / fits[id].n), &v);
+    napi_set_named_property(env, entry, "rms", v);
     napi_create_double(env, fits[id].sx / fits[id].n, &v);
     napi_set_named_property(env, entry, "cx", v);
     napi_create_double(env, fits[id].sy / fits[id].n, &v);

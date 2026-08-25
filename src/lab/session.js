@@ -168,6 +168,7 @@ class Session {
           `${ref.slot}#${ref.version} is no longer bound (current is #${binding.version})`
         );
       }
+      this._checkInputKind(op, index, ref, binding.value);
       this._checkSpace(op, index, ref, binding.value);
       return binding.value;
     });
@@ -218,6 +219,23 @@ class Session {
     Object.freeze(entry);
     this.log.push(entry);
     return entry;
+  }
+
+  /**
+   * Enforce the KIND an operation declares it needs.
+   *
+   * Declaring `kind: 'features'` on an input is not enough on its own -- the
+   * same lesson as the colour space check below, which was declared in the
+   * registry and enforced nowhere for one commit while `gray` quietly computed
+   * luma and called it luminance.
+   */
+  _checkInputKind(op, index, ref, value) {
+    const required = op.inputs[index]?.kind ?? 'buffer';
+    if (value.kind === required) return;
+    throw new SessionError(
+      `${op.name} input ${index + 1} needs ${required}, but ${ref.slot}#${ref.version} ` +
+        `holds ${value.kind}`
+    );
   }
 
   /**
