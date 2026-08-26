@@ -15,6 +15,15 @@ jobs:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
 
+    # Every `run:` happens in the app's own checkout. Both repositories are
+    # checked out side by side below, because package.json resolves paneless
+    # as `file:../paneless-workspace/packages/paneless` and actions/checkout
+    # can only write inside the workspace -- so the app cannot sit AT the
+    # workspace root and still have a sibling.
+    defaults:
+      run:
+        working-directory: cv-lab-2
+
     strategy:
       # Don't cancel the other two when one fails -- you want to see all three
       # failures at once, not discover them one release at a time.
@@ -27,6 +36,36 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: cv-lab-2
+
+      # The renderer is Svelte on top of paneless, which lives in a separate
+      # PRIVATE repository and is consumed from a relative path rather than the
+      # registry. The default GITHUB_TOKEN is scoped to this repository alone,
+      # so this needs a PAT with read access to paneless-workspace, stored as
+      # the PANELESS_TOKEN secret.
+      #
+      # Checked BEFORE the checkout so the failure names the fix, rather than
+      # arriving as "repository not found" from actions/checkout or, worse, as
+      # a confusing npm ci error three steps later.
+      - name: Check the paneless token is configured
+        working-directory: .
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.PANELESS_TOKEN }}" ]; then
+            echo "::error::PANELESS_TOKEN is not set."
+            echo "The renderer depends on BradDunagan/paneless-workspace, which is private."
+            echo "Create a fine-grained PAT with read access to it and add it as the"
+            echo "PANELESS_TOKEN repository secret. Alternatively make that repo public,"
+            echo "or vendor paneless into this one."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          repository: BradDunagan/paneless-workspace
+          token: ${{ secrets.PANELESS_TOKEN }}
+          path: paneless-workspace
 
       # Must be >= 22.12. Electron 43, @electron/rebuild 4 and node-gyp 13 all
       # declare it, and node-gyp 13's bundled undici genuinely breaks on Node 20
@@ -35,6 +74,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: cv-lab-2/package-lock.json
 
       # xvfb provides the virtual display the renderer tests need: Electron
       # cannot open a window on a headless Linux runner, and `show: false` is
@@ -80,6 +120,12 @@ jobs:
       - name: README examples
         run: npm run test:readme
 
+      # The renderer is a Vite build now, and test:renderer loads dist-renderer/
+      # rather than the Svelte source. Without this the suite fails on a missing
+      # page, which reads like a renderer bug and is not one.
+      - name: Build renderer
+        run: npm run build:renderer
+
       # Then rebuild against Electron's ABI -- a different NODE_MODULE_VERSION.
       # This is the step that would fail if the addon were NAN/V8 based.
       - name: Rebuild addon (Electron ABI)
@@ -101,7 +147,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cvlab-addon-${{ matrix.os }}
-          path: build/Release/*.node
+          path: cv-lab-2/build/Release/*.node
           if-no-files-found: error
 
       # --- packaging -------------------------------------------------------
@@ -125,11 +171,11 @@ jobs:
         with:
           name: cvlab-installers-${{ matrix.os }}
           path: |
-            dist/*.dmg
-            dist/*.zip
-            dist/*.exe
-            dist/*.AppImage
-            dist/*.deb
+            cv-lab-2/dist/*.dmg
+            cv-lab-2/dist/*.zip
+            cv-lab-2/dist/*.exe
+            cv-lab-2/dist/*.AppImage
+            cv-lab-2/dist/*.deb
           if-no-files-found: error
           # ~120 MB per platform; no reason to keep them for the default 90 days.
           retention-days: 14
