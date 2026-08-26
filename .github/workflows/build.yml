@@ -45,21 +45,85 @@ jobs:
       # so this needs a PAT with read access to paneless-workspace, stored as
       # the PANELESS_TOKEN secret.
       #
-      # Checked BEFORE the checkout so the failure names the fix, rather than
-      # arriving as "repository not found" from actions/checkout or, worse, as
-      # a confusing npm ci error three steps later.
-      - name: Check the paneless token is configured
+      # This step USES the token rather than merely checking it is present.
+      # The difference is not academic: an earlier version only tested that
+      # the secret was non-empty, a 15-character string that was not a token
+      # sailed through it, and the real failure arrived one step later as a
+      # bare "Bad credentials" from actions/checkout naming neither cause nor
+      # fix. It took three round trips to work out.
+      #
+      # It also matters for the failure that has not happened yet. A PAT
+      # expires. When this one does, checkout will start failing with nothing
+      # pointing at the reason, quite possibly months from now -- so the three
+      # cases that actually occur are told apart here, before anything else
+      # runs.
+      #
+      # The token goes through the environment rather than being interpolated
+      # into the script: `${{ }}` inline would break on a value containing a
+      # quote, and env is the documented way to hand a secret to a shell.
+      - name: Check the paneless token works
         working-directory: .
         shell: bash
+        env:
+          PANELESS_TOKEN: ${{ secrets.PANELESS_TOKEN }}
+          PANELESS_REPO: BradDunagan/paneless-workspace
         run: |
-          if [ -z "${{ secrets.PANELESS_TOKEN }}" ]; then
+          set -u
+          fix() {
+            echo "Fix: generate a fine-grained PAT at"
+            echo "  https://github.com/settings/personal-access-tokens/new"
+            echo "with Resource owner BradDunagan, Repository access limited to"
+            echo "$PANELESS_REPO, and Permissions > Repository > Contents: Read-only."
+            echo "Then store its VALUE (a ~93 character string starting github_pat_)"
+            echo "as the PANELESS_TOKEN repository secret:"
+            echo "  gh secret set PANELESS_TOKEN --repo BradDunagan/CV-Lab-2"
+          }
+
+          if [ -z "$PANELESS_TOKEN" ]; then
             echo "::error::PANELESS_TOKEN is not set."
-            echo "The renderer depends on BradDunagan/paneless-workspace, which is private."
-            echo "Create a fine-grained PAT with read access to it and add it as the"
-            echo "PANELESS_TOKEN repository secret. Alternatively make that repo public,"
-            echo "or vendor paneless into this one."
+            echo "The renderer depends on $PANELESS_REPO, which is private."
+            fix
             exit 1
           fi
+
+          # Body and status in one call, no temp file -- Git Bash on the
+          # Windows runner has a different idea of /tmp than the other two.
+          response=$(curl -sS -w '\n%{http_code}' \
+            -H "Authorization: Bearer $PANELESS_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$PANELESS_REPO") || {
+              echo "::error::could not reach api.github.com to validate PANELESS_TOKEN."
+              exit 1
+            }
+          code=$(printf '%s' "$response" | tail -n 1)
+
+          case "$code" in
+            200)
+              echo "PANELESS_TOKEN can read $PANELESS_REPO."
+              ;;
+            401)
+              echo "::error::PANELESS_TOKEN is set, but GitHub rejects it (401)."
+              echo "The token is expired, revoked, or is not a GitHub token at all."
+              fix
+              exit 1
+              ;;
+            403|404)
+              echo "::error::PANELESS_TOKEN is a valid token but cannot read $PANELESS_REPO ($code)."
+              echo "GitHub returns 404 rather than 403 for a private repository the"
+              echo "token cannot see, so this is almost always scope rather than"
+              echo "permissions: check the resource owner, that $PANELESS_REPO is"
+              echo "among the selected repositories, and that Contents is granted."
+              fix
+              exit 1
+              ;;
+            *)
+              echo "::error::unexpected $code from api.github.com validating PANELESS_TOKEN."
+              # The body may explain it and never contains the token.
+              printf '%s' "$response" | sed '$d'
+              exit 1
+              ;;
+          esac
 
       - uses: actions/checkout@v4
         with:
