@@ -31,6 +31,103 @@ const char *cv_param_str(const CvParams *params, const char *name, const char *f
 }
 
 /* ------------------------------------------------------------------ */
+/* deterministic arithmetic -- see kernels.h for why these exist        */
+/*                                                                      */
+/* Built from +, -, *, / and sqrt, which IEEE 754 requires to be        */
+/* correctly rounded. Everything here therefore returns identical bits  */
+/* on every platform, which is the entire point: libm's atan2, cos and  */
+/* hypot are not correctly rounded and the three platforms this ships   */
+/* on disagree in the last bits.                                        */
+/* ------------------------------------------------------------------ */
+
+double cv_len2(double a, double b) { return sqrt(a * a + b * b); }
+
+/* tan(15 deg) = 2 - sqrt(3), and sqrt(3). Written out rather than computed,
+ * so the reduction below is not itself at the mercy of a library call. */
+#define CV_TAN_15 0.26794919243112270647
+#define CV_SQRT_3 1.73205080756887729353
+#define CV_PI_6   0.52359877559829887308
+#define CV_PI_2   1.57079632679489661923
+
+/*
+ * atan(w) for |w| <= tan(15 deg), by the odd Taylor series in w^2.
+ *
+ * Thirteen terms. The truncation error at the end of the range is
+ * (0.0718^13)/27 * w, about 1.3e-17 -- under a quarter of one ULP of the
+ * result, so the series is not what limits accuracy here; Horner's own
+ * rounding is.
+ *
+ * Coefficients are (-1)^k / (2k+1), highest power first. Written as divisions
+ * of exact integers so the compiler rounds each one correctly rather than
+ * anyone transcribing a decimal expansion by hand.
+ */
+static double atan_series(double w) {
+  static const double C[] = {
+    1.0 / 25.0, -1.0 / 23.0,  1.0 / 21.0, -1.0 / 19.0,  1.0 / 17.0,
+   -1.0 / 15.0,  1.0 / 13.0, -1.0 / 11.0,  1.0 /  9.0, -1.0 /  7.0,
+    1.0 /  5.0, -1.0 /  3.0,  1.0,
+  };
+  const double u = w * w;
+  double p = C[0];
+  for (size_t i = 1; i < sizeof(C) / sizeof(C[0]); i++) p = p * u + C[i];
+  return w * p;
+}
+
+/*
+ * atan(z) for z in [0, 1].
+ *
+ * Above tan(15 deg) the series would need far more terms, so subtract 30
+ * degrees first using tan(a - b) -- which costs one division and brings any
+ * z in range down to |w| <= tan(15 deg).
+ */
+static double atan_unit(double z) {
+  if (z <= CV_TAN_15) return atan_series(z);
+  return CV_PI_6 + atan_series((z * CV_SQRT_3 - 1.0) / (z + CV_SQRT_3));
+}
+
+double cv_atan2(double y, double x) {
+  if (x == 0.0 && y == 0.0) return 0.0;   /* 0/0 below would be NaN */
+
+  const double ax = fabs(x), ay = fabs(y);
+  /* Divide the smaller by the larger, so the quotient is always in [0, 1]
+   * and the reduction above always applies. */
+  double a = (ax >= ay) ? atan_unit(ay / ax) : CV_PI_2 - atan_unit(ax / ay);
+
+  if (x < 0.0) a = CV_PI - a;
+  if (y < 0.0) a = -a;
+  return a;
+}
+
+/*
+ * cos(x) by its Taylor series in x^2, for x in [0, pi/2].
+ *
+ * Twelve terms: at x = pi/2 the first dropped term is (pi/2)^24 / 24!, about
+ * 8e-20. Reciprocal factorials again written as divisions of exact integers.
+ */
+double cv_cos_degrees(double degrees) {
+  static const double C[] = {
+    1.0 / 620448401733239439360000.0,  /* 1/24! */
+   -1.0 / 1124000727777607680000.0,    /* 1/22! */
+    1.0 / 2432902008176640000.0,       /* 1/20! */
+   -1.0 / 6402373705728000.0,          /* 1/18! */
+    1.0 / 20922789888000.0,            /* 1/16! */
+   -1.0 / 87178291200.0,               /* 1/14! */
+    1.0 / 479001600.0,                 /* 1/12! */
+   -1.0 / 3628800.0,                   /* 1/10! */
+    1.0 / 40320.0,                     /* 1/8!  */
+   -1.0 / 720.0,                       /* 1/6!  */
+    1.0 / 24.0,                        /* 1/4!  */
+   -1.0 / 2.0,                         /* 1/2!  */
+    1.0,
+  };
+  const double x = degrees * (CV_PI / 180.0);
+  const double u = x * x;
+  double p = C[0];
+  for (size_t i = 1; i < sizeof(C) / sizeof(C[0]); i++) p = p * u + C[i];
+  return p;
+}
+
+/* ------------------------------------------------------------------ */
 /* helpers                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -741,14 +838,65 @@ void cv_tls_add(CvTls *t, double x, double y) {
   t->sxx += x * x; t->syy += y * y; t->sxy += x * y;
 }
 
+/*
+ * The fitted line, as a unit normal and an offset.
+ *
+ * The direction wanted is the major principal axis of the 2x2 covariance --
+ * the eigenvector of its larger eigenvalue. The obvious way to get it is
+ *
+ *     theta = 0.5 * atan2(2*cxy, cxx - cyy);   nx = -sin(theta), ny = cos(theta)
+ *
+ * and that is what this did. It is also three libm calls, none of which is
+ * required to be correctly rounded, in the one function every geometry stage
+ * depends on. The CI matrix caught the consequence: `fit` produced three
+ * different content hashes on three platforms, two of which had identical
+ * hardware and compiler flags.
+ *
+ * A symmetric 2x2 eigenvector needs no trigonometry. With
+ *
+ *     d = cxx - cyy      r = sqrt(d*d + 4*cxy*cxy)
+ *
+ * the major axis is parallel to (d + r, 2*cxy), which is only multiplication,
+ * addition and a square root -- all correctly rounded, so all identical
+ * everywhere. It is also more accurate than the round trip through atan2 and
+ * back out through sin and cos.
+ *
+ * Two details that are not decoration:
+ *
+ *   - `d + r` cancels catastrophically when d is negative, so the equivalent
+ *     form (2*cxy, r - d) is used there instead. Each is well-conditioned
+ *     exactly where the other is not.
+ *   - The sign is canonicalised to tx >= 0, reproducing the half-open range
+ *     atan2 used to impose. That is not cosmetic: `fit` orders a segment's
+ *     endpoints along this direction, so flipping it would swap which end is
+ *     reported as (x0, y0) and which as (x1, y1).
+ */
 void cv_tls_line(const CvTls *t, double *nx, double *ny, double *c) {
   const double mx = t->sx / t->n, my = t->sy / t->n;
   const double cxx = t->sxx / t->n - mx * mx;
   const double cyy = t->syy / t->n - my * my;
   const double cxy = t->sxy / t->n - mx * my;
-  const double theta = 0.5 * atan2(2.0 * cxy, cxx - cyy);
-  *nx = -sin(theta);
-  *ny = cos(theta);
+
+  double tx, ty;
+  if (cxy == 0.0) {
+    /* Already diagonal, so the axes are the principal axes. Also the only
+     * case where the vector forms below can come out as (0, 0). */
+    if (cxx >= cyy) { tx = 1.0; ty = 0.0; }
+    else            { tx = 0.0; ty = 1.0; }
+  } else {
+    const double d = cxx - cyy;
+    const double r = sqrt(d * d + 4.0 * cxy * cxy);
+    double vx, vy;
+    if (d >= 0.0) { vx = d + r;         vy = 2.0 * cxy; }
+    else          { vx = 2.0 * cxy;     vy = r - d;     }
+    if (vx < 0.0) { vx = -vx;           vy = -vy;       }
+    const double len = sqrt(vx * vx + vy * vy);
+    tx = vx / len;
+    ty = vy / len;
+  }
+
+  *nx = -ty;
+  *ny = tx;
   *c = -(*nx * mx + *ny * my);
 }
 
@@ -828,7 +976,7 @@ static CvStatus k_segments(const CvBuffer *const *inputs, size_t n_inputs,
   if (angle_tol <= 0.0 || angle_tol > 90.0 || max_residual <= 0.0 || min_pixels < 2) {
     return CV_ERR_PARAM;
   }
-  const double cos_tol = cos(angle_tol * CV_PI / 180.0);
+  const double cos_tol = cv_cos_degrees(angle_tol);
 
   const int64_t rows = mag->height, cols = mag->width;
   if (rows < 3 || cols < 3) return CV_ERR_DIMS;
@@ -903,7 +1051,7 @@ static CvStatus k_segments(const CvBuffer *const *inputs, size_t n_inputs,
     stack[top++] = seed;
     members[count++] = seed;
     {
-      const double len = hypot((double)dx[seed], (double)dy[seed]);
+      const double len = cv_len2((double)dx[seed], (double)dy[seed]);
       if (len > 0.0) { dirx += dx[seed] / len; diry += dy[seed] / len; }
       cv_tls_add(&fit, (double)(seed % cols), (double)(seed / cols));
     }
@@ -920,10 +1068,10 @@ static CvStatus k_segments(const CvBuffer *const *inputs, size_t n_inputs,
           if ((double)m[j] < min_mag) continue;
 
           /* Direction agreement, by dot product of unit vectors. */
-          const double len = hypot((double)dx[j], (double)dy[j]);
+          const double len = cv_len2((double)dx[j], (double)dy[j]);
           if (len <= 0.0) continue;
           double ux = dx[j] / len, uy = dy[j] / len;
-          const double rlen = hypot(dirx, diry);
+          const double rlen = cv_len2(dirx, diry);
           if (rlen <= 0.0) continue;
           double agreement = (ux * dirx + uy * diry) / rlen;
 
@@ -1121,7 +1269,7 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
     free(member_px); free(offset); free(segs); cv_buffer_free(out); return CV_ERR_ALLOC;
   }
 
-  const double cos_tol = cos(angle_tol * CV_PI / 180.0);
+  const double cos_tol = cv_cos_degrees(angle_tol);
   for (int32_t i = 1; i <= count; i++) {
     if (!segs[i].alive) continue;
     if (is_cancelled(ctx)) {
@@ -1145,7 +1293,7 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
       const double fx[4] = { segs[j].ax, segs[j].bx, segs[j].ax, segs[j].bx };
       const double fy[4] = { segs[j].ay, segs[j].by, segs[j].ay, segs[j].by };
       for (int k = 0; k < 4; k++) {
-        const double d = hypot(ex[k] - fx[k], ey[k] - fy[k]);
+        const double d = cv_len2(ex[k] - fx[k], ey[k] - fy[k]);
         if (d < best) best = d;
       }
       if (best > gap) continue;

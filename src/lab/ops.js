@@ -229,7 +229,10 @@ function buildOps({ decodeFile } = {}) {
 
     defineOp({
       name: 'segments',
-      version: 1,
+      // v2: the TLS fit and the angle tolerance stopped going through libm.
+      // Same algorithm, different last bits -- and on a pixel sitting exactly
+      // at maxResidual, potentially a different segment. See kernels.h.
+      version: 2,
       summary: 'Grow straight edges from the gradient field, one label per segment.',
       // Expects a THINNED magnitude -- nms output, not raw. A raw gradient
       // ridge is several pixels wide, and no line fits a wide band within a
@@ -258,7 +261,9 @@ function buildOps({ decodeFile } = {}) {
 
     defineOp({
       name: 'merge',
-      version: 1,
+      // v2: same reason as segments -- cv_tls_line and the angle tolerance are
+      // no longer libm calls, so results moved in the last bits.
+      version: 2,
       summary: 'Join segments that are collinear and nearly touching.',
       // A separate operation rather than a flag on segments, so you can see
       // what it joined by comparing the two label maps (§3).
@@ -274,7 +279,10 @@ function buildOps({ decodeFile } = {}) {
 
     defineOp({
       name: 'fit',
-      version: 1,
+      // v2: the whole record moved. cv_tls_line is algebraic now, and `angle`
+      // and `length` come from cv_atan2 and cv_len2 rather than libm -- which
+      // is what makes a feature list compare equal across platforms at all.
+      version: 2,
       summary: 'Describe each segment: endpoints, angle, length, straightness.',
       // The first operation whose result is not pixels. A label map says which
       // edge a pixel belongs to; this says what each edge IS.

@@ -467,7 +467,7 @@ static napi_value FitSegments(napi_env env, napi_callback_info info) {
     const double px0 = ax + nx * sa, py0 = ay + ny * sa;
     const double px1 = bx + nx * sb, py1 = by + ny * sb;
 
-    double angle = atan2(-nx, ny) * 180.0 / CV_PI;
+    double angle = cv_atan2(-nx, ny) * (180.0 / CV_PI);
     angle = fmod(angle, 180.0);
     if (angle < 0.0) angle += 180.0;
 
@@ -483,7 +483,7 @@ static napi_value FitSegments(napi_env env, napi_callback_info info) {
     napi_create_double(env, py0, &v);                  napi_set_named_property(env, entry, "y0", v);
     napi_create_double(env, px1, &v);                  napi_set_named_property(env, entry, "x1", v);
     napi_create_double(env, py1, &v);                  napi_set_named_property(env, entry, "y1", v);
-    napi_create_double(env, hypot(px1 - px0, py1 - py0), &v);
+    napi_create_double(env, cv_len2(px1 - px0, py1 - py0), &v);
     napi_set_named_property(env, entry, "length", v);
     napi_create_double(env, angle, &v);                napi_set_named_property(env, entry, "angle", v);
     napi_create_double(env, worst, &v);                napi_set_named_property(env, entry, "residual", v);

@@ -78,6 +78,66 @@ typedef struct {
   bool produces_buffer; /* false means it fills `scalars` instead */
 } CvKernelEntry;
 
+/* --- deterministic arithmetic --------------------------------------- */
+
+/*
+ * Replacements for the libm functions the geometry path used to call.
+ *
+ * IEEE 754 specifies +, -, *, / and sqrt to be CORRECTLY ROUNDED: every
+ * conforming platform returns the same bits for the same inputs. It says
+ * nothing of the sort about atan2, sin, cos, exp, pow or hypot. Those are
+ * quality-of-implementation, and glibc, Apple's libm and MSVC's UCRT are three
+ * different implementations that disagree in the last bits.
+ *
+ * That is not a hypothetical. design-lab-model.md §5 rule 3 claimed
+ * cross-platform bit-exactness, `-ffp-contract=off` was added to deliver it,
+ * and the CI matrix then produced THREE different hashes for `fit`'s output --
+ * macOS, Linux and Windows, with Linux and Windows differing from each other
+ * on identical hardware with identical flags. The flag was doing its job; libm
+ * was the other half of the problem, and it is the half no compiler flag can
+ * reach.
+ *
+ * Everything below is built from correctly-rounded operations only, so it
+ * returns identical bits everywhere. Accuracy is a secondary concern here and
+ * is stated per function -- what these exist for is AGREEMENT, and a function
+ * that is deterministically off by 1e-16 is worth more to this project than
+ * one that is optimally accurate and differs by platform.
+ *
+ * This applies to the geometry: the stages whose results are doubles that
+ * reach the output. The f32 pixel kernels still call exp and pow, and
+ * design-lab-model.md §5 records why that is a smaller risk and not zero.
+ */
+
+/**
+ * Length of the vector (a, b) — replaces hypot().
+ *
+ * hypot() is careful about intermediate overflow, which this is not: it
+ * squares first. At the scale this is used — pixel coordinates and gradient
+ * components, well under 1e150 — that cannot overflow, and the guarantee it
+ * trades away was never load-bearing.
+ */
+double cv_len2(double a, double b);
+
+/**
+ * atan2 in radians over (-pi, pi]. Accurate to within a few ULP.
+ *
+ * One deliberate difference from libm: a negative zero `y` returns +0 rather
+ * than -0, because the sign test is `y < 0.0` and -0.0 is not less than zero.
+ * Nothing here distinguishes the two, and `fit` folds its result onto
+ * [0, 180) immediately.
+ */
+double cv_atan2(double y, double x);
+
+/**
+ * cos of an angle given in DEGREES, for the range [0, 90] only.
+ *
+ * Degrees because both callers hold a tolerance in degrees, and doing the
+ * conversion inside keeps the one multiplication that precedes the series in
+ * one place. Outside [0, 90] the series is still evaluated but the error grows
+ * quickly; the two call sites validate their parameter to (0, 90] first.
+ */
+double cv_cos_degrees(double degrees);
+
 /* --- orthogonal regression ----------------------------------------- */
 
 /*

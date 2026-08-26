@@ -24,12 +24,27 @@
  * CI machines to mean anything. Passing here alone proves nothing — that is
  * the whole lesson of `scripts/lint-native.js`.
  *
+ * The flag alone was not enough, and finding that out is what this suite is
+ * for. With it in place the matrix still produced THREE different hashes for
+ * `fit` -- and Linux and Windows disagreed with EACH OTHER, on identical
+ * hardware with identical flags, which no compiler flag could explain. The
+ * cause was libm: IEEE 754 requires +, -, *, / and sqrt to be correctly
+ * rounded and says nothing about atan2, cos or hypot, so glibc, Apple's libm
+ * and MSVC's UCRT disagree in the last bits. The geometry path no longer calls
+ * any of them; see kernels.h.
+ *
+ * Why only `fit` and `corners` showed it: every buffer narrows to f32 on the
+ * way out, which absorbs a last-bit difference in a double. Feature records
+ * hash full-precision doubles and do not. The divergence was therefore
+ * invisible everywhere except where this lab claims sub-pixel accuracy.
+ *
  * If a hash below changes, exactly one of two things happened:
  *
  *   1. A kernel's behaviour changed. Bump its `version` in the registry and
  *      update the expectation here, in the same commit, with the reason.
  *   2. The build stopped being deterministic. Check `-ffp-contract=off`
- *      survived, and look for a reduction that lost its fixed summation order.
+ *      survived, look for a reduction that lost its fixed summation order, and
+ *      look for a libm call that crept back into the geometry.
  *
  * A mismatch on ONE platform while the others agree is case 2, always.
  *
@@ -98,22 +113,22 @@ stats(B)
  * and Linux reproduce them exactly.
  */
 const EXPECTED = {
-  P:  '025376eb900a3bd0651ec18be5d4dee324444796dc022beea9c4f91155195c97',
-  L:  '4f0a1d0542a6cf38f9804e350f01ab33fa1b10e3a7c35099dacb1b8c895e58f1',
-  Q:  '61e7181acf6fad0d5883cfeb5cfd6f72f46d34cc982f54fd81a3ac790ea0cc0a',
-  G:  '977e3ec2dfb65f3a8fd820a24cff807061b0c85db9b96b9aaafea23588a80dc9',
-  A:  '1319cc04dc7688f0ceba9c71e4cf311c5235cc981f766621de2d808371358737',
-  B:  '18060bbb2a5f1496599e3517fa36be15435ff82267da5bd4ef59aa0717a6b114',
+  P: '025376eb900a3bd0651ec18be5d4dee324444796dc022beea9c4f91155195c97',
+  L: '4f0a1d0542a6cf38f9804e350f01ab33fa1b10e3a7c35099dacb1b8c895e58f1',
+  Q: '61e7181acf6fad0d5883cfeb5cfd6f72f46d34cc982f54fd81a3ac790ea0cc0a',
+  G: '977e3ec2dfb65f3a8fd820a24cff807061b0c85db9b96b9aaafea23588a80dc9',
+  A: '1319cc04dc7688f0ceba9c71e4cf311c5235cc981f766621de2d808371358737',
+  B: '18060bbb2a5f1496599e3517fa36be15435ff82267da5bd4ef59aa0717a6b114',
   Gx: '6f65f6f1f47de58efe29568e394e87e0f8ecd1735418ef7d765afdaac5a5720a',
   Gy: 'b932b50b0d000de4dfd4ca78915d009d63f6180abbecfc97b82cce2b26212e5e',
-  M:  'addc231dea36fe2e7169331a253db2f64810c84775a85c3440ad53a69babdaad',
-  N:  '808eb429711a0a09f4649c5fdb661a09563c0c4f8a12feb0216d1997383f5776',
-  H:  'cbf14b18d9552b1620b905185f5e8da2be7932e6e1adae786702744c9d9f4a27',
-  O:  '9fa4f0f7174fc5ac8c24acd324c85008b0e34fbdccc8e2c0f084f0f51f0da066',
-  S:  'cad811d4931d3573a356aecfe9952f793ee9796920b1a14b5ffcdfdd25100f6d',
-  R:  '90375302cc7012f3e9bc77cf728b84efcb0663db7db207d2f62d6583a03c0190',
-  F:  '1d6a71e3d8061df7075152c39cb4081624427bae8677f9220c9254cf3557b080',
-  C:  '61ede2c01953485baa597a95191547757f4142b0d3491454e1e42c80c831e662',
+  M: 'addc231dea36fe2e7169331a253db2f64810c84775a85c3440ad53a69babdaad',
+  N: '808eb429711a0a09f4649c5fdb661a09563c0c4f8a12feb0216d1997383f5776',
+  H: 'cbf14b18d9552b1620b905185f5e8da2be7932e6e1adae786702744c9d9f4a27',
+  O: '9fa4f0f7174fc5ac8c24acd324c85008b0e34fbdccc8e2c0f084f0f51f0da066',
+  S: 'cad811d4931d3573a356aecfe9952f793ee9796920b1a14b5ffcdfdd25100f6d',
+  R: '90375302cc7012f3e9bc77cf728b84efcb0663db7db207d2f62d6583a03c0190',
+  F: 'f44b87efe4279132323139eb85d7b82e29216257619b1c6645a4b925d5042619',
+  C: '2cdce86a2f4ad52beb5f0c094cb2678742a610d701f0de781170b171d93e51a0',
 };
 
 async function run() {

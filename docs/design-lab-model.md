@@ -701,6 +701,55 @@ what proves anything is three compilers on two instruction sets agreeing on
 all of them. A failure there on one platform while the other two pass means
 the build stopped being bit-reproducible — not that a kernel changed.
 
+**3b. The flag was only half of it. `libm` was the other half.**
+
+With `-ffp-contract=off` in place, the first matrix run produced **three**
+different hashes for `fit` — and Linux and Windows disagreed with *each
+other*, on the same instruction set with the same flags. No compiler flag
+explains that.
+
+IEEE 754 requires `+`, `-`, `*`, `/` and `sqrt` to be **correctly rounded**:
+every conforming platform returns identical bits. It says nothing of the sort
+about `atan2`, `sin`, `cos`, `exp`, `pow` or `hypot`. Those are
+quality-of-implementation, and glibc, Apple's libm and MSVC's UCRT are three
+different implementations. `-ffp-contract=off` cannot reach any of them.
+
+The fix was to stop calling them where it matters. `cv_tls_line` — the
+function every geometry stage depends on — recovered the principal axis with
+`0.5·atan2(2·cxy, cxx − cyy)` and then `sin`/`cos`. A symmetric 2×2
+eigenvector needs no trigonometry: with `d = cxx − cyy` and
+`r = √(d² + 4·cxy²)`, the major axis is parallel to `(d + r, 2·cxy)`, which is
+multiplication, addition and a square root. `fit`'s `angle` and `length` now
+come from `cv_atan2` and `cv_len2` in `kernels.c`, built the same way. All
+three agree with libm to 2–4 ULP, which was checked — but agreement with libm
+is not the point, and would not be worth having if it cost determinism.
+
+`fit`, `segments` and `merge` went to **v2**: the algorithms are unchanged and
+the last bits are not.
+
+**Why it hid in exactly one place.** Every buffer narrows to `f32` on the way
+out, and `f32` has about eight orders of magnitude less resolution than a
+`double` — so a last-bit difference in a double is absorbed and every pixel
+hash matched on all three platforms. Feature records hash full-precision
+doubles and absorb nothing. The divergence was invisible everywhere except in
+the output where this lab claims *sub-pixel* accuracy.
+
+**What is still not guaranteed, stated precisely:**
+
+- `gaussian` calls `exp` and `toLinear`/`toSrgb` call `pow`; `orient` calls
+  `atan2`. All three write `f32`, and all three currently agree across the
+  matrix. That is margin, not a proof: a double sitting within one libm ULP of
+  an `f32` rounding boundary would still split, with probability around 1e-9
+  per value. On a 12 MP image that is roughly a 1% chance per run.
+- `segments` and `merge` emit `i32` label maps, so a last-bit difference only
+  shows up if it flips a threshold comparison. They agree today. A pixel
+  sitting exactly at `maxResidual` would not, and then whole segments would
+  differ rather than last bits.
+
+Both are recorded rather than fixed, because both would mean replacing `exp`
+and `pow` in the per-pixel path, and neither has been observed to bite. The
+geometry was fixed because it *had* bitten, on the first run that looked.
+
 **4. Where two routes reach the same value, make them agree on purpose.**
 Found by a test, not by reasoning: `load(as=linear)` and
 `toLinear(load(...))` differed by one `f32` ULP on about half the possible byte
@@ -711,7 +760,8 @@ the lookup table now narrows to `f32` before applying the transfer function,
 deliberately. Expect more of these wherever a value can be computed two ways.
 
 **What remains achievable:** bit-exact results within a machine, and — with
-rule 3 — across platforms. What is not achievable is bit-exactness across
+rules 3 and 3b — across platforms, for the geometry and for every buffer this
+pipeline currently produces. What is not achievable is bit-exactness across
 different compiler versions or optimisation levels; treat those as new
 provenance, and record the addon build identity alongside operation versions.
 
