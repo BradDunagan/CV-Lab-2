@@ -21,6 +21,7 @@
     "rebuild:electron": "node scripts/rebuild-electron.js",
     "test:native": "node test/smoke.js && node test/buffer.js && node test/kernels.js && node test/render.js",
     "sample": "node scripts/make-sample.js 12",
+    "lab": "electron scripts/lab-cli.js",
     "start": "npm run build:renderer && electron .",
     "dev": "npm run rebuild:electron && npm run build:renderer && electron .",
     "package": "npm run build:renderer && electron-builder --publish never",
@@ -28,8 +29,9 @@
     "test:lab": "node test/registry.js && node test/session.js && node test/png.js && node test/corners.js",
     "test:determinism": "node test/determinism.js",
     "test:readme": "node test/readme.js",
-    "test": "npm run test:native && npm run test:lab && npm run test:determinism && npm run test:readme && npm run test:renderer",
-    "test:renderer": "electron test/renderer.js"
+    "test": "npm run test:native && npm run test:lab && npm run test:determinism && npm run test:readme && npm run test:renderer && npm run test:cli",
+    "test:renderer": "electron test/renderer.js",
+    "test:cli": "node test/cli.js"
   },
   "author": "Brad Dunagan <brad.dunagan@gmail.com>",
   "devDependencies": {

@@ -222,6 +222,17 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum npm run test:renderer
 
+      # The batch runner spawns Electron, so it needs a display for the same
+      # reason the renderer suite does -- `load` borrows Chromium's decoder,
+      # which only exists in a renderer.
+      - name: Batch runner tests
+        if: runner.os != 'Linux'
+        run: npm run test:cli
+
+      - name: Batch runner tests (Linux, under xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run test:cli
+
       - name: Upload addon
         uses: actions/upload-artifact@v4
         with:

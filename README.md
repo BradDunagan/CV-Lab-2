@@ -130,10 +130,31 @@ notes/                   working notes; unlike docs/, never obliged to be curren
 | `npm test` | Everything |
 | `npm run build:native` | Compile the addon with node-gyp |
 | `npm run build:renderer` | Vite build of the Svelte renderer |
+| `npm run lab` | Run a pipeline over images, headless — see below |
 | `npm run rebuild:electron` | Rebuild against Electron's headers |
 | `npm start` | Launch the app |
 | `npm run package` | Unsigned installers into `dist/` |
 | `npm run verify:package` | Assert the addon survived packaging |
+
+## Running it without the app
+
+```bash
+npm run lab -- --script pipeline.lab --out results/ assets/*.png
+```
+
+Each image gets a fresh session that begins with `A = load(...)` and then runs
+your script, and writes a replayable `.session.json` — every command with its
+resolved parameters and a content hash — plus a `.features.json` of the
+geometry found. Exit 1 if any pipeline failed, 2 for a usage error.
+
+It runs under Electron with no window, because `load` borrows Chromium's image
+decoder and that only exists in a renderer. It drives the same `window.lab`
+bridge the interface does, so the batch path cannot drift from what the app
+does.
+
+The command language is unchanged — no variables, no loops (§4). The iteration
+lives in the runner, in JavaScript, which is what "embed a scripting engine
+rather than grow this into a language" means in practice.
 
 ## Three decisions worth knowing about
 

@@ -32,6 +32,7 @@ src/lab/registry.js  operation definitions, validation, provenance records
 src/lab/parser.js    the command language
 src/lab/session.js   slots, execution, the log, the provenance graph
 src/lab/corners.js   corner hypotheses (pure JS — no pixels involved)
+scripts/lab-cli.js   headless batch runner: a pipeline over many images
 src/menu.js          the application menu — global commands live here, not in the UI
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
@@ -49,6 +50,7 @@ export error from inside Vite's plugin chain.
 npm test                # everything — eleven suites, ~287 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
+npm run lab -- --help   # run a pipeline over images, headless
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run dev:renderer    # the same, in watch mode
