@@ -79,33 +79,63 @@ for (const asar of asars) {
 // 3. The built renderer must be inside the archive.
 //     It goes IN the asar rather than beside it: unlike a .node, it is read by
 //     Chromium through Electron's patched fs, which reads the archive fine.
-const { execFileSync } = require('node:child_process');
-for (const asar of asars) {
-  let listing = '';
+//
+//     The header is parsed here rather than shelled out to `npx asar list`,
+//     for two reasons that both showed up on Windows. npx is npx.cmd there and
+//     execFileSync cannot run it without a shell; and npx would DOWNLOAD the
+//     asar package from the registry mid-verification, putting a network
+//     dependency inside the step that is supposed to be checking a local
+//     artifact. The format is four little-endian lengths and then JSON.
+function readAsarHeader(file) {
+  const fd = fs.openSync(file, 'r');
   try {
-    listing = execFileSync('npx', ['asar', 'list', asar], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const head = Buffer.alloc(16);
+    if (fs.readSync(fd, head, 0, 16, 0) < 16) return null;
+    const headerSize = head.readUInt32LE(12);
+    if (!headerSize || headerSize > 64 * 1024 * 1024) return null;
+    const json = Buffer.alloc(headerSize);
+    fs.readSync(fd, json, 0, headerSize, 16);
+    return JSON.parse(json.toString('utf8'));
   } catch {
-    problems.push(`${path.relative(DIST, asar)}: could not be listed -- is it a valid asar?`);
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Depth-first count of file entries under a node, for reporting. */
+function countFiles(node) {
+  if (!node || !node.files) return node ? 1 : 0;
+  return Object.values(node.files).reduce((n, child) => n + countFiles(child), 0);
+}
+
+for (const asar of asars) {
+  const where = path.relative(DIST, asar);
+  const tree = readAsarHeader(asar);
+  if (!tree || !tree.files) {
+    problems.push(`${where}: could not read the asar header -- is it a valid archive?`);
     continue;
   }
-  const lines = listing.split('\n');
-  const built = lines.filter((l) => l.startsWith('/dist-renderer/'));
-  const source = lines.filter((l) => l.startsWith('/src/renderer/'));
-  const entry = built.some((l) => l === '/dist-renderer/index.html');
-  const script = built.some((l) => l === '/dist-renderer/renderer.js');
 
+  const built = tree.files['dist-renderer'];
+  const entry = built?.files?.['index.html'];
+  const script = built?.files?.['renderer.js'];
   if (!entry || !script) {
     problems.push(
-      `${path.relative(DIST, asar)}: dist-renderer/ is missing index.html or renderer.js ` +
-        `-- run \`npm run build:renderer\` before packaging`
+      `${where}: dist-renderer/ is missing index.html or renderer.js ` +
+        '-- run `npm run build:renderer` before packaging'
     );
   } else {
-    console.log(`  ok   ${path.relative(DIST, asar)} carries the built renderer (${built.length} files)`);
+    console.log(`  ok   ${where} carries the built renderer (${countFiles(built)} files)`);
   }
-  if (source.length > 0) {
+
+  // The Svelte source cannot run; shipping it too would put two copies of the
+  // UI in the bundle, one of them dead.
+  const source = tree.files['src']?.files?.['renderer'];
+  if (source) {
     problems.push(
-      `${path.relative(DIST, asar)}: ships ${source.length} file(s) of src/renderer/ Svelte source, ` +
-        `which cannot run -- the "!src/renderer/**/*" exclusion stopped matching`
+      `${where}: ships src/renderer/ Svelte source, which cannot run ` +
+        '-- the "!src/renderer/**/*" exclusion stopped matching'
     );
   }
 }
