@@ -116,6 +116,31 @@ async function collect(win, swatch, linearPng) {
       : status().classList.contains('ok') ? 'ok' : '';
     const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
+    /*
+     * Wait for a condition rather than for a duration.
+     *
+     * The fixed sleeps below were tuned on a fast machine with a real display.
+     * A pane's canvas only appears once its ResizeObserver has fired and the
+     * effect has redrawn, and on a headless Linux runner under xvfb that takes
+     * longer than any number picked by eye. Waiting on the predicate makes the
+     * test independent of how fast the machine is, and fails with a sentence
+     * rather than a null dereference three lines later.
+     */
+    const waitFor = async (label, predicate, timeout = 8000) => {
+      const started = Date.now();
+      for (;;) {
+        let ok = false;
+        try { ok = !!predicate(); } catch { ok = false; }
+        if (ok) return;
+        if (Date.now() - started > timeout) {
+          // Concatenation, not a template literal: this whole script is
+          // itself inside one, and a backtick here would close it early.
+          throw new Error('timed out after ' + timeout + 'ms waiting for: ' + label);
+        }
+        await sleep(25);
+      }
+    };
+
     const ui = async (command) => {
       const el = bar();
       el.value = command;
@@ -142,11 +167,19 @@ async function collect(win, swatch, linearPng) {
     const showSlot = async (name) => {
       const ids = lab2().slotPaneIds();
       const already = ids.find(id => lab2().paneStore.getPane(id)?.name === name);
-      if (already) { await sleep(30); return already; }
-      const free = ids.find(id => !lab2().paneStore.getPane(id)?.name);
-      const id = free ?? lab2().newSlotPane(null);
-      lab2().bindSlotPane(id, name);
-      await sleep(60);
+      const id = already
+        ?? (() => {
+          const free = ids.find(i => !lab2().paneStore.getPane(i)?.name);
+          const target = free ?? lab2().newSlotPane(null);
+          lab2().bindSlotPane(target, name);
+          return target;
+        })();
+      // The pane exists; its canvas appears a frame or two later, once the
+      // ResizeObserver has reported a size and the draw effect has run.
+      await waitFor('a drawn canvas for slot ' + name, () => {
+        const c = paneFor(name)?.querySelector('canvas');
+        return c && c.width > 0 && c.height > 0;
+      });
       return id;
     };
     const paneFor = (name) => document.querySelector('.slot-pane[data-slot="' + name + '"]');
@@ -166,6 +199,11 @@ async function collect(win, swatch, linearPng) {
       for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] * 3 + d[i + 2] * 7;
       return sum;
     };
+
+    // The app builds its layout in onMount; on a slow runner that has not
+    // necessarily finished when this script starts.
+    await waitFor('the initial layout', () =>
+      lab2() && lab2().slotPaneIds().length > 0 && document.getElementById('command'));
 
     r.quotedPath = window.lab.quote(swatch);
     r.swatchPath = swatch;
@@ -736,6 +774,18 @@ app.whenReady().then(async () => {
   console.log(failures === 0 ? '\nAll renderer tests passed.' : `\n${failures} failing.`);
   app.exit(failures === 0 ? 0 : 1);
 }).catch((err) => {
-  console.error('renderer tests could not start:\n' + err.stack);
+  /*
+   * Print whatever arrived, not just err.stack.
+   *
+   * executeJavaScript rejects with the value the page threw, marshalled
+   * across the boundary -- which can be Error-SHAPED without being an Error,
+   * so `.stack` is undefined and the useful message is in `.message`. Printing
+   * only the stack turned a real failure into the single word "undefined" and
+   * cost a CI round trip to find out.
+   */
+  const detail = err && (err.stack || err.message)
+    ? (err.stack || err.message)
+    : `${typeof err}: ${JSON.stringify(err)}`;
+  console.error(`renderer tests could not start:\n${detail}`);
   app.exit(1);
 });
