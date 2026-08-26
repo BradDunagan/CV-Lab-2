@@ -9,7 +9,10 @@
    * language by using the interface. It is the most-loved thing about ImageJ's
    * macro recorder and it costs nothing to keep.
    */
-  import { lab, runCommand, history, nextSlotName, setStatus } from '../lab.svelte.js';
+  import {
+    lab, runCommand, history, nextSlotName, setStatus, actions,
+    display, resetViewport, isViewReset,
+  } from '../lab.svelte.js';
 
   let input = $state('');
   let running = $state(false);
@@ -17,6 +20,10 @@
   let field = $state();
 
   const ops = lab.ops();
+
+  // Reactive, so Reset view greys out the moment the view is whole again —
+  // the button reflecting state rather than sitting there looking live.
+  let reset = $derived(isViewReset());
 
   async function submit() {
     if (!input.trim() || running) return;
@@ -94,6 +101,41 @@
     />
     <button id="run" onclick={submit} disabled={running}>Run</button>
   </div>
+  <!--
+    The toolbar.
+
+    These are global — one scaling mode and one overlay setting for every pane,
+    because comparing two slots drawn at different scales is misleading. They
+    were briefly only in paneless's app menu, which opens by clicking the
+    title text: no label, no affordance, and two of the most-used controls in
+    the lab invisible behind it. Everything here is also in that menu; this is
+    the copy you can see.
+  -->
+  <div class="row toolbar">
+    <label title="How a slot is scaled into its pane. Shared by every pane.">
+      scaling
+      <select id="scaling" bind:value={display.scaling}>
+        <option value="smooth">fit · smooth</option>
+        <option value="pixels">fit · pixels</option>
+        <option value="actual">actual size</option>
+      </select>
+    </label>
+    <label title="Draw fitted segments and corner hypotheses over matching tiles">
+      <input id="overlay" type="checkbox" bind:checked={display.overlay} /> fits
+    </label>
+    <button
+      id="reset-view"
+      disabled={reset}
+      title="Return to the whole image. Scroll a pane to zoom, drag to pan."
+      onclick={() => { resetViewport(); setStatus('View reset to the whole image.'); }}
+    >Reset view</button>
+    <span class="grow"></span>
+    <button onclick={() => actions.newSlotPane()} title="Open another slot pane">New slot pane</button>
+    <button onclick={() => actions.saveSession()}>Save session</button>
+    <button id="reset" onclick={() => actions.resetSession()}
+            title="Discard every slot and the log">Discard session</button>
+  </div>
+
   <p class="hint">
     Up and Down walk the history. Every command — typed, or inserted from the
     menu — appends one entry to the log.
@@ -115,7 +157,16 @@
     font: 12px ui-monospace, Menlo, Consolas, monospace;
   }
 
-  .row { display: flex; gap: 6px; align-items: center; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+  .toolbar label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--cv-dim, #7c7c8a);
+  }
+  .toolbar .grow { flex: 1; }
+  .toolbar input[type='checkbox'] { accent-color: var(--cv-accent, #6ea8fe); }
 
   input[type='text'] {
     flex: 1;

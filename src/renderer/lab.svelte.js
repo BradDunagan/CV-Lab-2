@@ -207,6 +207,26 @@ export function clearSession() {
 }
 
 /* ------------------------------------------------------------------ */
+/* app-level actions                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Actions that need things only App.svelte has — the pane registry, the frame
+ * store, the native dialogs.
+ *
+ * A pane cannot reach them directly: paneless constructs pane components
+ * itself and hands them a `paneId` and nothing else, so there is no prop to
+ * pass a callback through. App fills this in on mount and the toolbar calls
+ * it. Explicit and inspectable, which a context or a store subscription
+ * would not have been for six functions.
+ */
+export const actions = {
+  saveSession: () => {},
+  resetSession: () => {},
+  newSlotPane: () => {},
+};
+
+/* ------------------------------------------------------------------ */
 /* the multi-slot probe — §7                                           */
 /* ------------------------------------------------------------------ */
 

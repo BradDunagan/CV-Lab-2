@@ -251,18 +251,43 @@ async function collect(win, swatch, linearPng) {
     await sleep(60);
     r.zoomAfter = readZooms();
 
-    // --- reset view, through the app menu the user would use ---
-    r.resetEnabledWhenZoomed = menuItem('reset-view').enabled !== false;
-    menuItem('reset-view').onClick('app');
+    /*
+     * The toolbar. Every control here is also in the app menu, but the menu
+     * opens by clicking the title text -- so a control that exists ONLY there
+     * is a control nobody finds. That is not hypothetical: it shipped that way
+     * for one commit. These assertions are about being reachable, not about
+     * existing.
+     */
+    const visible = (el) => {
+      if (!el) return false;
+      const box = el.getBoundingClientRect();
+      return box.width > 0 && box.height > 0;
+    };
+    r.toolbar = {
+      scaling: visible(document.getElementById('scaling')),
+      overlay: visible(document.getElementById('overlay')),
+      resetView: visible(document.getElementById('reset-view')),
+      discard: visible(document.getElementById('reset')),
+      run: visible(document.getElementById('run')),
+      command: visible(document.getElementById('command')),
+    };
+    // and the menu still carries them, for when the command pane is closed
+    r.menuAlsoHas = ['reset-view', 'overlay', 'scaling', 'save-session', 'reset-session']
+      .every((id) => !!menuItem(id));
+
+    // --- reset view, through the toolbar button ---
+    const resetViewButton = () => document.getElementById('reset-view');
+    r.resetEnabledWhenZoomed = !resetViewButton().disabled;
+    resetViewButton().click();
     await sleep(60);
-    r.resetDisabledAfterwards = menuItem('reset-view').enabled === false;
+    r.resetDisabledAfterwards = resetViewButton().disabled;
     r.zoomAfterReset = readZooms();
 
     // --- scaling modes ---
     const setScaling = async (mode) => {
-      const item = lab2().appMenu().find(i => i.id === 'scaling')
-        .items.find(i => i.id === 'scaling-' + mode);
-      item.onClick('app');
+      const sel = document.getElementById('scaling');
+      sel.value = mode;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
       await sleep(90);
     };
     await ui('T = pattern(kind=checker, width=64, height=64)');
@@ -311,12 +336,14 @@ async function collect(win, swatch, linearPng) {
     // Does the overlay actually draw? Compare a tile with it on and off.
     await showSlot('PB');
     const snapshot = () => ink(canvasFor('PB'));
-    const overlayItem = () => lab2().appMenu().find(i => i.id === 'overlay');
-    overlayItem().onClick('app');          // off
-    await sleep(80);
+    const overlayBox = () => document.getElementById('overlay');
+    const toggleOverlay = async () => {
+      overlayBox().click();
+      await sleep(80);
+    };
+    await toggleOverlay();                 // off
     r.withoutOverlay = snapshot();
-    overlayItem().onClick('app');          // on again
-    await sleep(80);
+    await toggleOverlay();                 // on again
     r.withOverlay = snapshot();
 
     try { window.lab.draw(canvasFor('PB').id, 'PF', {}); r.drawOnFeatures = 'accepted'; }
@@ -330,7 +357,7 @@ async function collect(win, swatch, linearPng) {
       slots: window.lab.slots().length,
       boundPanes: lab2().slotPaneIds().filter(id => lab2().paneStore.getPane(id)?.name).length,
     };
-    menuItem('reset-session').onClick('app');
+    document.getElementById('reset').click();
     await sleep(250);
     r.afterReset = {
       slots: window.lab.slots().length,
@@ -471,6 +498,18 @@ app.whenReady().then(async () => {
   });
 
   /* --- the UI ------------------------------------------------------- */
+
+  test('every global control is visible, not only in the app menu', () => {
+    // The regression this exists for: scaling and discard-session were moved
+    // into paneless's app menu, which opens by clicking the title text. No
+    // label, no affordance, and two of the most-used controls in the lab
+    // invisible behind it. Reachability is the property, so the check is
+    // getBoundingClientRect rather than mere presence in the DOM.
+    for (const [name, shown] of Object.entries(r.toolbar)) {
+      assert.ok(shown, `${name} is not visible in the interface`);
+    }
+    assert.ok(r.menuAlsoHas, 'the app menu should keep a copy of every global control');
+  });
 
   test('the app opens with a command pane, a log pane and a slot pane', () => {
     assert.equal(r.initialPanes.command, true, 'no command input');

@@ -61,6 +61,10 @@ stops working fails the build rather than the reader.
 Turn on **fits** in the toolbar to draw the results over the image they came
 from.
 
+The command pane carries the toolbar: scaling, the fits overlay, Reset view,
+and the session actions. All of it is in the app menu too — click the title —
+but the toolbar is the copy you can see without knowing it is there.
+
 Each command fills a **slot pane** — an empty one if there is one, otherwise a
 new one, up to four. Panes are [paneless](../paneless-workspace) frames: split
 them, tab them, drag them between frames, resize them. Hover anywhere to read

@@ -22,7 +22,6 @@
     setDefaultPaneMenuProvider,
     setDefaultAppMenuProvider,
     appTitle,
-    appMenuEvents,
   } from 'paneless';
   import 'paneless/styles/theme.css';
 
@@ -30,7 +29,7 @@
   import CommandPane from './panes/CommandPane.svelte';
   import LogPane from './panes/LogPane.svelte';
   import {
-    lab, viewport, display, slots, probe, status, setStatus,
+    lab, viewport, display, slots, probe, status, setStatus, actions,
     refreshSlots, resetViewport, isViewReset, clearSession, hideProbe, bufferSlots,
   } from './lab.svelte.js';
 
@@ -90,9 +89,10 @@
    * Tall enough for the pane's content plus a frame's chrome. A frame spends
    * roughly 80px on its own header, the pane header and the title bar before
    * the component gets a pixel, which is what clipped the command bar's hint
-   * line when this was set from the content height alone.
+   * line when this was set from the content height alone. Two rows now: the
+   * command line and the toolbar under it.
    */
-  const COMMAND_H = 168;
+  const COMMAND_H = 212;
 
   /**
    * A tiling rather than a cascade. Slot panes exist to be compared against
@@ -318,6 +318,9 @@
 
   onMount(() => {
     exposeForTests();
+    actions.saveSession = saveSession;
+    actions.resetSession = resetSession;
+    actions.newSlotPane = () => newSlotPane(null);
     setDefaultPaneContentProvider(paneContentProvider);
     setDefaultPaneMenuProvider(paneMenuProvider);
     setDefaultAppMenuProvider(appMenuProvider);
@@ -334,6 +337,7 @@
       'Ready. Enter a command, or pick an operation to insert a template. ' +
         'Scroll a tile to zoom, drag to pan.'
     );
+
   });
 
   // Slots change only as a result of a command, and `slots.list` is replaced
