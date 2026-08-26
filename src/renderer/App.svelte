@@ -122,9 +122,28 @@
     };
   }
 
-  /** Give a frame's root pane a component and a title. */
+  /**
+   * Give a frame's root pane a component and a title.
+   *
+   * Frames and their panes are created without chrome. The lab already labels
+   * everything that matters inside the content — a slot pane shows its own
+   * name, dimensions, dtype and colour space along the top — so a frame header
+   * saying "Slot A" above a pane header saying "Slot A" above a control row
+   * saying "A#1 256x256x1 f32 linear" was three bars of furniture for one
+   * fact.
+   *
+   * `headerVisible: false` rather than `headerEnabled: false`, deliberately:
+   * hidden until hovered, rather than gone. The header carries the drag handle
+   * and the close button for a frame, and split/tab for a pane, so removing it
+   * outright would take real function with it. Hover brings it back.
+   */
   function makeFrame(title, component, x, y, w, h) {
-    const frame = frames.addFrame(x, y, w, h, { title });
+    const frame = frames.addFrame(x, y, w, h, {
+      title,
+      headerVisible: false,
+      footerVisible: false,
+      rootPane: { headerVisible: false },
+    });
     const panes = paneStore.getPanesByFrameId(String(frame.id));
     if (panes.length === 0) return null;
     const rootId = panes[0].id;
