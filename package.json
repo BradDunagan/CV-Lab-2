@@ -18,7 +18,8 @@
     "package": "electron-builder --publish never",
     "verify:package": "node scripts/verify-package.js",
     "test:lab": "node test/registry.js && node test/session.js && node test/png.js && node test/corners.js",
-    "test": "npm run test:native && npm run test:lab && npm run test:renderer",
+    "test:determinism": "node test/determinism.js",
+    "test": "npm run test:native && npm run test:lab && npm run test:determinism && npm run test:renderer",
     "test:renderer": "electron test/renderer.js"
   },
   "author": "Brad Dunagan <brad.dunagan@gmail.com>",

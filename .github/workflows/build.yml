@@ -65,6 +65,15 @@ jobs:
       - name: Lab tests
         run: npm run test:lab
 
+      # The one suite whose whole point is the matrix. It asserts literal
+      # content hashes, so it is only meaningful because three machines with
+      # three compilers and two instruction sets run it and have to agree --
+      # on one machine alone it proves nothing. A failure HERE while the other
+      # two jobs pass means the build stopped being bit-reproducible, not that
+      # a kernel changed. See test/determinism.js and design-lab-model.md §5.
+      - name: Determinism (must agree across all three platforms)
+        run: npm run test:determinism
+
       # Then rebuild against Electron's ABI -- a different NODE_MODULE_VERSION.
       # This is the step that would fail if the addon were NAN/V8 based.
       - name: Rebuild addon (Electron ABI)

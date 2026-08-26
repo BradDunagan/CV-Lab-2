@@ -642,7 +642,7 @@ first reduction.
 **2. Never enable `-ffast-math`.** It licenses the compiler to reorder float
 operations. Reproducibility evaporates, including between debug and release.
 
-**3. Compile with `-ffp-contract=off` if cross-platform bit-exactness is
+**3. Compile with `-ffp-contract=off`, because cross-platform bit-exactness is
 wanted.** `a*b + c` may fuse into a single FMA instruction with one rounding on
 arm64 and compile to two roundings on x86-64. Without this flag, identical
 source produces subtly different results on the development Mac and on a
@@ -652,6 +652,34 @@ given it ships on three platforms.
 The cost is a small performance loss. Given that this is a learning lab where
 results will be compared across machines, that is worth paying — and it is far
 cheaper than diagnosing a mysterious cross-platform discrepancy later.
+
+**This section said all of that, and `binding.gyp` did not set the flag** —
+from the first kernel until the review that found it. `otool -tv` on the arm64
+build of `kernels.o` counted **167** `fmadd`/`fmla` instructions: the Gaussian
+taps, the Sobel weights and the TLS running sums were all being contracted,
+and baseline x86-64 gets neither `-mfma` nor `-march=x86-64-v3` from node-gyp,
+so it was not contracting any of them. Two platforms, two answers, for the
+entire life of the project.
+
+Two things about how it hid are worth keeping:
+
+- **Nothing failed.** Every suite was green on all three runners the whole
+  time, because no test compared a result on one platform against a result on
+  another. Deciding a rule and writing it down is not the same as enforcing
+  it — the same lesson as `gray` computing luma with `space: 'linear'`
+  declared and checked nowhere.
+- **The pixel buffers hid it and the geometry did not.** Rebuilding without
+  the flag now moves only two hashes: `fit`'s and `corners`'. Buffers narrow
+  to `f32` and the difference falls off the end; feature records hash
+  full-precision doubles and keep it. So the divergence surfaced precisely
+  where this lab claims *sub-pixel* accuracy, which is the worst place for it
+  to be invisible.
+
+`test/determinism.js` is what now holds the rule up, and it is the one suite
+that is meaningless on a single machine: it asserts literal content hashes, so
+what proves anything is three compilers on two instruction sets agreeing on
+all of them. A failure there on one platform while the other two pass means
+the build stopped being bit-reproducible — not that a kernel changed.
 
 **4. Where two routes reach the same value, make them agree on purpose.**
 Found by a test, not by reasoning: `load(as=linear)` and
@@ -666,6 +694,12 @@ deliberately. Expect more of these wherever a value can be computed two ways.
 rule 3 — across platforms. What is not achievable is bit-exactness across
 different compiler versions or optimisation levels; treat those as new
 provenance, and record the addon build identity alongside operation versions.
+
+*Still to do:* the session records the app version, the Electron version and
+the platform, but **not the addon build identity** — so a hash that moved
+because the compiler changed is currently indistinguishable from one that
+moved because a kernel did. That is the one input to the rule above that a
+saved session cannot yet report.
 
 ---
 
