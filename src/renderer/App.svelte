@@ -466,7 +466,14 @@
   the whole affordance, and it exists only because slots are uniform.
 -->
 {#if probe.visible && probeLines.length > 0}
-  <div class="probe" bind:this={probeEl} style={probeStyle} onpointerleave={hideProbe}>
+  <!--
+    No pointer handler here, deliberately. The probe sets pointer-events:none
+    so it never sits between the cursor and the canvas underneath it, which
+    means it cannot receive a pointerleave either -- the handler that used to
+    be here was unreachable, and Svelte was right to ask what role an element
+    with a pointer handler was playing. SlotPane's canvas hides it.
+  -->
+  <div class="probe" bind:this={probeEl} style={probeStyle}>
     {#each probeLines as line}
       <div><span class="pk">{line.key}</span>{line.value ? `  ${line.value}` : ''}</div>
     {/each}

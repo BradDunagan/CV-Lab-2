@@ -85,6 +85,21 @@ jobs:
 
       - run: npm ci
 
+      # paneless is consumed from SOURCE, not from a published package, so
+      # Vite compiles its TypeScript and Svelte here -- and therefore has to
+      # resolve paneless's own runtime dependencies (d3, monaco-editor).
+      # cv-lab-2's npm ci only symlinks paneless; it does not install anything
+      # inside it. paneless-workspace is an npm workspaces monorepo, so one
+      # `npm ci` at its root installs them and Node's upward resolution finds
+      # them from paneless's source files.
+      #
+      # This is invisible locally, where that node_modules already exists from
+      # working in the sibling repo. The same shape as the posix_memalign
+      # warning: an environment difference only the matrix can see.
+      - name: Install paneless dependencies
+        working-directory: paneless-workspace
+        run: npm ci
+
       # Strict compile of the pure-C sources. Runs on Linux and macOS because
       # it needs a POSIX compiler; the Linux run is the one that matters, since
       # glibc gates POSIX declarations that Apple's libc exposes unconditionally
