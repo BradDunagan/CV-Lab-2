@@ -477,17 +477,25 @@ pixel centre can.
 
 Timings on a checkerboard, which is close to a worst case — every block
 boundary fragments, so the segment count is far above what a photograph
-produces:
+produces. `pattern(kind=checker)` at each size, `gaussian(sigma=1.4)`, then
+`segments(minPixels=3)` and defaults elsewhere:
 
-| image | segments | pixel stages | `segments` | `merge` | `fit` | `corners` |
+| image | segments → merged | pixel stages | `segments` | `merge` | `fit` | `corners` |
 |---|---|---|---|---|---|---|
-| 256² | 1,984 | 2 ms | 1 ms | 26 ms | 2 ms | 18 ms |
-| 512² | 8,064 | 8 ms | 6 ms | 415 ms | 11 ms | 155 ms |
-| 768² | 18,240 | 18 ms | 13 ms | 2.1 s | 36 ms | 0.7 s |
-| 1024² | 32,512 | 32 ms | 24 ms | 6.7 s | 84 ms | 2.7 s |
+| 256² | 2,015 → 1,518 | 2 ms | 1 ms | 33 ms | 2 ms | 0.3 s |
+| 512² | 8,127 → 6,110 | 9 ms | 6 ms | 526 ms | 10 ms | 5.5 s |
+| 768² | 18,335 → 13,774 | 20 ms | 14 ms | 2.7 s | 22 ms | 30.1 s |
+| 1024² | 32,639 → 24,510 | 35 ms | 26 ms | 8.5 s | 39 ms | 125.1 s |
+
+**State the parameters.** An earlier version of this table gave segment counts
+without saying what produced them, and they could not be reproduced: at the
+*default* `minPixels=8` this pipeline finds **zero** segments at every size,
+because `pattern`'s checkerboard draws 8-pixel blocks and no run of one
+survives a blur and non-maximum suppression. A cost table whose inputs are not
+written down is a number nobody can check.
 
 **The pixel stages are not the cost.** Blur, gradients and thinning together
-are 32 ms on a megapixel. Everything expensive is quadratic in the number of
+are 35 ms on a megapixel. Everything expensive is quadratic in the number of
 *segments*, which is a property of the scene rather than the resolution.
 
 `merge` was 100× worse than this until the pixel index went in: three loops
@@ -496,8 +504,20 @@ O(segments² × pixels). It took four minutes on 768² and never finished at
 1024². Building the index once turned it into O(segments²), which the ratios
 confirm — a 1.78× rise in segments now costs 3.18×, against 3.18 predicted.
 
-`corners` is the next thing to reach if segment counts get high; it is also
-quadratic and its clustering pass is quadratic again in candidates.
+**`fit` had the same defect and kept it for two more commits.** It scanned the
+whole image once per segment to collect that segment's pixels — O(segments ×
+pixels) — costing 7.7 s at 1024² against the 84 ms this table used to claim.
+The number was wrong and nobody re-measured it, which is how a fix applied to
+`merge` failed to reach the identical loop one file away. Both now call
+`cv_label_index`, one shared function, so a third consumer of a label map
+cannot repeat it. Measured after: 39 ms, and linear in segment count.
+
+`corners` is now unambiguously the wall, and this table used to understate it
+by roughly 45×. It is quadratic in segments and its clustering pass is
+quadratic again in candidates, which is what the 4× rise in segments costing
+23× between 512² and 1024² reflects. **Two minutes on a megapixel of
+checkerboard.** Nothing above a few thousand segments is interactive, and any
+batch run should watch the segment count rather than the resolution.
 
 ### Corners are hypotheses, not detections
 
