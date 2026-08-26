@@ -10,6 +10,7 @@
   "scripts": {
     "check:node": "node scripts/check-node.js",
     "preinstall": "node scripts/check-node.js",
+    "postinstall": "node scripts/brand-dev-electron.js",
     "prebuild:native": "node scripts/check-node.js",
     "prebuild:renderer": "node scripts/check-node.js",
     "pretest": "node scripts/check-node.js",

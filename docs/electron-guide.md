@@ -794,6 +794,35 @@ it through Electron's patched `fs`, which reads the archive fine. Only
 
 ---
 
+### The macOS menu bar name comes from the bundle, not from your app
+
+Four separate things name an Electron app on macOS, and only three of them
+answer to `app.setName()`:
+
+| What | Comes from |
+|---|---|
+| "About X", "Hide X", "Quit X" | `app.setName()`, before ready |
+| The About panel | `app.setAboutPanelOptions()` |
+| The window frame | `BrowserWindow`'s `title`, then the page's `<title>`, which wins |
+| **The bold menu title beside the Apple menu** | **`CFBundleName` in the RUNNING bundle's `Info.plist`** |
+
+The last one is why a development run says "Electron" however carefully the
+app names itself: `electron .` runs `node_modules/electron/dist/Electron.app`,
+and that bundle is called Electron. Nothing in the app's own code can change
+it, because macOS has already read it before any JavaScript runs.
+
+**A packaged build is unaffected.** electron-builder writes `CFBundleName`
+from `productName`, so the shipped `CV-Lab.app` has always been right. This is
+purely a development annoyance.
+
+`scripts/brand-dev-electron.js` patches the development bundle's plist, run
+from `postinstall` so it is reapplied whenever npm restores the tree. It edits
+`node_modules`, which is worth being uncomfortable about — contained only
+because that bundle is this project's own devDependency, the edit is
+idempotent, and every failure is a warning rather than a failed install.
+
+---
+
 ### Replacing the default menu costs you two things you were relying on
 
 Until this project had `src/menu.js`, `Menu.setApplicationMenu` was never
