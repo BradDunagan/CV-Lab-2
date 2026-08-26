@@ -7,6 +7,22 @@ const path = require('node:path');
 
 const { buildMenu } = require('./menu');
 
+/*
+ * The name the operating system shows, which is not the package name.
+ *
+ * package.json says "cv-lab-2" because npm names are lowercase identifiers,
+ * and app.name defaults to it -- so without this the menu bar, the About panel
+ * and every "Quit …" item would read "cv-lab-2", or "Electron" when running
+ * unpackaged, since Electron falls back to its own bundle.
+ *
+ * Must be set BEFORE the app is ready: role: 'appMenu' bakes the name into
+ * "About X", "Hide X" and "Quit X" when the template is built.
+ *
+ * Note it also decides app.getPath('userData'), so changing it starts a fresh
+ * directory. Nothing but paneless's sidebar-collapsed flag lives there.
+ */
+app.setName('CV-Lab');
+
 /**
  * What the menu needs to know about the renderer, mirrored here.
  *
@@ -32,7 +48,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 520,
     backgroundColor: '#16161a',
-    title: 'cv-lab-2',
+    title: 'CV-Lab',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
 
@@ -137,6 +153,13 @@ ipcMain.handle('session:confirmReset', async (event, entries) => {
 });
 
 app.whenReady().then(() => {
+  // macOS shows this panel from the app menu; without it the name comes from
+  // the Electron bundle rather than from setName above.
+  app.setAboutPanelOptions({
+    applicationName: 'CV-Lab',
+    applicationVersion: require('../package.json').version,
+  });
+
   createWindow();
 
   app.on('activate', () => {
