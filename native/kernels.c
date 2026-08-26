@@ -756,6 +756,40 @@ double cv_tls_distance(double nx, double ny, double c, double x, double y) {
   return fabs(nx * x + ny * y + c);
 }
 
+/* Counts, then offsets, then one filling pass. See kernels.h for why this is
+ * shared rather than written once per consumer of a label map. */
+CvStatus cv_label_index(const int32_t *labels, size_t n, int32_t count,
+                        size_t **offsets, int64_t **members) {
+  if (labels == NULL || offsets == NULL || members == NULL || count < 0) {
+    return CV_ERR_PARAM;
+  }
+
+  size_t *offset = (size_t *)calloc((size_t)count + 2, sizeof(size_t));
+  if (offset == NULL) return CV_ERR_ALLOC;
+  for (size_t i = 0; i < n; i++) {
+    if (labels[i] > 0 && labels[i] <= count) offset[labels[i] + 1]++;
+  }
+  for (int64_t i = 1; i <= (int64_t)count + 1; i++) offset[i] += offset[i - 1];
+  const size_t labelled = offset[count + 1];
+
+  /* malloc(0) may legally return NULL, which is indistinguishable here from
+   * failure -- so ask for one element when there is nothing to index. */
+  int64_t *member = (int64_t *)malloc((labelled ? labelled : 1) * sizeof(int64_t));
+  if (member == NULL) { free(offset); return CV_ERR_ALLOC; }
+
+  size_t *cursor = (size_t *)malloc(((size_t)count + 2) * sizeof(size_t));
+  if (cursor == NULL) { free(member); free(offset); return CV_ERR_ALLOC; }
+  memcpy(cursor, offset, ((size_t)count + 2) * sizeof(size_t));
+  for (size_t i = 0; i < n; i++) {
+    if (labels[i] > 0 && labels[i] <= count) member[cursor[labels[i]]++] = (int64_t)i;
+  }
+  free(cursor);
+
+  *offsets = offset;
+  *members = member;
+  return CV_OK;
+}
+
 typedef struct { double magnitude; int64_t index; } CvSeed;
 
 static int seed_compare(const void *a, const void *b) {
@@ -1053,28 +1087,14 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
    * image each time made this O(segments^2 * pixels): measured at four
    * minutes on a 768x768 checkerboard with 18240 segments, against 13 ms for
    * every other stage in the pipeline combined, and it did not finish at all
-   * at 1024x1024.
-   *
-   * Counts, then offsets, then one filling pass -- the usual compressed-row
-   * layout. After this, "the pixels of segment i" is a contiguous slice and
-   * the cost tracks the segments' actual size rather than the image's.
+   * at 1024x1024. After this, "the pixels of segment i" is a contiguous slice
+   * and the cost tracks the segments' actual size rather than the image's.
    */
-  size_t *offset = (size_t *)calloc((size_t)count + 2, sizeof(size_t));
-  if (offset == NULL) { free(segs); cv_buffer_free(out); return CV_ERR_ALLOC; }
-  for (size_t i = 0; i < n; i++) if (in[i] > 0) offset[in[i] + 1]++;
-  for (int32_t i = 1; i <= count + 1; i++) offset[i] += offset[i - 1];
-  const size_t labelled = offset[count + 1];
-
-  int64_t *member_px = (int64_t *)malloc((labelled ? labelled : 1) * sizeof(int64_t));
-  if (member_px == NULL) { free(offset); free(segs); cv_buffer_free(out); return CV_ERR_ALLOC; }
+  size_t *offset = NULL;
+  int64_t *member_px = NULL;
   {
-    size_t *cursor = (size_t *)malloc(((size_t)count + 2) * sizeof(size_t));
-    if (cursor == NULL) {
-      free(member_px); free(offset); free(segs); cv_buffer_free(out); return CV_ERR_ALLOC;
-    }
-    memcpy(cursor, offset, ((size_t)count + 2) * sizeof(size_t));
-    for (size_t i = 0; i < n; i++) if (in[i] > 0) member_px[cursor[in[i]]++] = (int64_t)i;
-    free(cursor);
+    const CvStatus indexed = cv_label_index(in, n, count, &offset, &member_px);
+    if (indexed != CV_OK) { free(segs); cv_buffer_free(out); return indexed; }
   }
 
   /* Extremes along each fitted line: its endpoints. */

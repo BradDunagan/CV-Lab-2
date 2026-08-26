@@ -99,6 +99,29 @@ void cv_tls_line(const CvTls *t, double *nx, double *ny, double *c);
 /** Perpendicular distance from a point to that line, in pixels. */
 double cv_tls_distance(double nx, double ny, double c, double x, double y);
 
+/* --- label maps ----------------------------------------------------- */
+
+/*
+ * Index a label map once: which pixels belong to which segment.
+ *
+ * Every consumer of a label map needs "the pixels of segment i". Answering
+ * that by scanning the whole image per segment is O(segments * pixels), which
+ * is what made `merge` take four minutes on a 768x768 checkerboard and never
+ * finish at 1024x1024 -- and what `fit` went on doing for another two commits
+ * after `merge` was fixed. Shared rather than written twice, so the third
+ * consumer of a label map cannot make the same mistake a third time.
+ *
+ * Counts, then offsets, then one filling pass -- the usual compressed-row
+ * layout. On success *offsets has count+2 entries and *members has one entry
+ * per labelled pixel, and segment i owns members[offsets[i] .. offsets[i+1]).
+ * Both are malloc'd for the caller to free; on failure neither is written.
+ *
+ * Labels outside 1..count are ignored rather than trusted: the caller derives
+ * `count` by scanning, and a mismatch would otherwise write past the offsets.
+ */
+CvStatus cv_label_index(const int32_t *labels, size_t n, int32_t count,
+                        size_t **offsets, int64_t **members);
+
 /** @returns NULL if there is no kernel of that name. */
 const CvKernelEntry *cv_kernel_lookup(const char *name);
 

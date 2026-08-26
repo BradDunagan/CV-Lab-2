@@ -419,6 +419,20 @@ static napi_value FitSegments(napi_env env, napi_callback_info info) {
     if (id > 0) cv_tls_add(&fits[id], (double)(i % (size_t)cols), (double)(i / (size_t)cols));
   }
 
+  /*
+   * Index the label map once, rather than scanning the whole image per
+   * segment. Doing the latter cost 7.7 s on a 1024x1024 checkerboard against
+   * 84 ms recorded in the design doc's table -- the same O(segments * pixels)
+   * defect `merge` had been fixed for two commits earlier, still sitting here
+   * because the table was believed rather than re-measured.
+   */
+  size_t *offset = NULL;
+  int64_t *member_px = NULL;
+  {
+    const CvStatus indexed = cv_label_index(in, n, count, &offset, &member_px);
+    if (indexed != CV_OK) { free(fits); THROW_RETURN(env, cv_status_str(indexed)); }
+  }
+
   uint32_t emitted = 0;
   for (int32_t id = 1; id <= count; id++) {
     if (fits[id].n < 2.0) continue;
@@ -429,8 +443,8 @@ static napi_value FitSegments(napi_env env, napi_callback_info info) {
 
     double lo = 1e300, hi = -1e300, worst = 0.0, sum_sq = 0.0;
     double ax = 0, ay = 0, bx = 0, by = 0;
-    for (size_t i = 0; i < n; i++) {
-      if (in[i] != id) continue;
+    for (size_t k = offset[id]; k < offset[id + 1]; k++) {
+      const size_t i = (size_t)member_px[k];
       const double x = (double)(i % (size_t)cols), y = (double)(i / (size_t)cols);
       const double t = tx * x + ty * y;
       if (t < lo) { lo = t; ax = x; ay = y; }
@@ -486,6 +500,8 @@ static napi_value FitSegments(napi_env env, napi_callback_info info) {
     napi_set_element(env, list, emitted++, entry);
   }
 
+  free(member_px);
+  free(offset);
   free(fits);
   return list;
 }
