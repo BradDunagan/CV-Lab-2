@@ -93,6 +93,23 @@ image gets a fresh session that starts with
 and then runs your script, so write it against <slot>.
 `.trim();
 
+/**
+ * Print, then exit once the write has actually left the process.
+ *
+ * app.exit() is immediate and does NOT flush stdout. On Windows, tearing the
+ * process down with a large write still pending to a pipe faults with
+ * 0xC0000005 -- exit code 3221225477. That is how `--help` crashed on the
+ * windows-2022 runner while every other path survived: theirs are one or two
+ * short lines and had already drained, and --help prints the whole usage
+ * block.
+ *
+ * The callback fires once the stream has flushed, and writes are ordered, so
+ * anything logged before this has flushed too.
+ */
+function writeThenExit(stream, text, code) {
+  stream.write(text.endsWith('\n') ? text : `${text}\n`, () => app.exit(code));
+}
+
 /* ------------------------------------------------------------------ */
 
 async function runOne(win, { image, script, opts }) {
@@ -134,26 +151,22 @@ app.whenReady().then(async () => {
   try {
     opts = parseArgs(process.argv.slice(2));
   } catch (err) {
-    console.error(`${err.message}\n\n${USAGE}`);
-    app.exit(2);
+    writeThenExit(process.stderr, `${err.message}\n\n${USAGE}`, 2);
     return;
   }
 
   if (opts.help || (!opts.script && opts.images.length === 0)) {
-    console.log(USAGE);
-    app.exit(opts.help ? 0 : 2);
+    writeThenExit(process.stdout, USAGE, opts.help ? 0 : 2);
     return;
   }
 
   const missing = opts.images.filter((p) => !fs.existsSync(p));
   if (missing.length > 0) {
-    console.error(`no such image:\n  ${missing.join('\n  ')}`);
-    app.exit(2);
+    writeThenExit(process.stderr, `no such image:\n  ${missing.join('\n  ')}`, 2);
     return;
   }
   if (opts.script && !fs.existsSync(opts.script)) {
-    console.error(`no such script: ${opts.script}`);
-    app.exit(2);
+    writeThenExit(process.stderr, `no such script: ${opts.script}`, 2);
     return;
   }
 
@@ -228,15 +241,18 @@ app.whenReady().then(async () => {
     }
   }
 
-  const seconds = ((Date.now() - started) / 1000).toFixed(1);
-  console.log(`\n${results.length - failures}/${results.length} in ${seconds}s` +
-    (opts.out ? `, written to ${opts.out}` : ''));
   if (pageErrors.length > 0) {
     console.error(`\npage errors:\n  ${pageErrors.slice(0, 5).join('\n  ')}`);
   }
 
-  app.exit(failures === 0 && pageErrors.length === 0 ? 0 : 1);
+  const seconds = ((Date.now() - started) / 1000).toFixed(1);
+  writeThenExit(
+    process.stdout,
+    `\n${results.length - failures}/${results.length} in ${seconds}s` +
+      (opts.out ? `, written to ${opts.out}` : ''),
+    failures === 0 && pageErrors.length === 0 ? 0 : 1
+  );
 }).catch((err) => {
-  console.error(`batch runner could not start:\n${(err && (err.stack || err.message)) || err}`);
-  app.exit(1);
+  writeThenExit(process.stderr,
+    `batch runner could not start:\n${(err && (err.stack || err.message)) || err}`, 1);
 });
