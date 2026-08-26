@@ -71,16 +71,17 @@ changed.
 
 ```
 native/buffer.*        the buffer type: allocation, dtypes, overflow-checked sizing
-native/kernels.*       the six kernels, behind one uniform C signature
+native/kernels.*       the thirteen kernels, behind one uniform C signature
 native/render.*        display transforms and downsampling, done in C
 native/addon_*.c       the Node-API surface
 src/lab/registry.js    operation definitions, validation, provenance records
 src/lab/parser.js      the command language
 src/lab/session.js     slots, execution, the log, the provenance graph
+src/lab/corners.js     corner hypotheses (pure JS — no pixels involved)
 src/main.js            main process: window, save dialog
 src/preload.js         owns the session and every buffer handle
 src/renderer/          page script; no require, no fs, no pixels
-test/                  six suites under plain node, plus test/renderer.js
+test/                  eight suites under plain node, plus test/renderer.js
                        which needs a real Electron renderer
 docs/electron-guide.md   builds, CI, packaging, signing, costs (written after doing it)
 docs/design-lab-model.md slots, ops, commands, reproducibility (written before)
@@ -117,7 +118,7 @@ All three are explained in `docs/electron-guide.md`.
 ## Status
 
 Working: the buffer type, the operation registry, the command language, the
-session log with provenance and replay, the display path, and the UI. Fifteen
+session log with provenance and replay, the display path, and the UI. Sixteen
 operations — `load`, `pattern`, `gray`, `gaussian`, `sobel`, `threshold`,
 `stats`, `toLinear`, `toSrgb`, `nms`, `hysteresis`, `orient`, `segments`,
 `merge`, `fit`, `corners` — enough for Canny end to end, for straight edges
