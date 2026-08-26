@@ -9,7 +9,12 @@ every result is **reproducible** from a replayable log.
 
 ## Quick start
 
+Needs **Node 22.12+**. There is an `.nvmrc`, so `nvm use` in this directory
+picks the right one; every script checks and says so rather than failing
+somewhere inside a build.
+
 ```bash
+nvm use         # or nvm install, the first time
 npm install     # also compiles the addon
 npm test        # eleven suites, ~285 tests
 npm start       # launch the app

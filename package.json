@@ -8,6 +8,11 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "check:node": "node scripts/check-node.js",
+    "preinstall": "node scripts/check-node.js",
+    "prebuild:native": "node scripts/check-node.js",
+    "prebuild:renderer": "node scripts/check-node.js",
+    "pretest": "node scripts/check-node.js",
     "build:native": "node-gyp rebuild",
     "build:renderer": "vite build",
     "dev:renderer": "vite build --watch",

@@ -40,6 +40,10 @@ test/                eleven suites; ten run under plain node
 
 ## Commands
 
+Node 22.12+ — see `.nvmrc`. `scripts/check-node.js` runs ahead of install,
+build and test, because the requirement used to surface as a `styleText`
+export error from inside Vite's plugin chain.
+
 ```bash
 npm test                # everything — eleven suites, ~287 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
