@@ -74,6 +74,12 @@ jobs:
       - name: Determinism (must agree across all three platforms)
         run: npm run test:determinism
 
+      # Executes the ```lab blocks in README.md. The documented pipeline
+      # produced nothing at all for several commits: every stage succeeded and
+      # every result was empty. Documentation that is never run is a claim.
+      - name: README examples
+        run: npm run test:readme
+
       # Then rebuild against Electron's ABI -- a different NODE_MODULE_VERSION.
       # This is the step that would fail if the addon were NAN/V8 based.
       - name: Rebuild addon (Electron ABI)

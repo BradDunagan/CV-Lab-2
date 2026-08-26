@@ -11,15 +11,15 @@ every result is **reproducible** from a replayable log.
 
 ```bash
 npm install     # also compiles the addon
-npm test        # nine suites, ~270 tests
+npm test        # eleven suites, ~285 tests
 npm start       # launch the app
 ```
 
 Press **Open Image…**, or work without a file:
 
-```
+```lab
 A = pattern(kind=checker, width=512, height=512)
-B = gaussian(A, sigma=3)
+B = gaussian(A, sigma=1.4)
 E = sobel(B, axis=x)
 M = threshold(E, t=0.02)
 stats(E)
@@ -27,15 +27,31 @@ stats(E)
 
 Or all the way to geometry:
 
-```
+```lab
 Gx = sobel(B, axis=x)
 Gy = sobel(B, axis=y)
-N  = nms(E, Gx, Gy)
-S  = segments(N, Gx, Gy)
+G  = sobel(B, axis=mag)
+N  = nms(G, Gx, Gy)
+S  = segments(N, Gx, Gy, minPixels=5)
 R  = merge(S)
 F  = fit(R)
 C  = corners(F)
 ```
+
+Two details in there are the difference between geometry and an empty result,
+and both were wrong in this file until a test started running it:
+
+- **`nms` takes the magnitude, not a single derivative.** It thins ridges, and
+  a signed `axis=x` response is negative on half its edges — which `nms` reads
+  as no edge at all and discards.
+- **`minPixels=5`, not the default 8.** `pattern` draws 8-pixel checker
+  blocks, so after a blur and thinning no run of one is 8 pixels long. At the
+  default this pipeline finds *zero* segments and every later stage dutifully
+  reports nothing. On a photograph the default is the right number; on this
+  particular synthetic image it is one larger than anything that exists.
+
+Blocks marked `lab` here are executed by `test/readme.js`, so an example that
+stops working fails the build rather than the reader.
 
 Turn on **fits** in the toolbar to draw the results over the image they came
 from.
@@ -81,7 +97,8 @@ src/lab/corners.js     corner hypotheses (pure JS — no pixels involved)
 src/main.js            main process: window, save dialog
 src/preload.js         owns the session and every buffer handle
 src/renderer/          page script; no require, no fs, no pixels
-test/                  eight suites under plain node, plus test/renderer.js
+scripts/png.js         a PNG encoder, and the colour chunks `load` reads
+test/                  ten suites under plain node, plus test/renderer.js
                        which needs a real Electron renderer
 docs/electron-guide.md   builds, CI, packaging, signing, costs (written after doing it)
 docs/design-lab-model.md slots, ops, commands, reproducibility (written before)
