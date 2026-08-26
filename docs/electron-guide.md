@@ -794,6 +794,36 @@ it through Electron's patched `fs`, which reads the archive fine. Only
 
 ---
 
+### Replacing the default menu costs you two things you were relying on
+
+Until this project had `src/menu.js`, `Menu.setApplicationMenu` was never
+called, so Electron installed its **default** menu. That default is not
+decoration — it is where two things come from:
+
+- **`role: 'editMenu'`** — Cmd/Ctrl+C, V, X and A *inside a text input*. Lose
+  it and copy and paste stop working in the command bar, with nothing on screen
+  to explain why.
+- **`role: 'viewMenu'`** — Toggle Developer Tools, reload and zoom.
+
+Install any custom template and both vanish unless you ask for them by role.
+`test/renderer.js` asserts they are present, because this is exactly the kind
+of thing that is noticed weeks later by someone trying to paste a file path.
+
+Two smaller notes from doing it:
+
+**Electron lower-cases roles** when it expands a template, so a built menu
+reports `selectall` and `toggledevtools`, not the camelCase spellings the docs
+use for input. Worth knowing before writing an assertion against them.
+
+**A menu template is a snapshot.** Radio ticks, checkbox states and enabled
+flags do not follow the renderer's state on their own. cv-lab-2 sends the
+handful of settings the menu displays over IPC and the main process rebuilds
+the whole menu — far simpler than reaching in to mutate items, and cheap.
+`reload` is deliberately left out: this window loads a built bundle, and
+reloading it discards every buffer the preload owns with no warning.
+
+---
+
 ### Threading rules for the addon
 
 - The `Execute` callback of `napi_create_async_work` runs on a **background

@@ -242,6 +242,25 @@ contextBridge.exposeInMainWorld('lab', {
   /** Ask the main process to confirm, since reset destroys the log. */
   confirmReset: (entries) => ipcRenderer.invoke('session:confirmReset', entries),
 
+  /*
+   * The application menu.
+   *
+   * Two small messages, and deliberately nothing more: a command id in, the
+   * settings the menu displays out. `onMenuCommand` wraps the listener rather
+   * than handing `ipcRenderer.on` across, so page script receives the id and
+   * never the IpcRendererEvent -- which carries `sender`, and would be a way
+   * back into the preload's world that nothing here needs.
+   */
+  onMenuCommand: (callback) => {
+    const listener = (_event, id) => callback(id);
+    ipcRenderer.on('menu:command', listener);
+    return () => ipcRenderer.removeListener('menu:command', listener);
+  },
+
+  /** Tell the menu which scaling mode is current, and so on, so its radio and
+   *  checkbox items reflect reality. */
+  setMenuState: (state) => ipcRenderer.invoke('menu:state', state),
+
   /**
    * Every feature list currently bound, with the coordinate space it belongs
    * to, so the renderer can draw them over a tile of matching size.

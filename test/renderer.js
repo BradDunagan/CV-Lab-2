@@ -22,6 +22,17 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { encodePNG } = require('../scripts/png');
+const { buildMenu } = require('../src/menu');
+
+/** Every item in a menu, submenus included. */
+function flatten(items) {
+  const out = [];
+  for (const item of items) {
+    out.push(item);
+    if (item.submenu?.items) out.push(...flatten(item.submenu.items));
+  }
+  return out;
+}
 const zlibCrc = require('node:zlib');
 const { parseStatement } = require('../src/lab/parser');
 
@@ -142,7 +153,13 @@ async function collect(win, swatch, linearPng) {
     const canvasFor = (name) => paneFor(name)?.querySelector('canvas');
     const readoutFor = (name) => paneFor(name)?.querySelector('.readout')?.textContent ?? '(no pane)';
     const zoomFor = (name) => parseFloat(paneFor(name)?.querySelector('.zoom')?.textContent ?? 'NaN');
-    const menuItem = (id) => lab2().appMenu().find(i => i.id === id);
+    /*
+     * Global commands live in the NATIVE application menu now, so there is no
+     * DOM element to click. The renderer's half of that is its handler, which
+     * is what __cvlab.menuCommand reaches; the menu template itself is
+     * asserted in the main process, where it exists.
+     */
+    const menu = (id) => lab2().menuCommand(id);
     const ink = (c) => {
       const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
       let sum = 0;
@@ -162,6 +179,9 @@ async function collect(win, swatch, linearPng) {
       command: !!bar(),
       log: !!document.querySelector('.log-pane'),
     };
+    // The command bar is in the app header, not in a pane -- it is the primary
+    // interaction and should not be closable or losable.
+    r.commandBarInHeader = !!document.querySelector('.app-header #command');
 
     // --- load, through Chromium's decoder ---
     await ui('S = load(' + window.lab.quote(swatch) + ')');
@@ -263,31 +283,25 @@ async function collect(win, swatch, linearPng) {
       const box = el.getBoundingClientRect();
       return box.width > 0 && box.height > 0;
     };
-    r.toolbar = {
-      scaling: visible(document.getElementById('scaling')),
-      overlay: visible(document.getElementById('overlay')),
-      resetView: visible(document.getElementById('reset-view')),
-      discard: visible(document.getElementById('reset')),
-      run: visible(document.getElementById('run')),
+    r.headerControls = {
+      opMenu: visible(document.getElementById('op-menu')),
       command: visible(document.getElementById('command')),
+      run: visible(document.getElementById('run')),
     };
-    // and the menu still carries them, for when the command pane is closed
-    r.menuAlsoHas = ['reset-view', 'overlay', 'scaling', 'save-session', 'reset-session']
-      .every((id) => !!menuItem(id));
+    // The header hosts the command bar, so it must NOT also carry paneless's
+    // app title -- that was the third copy of the app's name and the reason
+    // for showTitle={false}.
+    r.noAppTitle = !document.querySelector('.app-title');
 
-    // --- reset view, through the toolbar button ---
-    const resetViewButton = () => document.getElementById('reset-view');
-    r.resetEnabledWhenZoomed = !resetViewButton().disabled;
-    resetViewButton().click();
+    // --- reset view, through the menu command the menu item fires ---
+    r.viewResetBeforeZoom = lab2().viewport.w === 1 && lab2().viewport.h === 1;
+    menu('reset-view');
     await sleep(60);
-    r.resetDisabledAfterwards = resetViewButton().disabled;
     r.zoomAfterReset = readZooms();
 
     // --- scaling modes ---
     const setScaling = async (mode) => {
-      const sel = document.getElementById('scaling');
-      sel.value = mode;
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      menu('scaling:' + mode);
       await sleep(90);
     };
     await ui('T = pattern(kind=checker, width=64, height=64)');
@@ -336,11 +350,7 @@ async function collect(win, swatch, linearPng) {
     // Does the overlay actually draw? Compare a tile with it on and off.
     await showSlot('PB');
     const snapshot = () => ink(canvasFor('PB'));
-    const overlayBox = () => document.getElementById('overlay');
-    const toggleOverlay = async () => {
-      overlayBox().click();
-      await sleep(80);
-    };
+    const toggleOverlay = async () => { menu('toggle-overlay'); await sleep(80); };
     await toggleOverlay();                 // off
     r.withoutOverlay = snapshot();
     await toggleOverlay();                 // on again
@@ -357,7 +367,7 @@ async function collect(win, swatch, linearPng) {
       slots: window.lab.slots().length,
       boundPanes: lab2().slotPaneIds().filter(id => lab2().paneStore.getPane(id)?.name).length,
     };
-    document.getElementById('reset').click();
+    menu('reset-session');
     await sleep(250);
     r.afterReset = {
       slots: window.lab.slots().length,
@@ -389,6 +399,16 @@ app.whenReady().then(async () => {
    */
   ipcMain.handle('session:confirmReset', () => 'discard');
 
+  /*
+   * The renderer reports the settings the application menu displays. This
+   * harness has no menu -- it never calls Menu.setApplicationMenu -- but it
+   * still has to answer, or every state change leaves an unhandled rejection
+   * in the page and "the page logged no errors" fails for a reason that has
+   * nothing to do with the lab.
+   */
+  const menuState = [];
+  ipcMain.handle('menu:state', (_event, state) => { menuState.push(state); });
+
   const win = new BrowserWindow({
     show: false,
     width: 1320,
@@ -418,8 +438,9 @@ app.whenReady().then(async () => {
 
   test('the bridge exposes only the lab API', () => {
     assert.deepEqual(r.bridge, ['basename', 'confirmReset', 'draw', 'features',
-      'histogram', 'log', 'openImage', 'ops', 'probeAll', 'quote', 'reset', 'run',
-      'saveSession', 'sessionJSON', 'slots', 'versions']);
+      'histogram', 'log', 'onMenuCommand', 'openImage', 'ops', 'probeAll', 'quote',
+      'reset', 'run', 'saveSession', 'sessionJSON', 'setMenuState', 'slots',
+      'versions']);
   });
 
   test('no Node globals leak into page script', () => {
@@ -499,16 +520,82 @@ app.whenReady().then(async () => {
 
   /* --- the UI ------------------------------------------------------- */
 
-  test('every global control is visible, not only in the app menu', () => {
-    // The regression this exists for: scaling and discard-session were moved
-    // into paneless's app menu, which opens by clicking the title text. No
-    // label, no affordance, and two of the most-used controls in the lab
-    // invisible behind it. Reachability is the property, so the check is
-    // getBoundingClientRect rather than mere presence in the DOM.
-    for (const [name, shown] of Object.entries(r.toolbar)) {
+  /*
+   * Reachability, which is what this group is really about.
+   *
+   * The history: the global commands were first put in paneless's app menu,
+   * which opens by clicking the title text — no label, no affordance — and two
+   * of the most-used controls in the lab became invisible. Then a toolbar. Now
+   * a NATIVE menu, which is the conventional home and the one place a user
+   * will look. Each move needs its own kind of check, because the controls are
+   * no longer in the DOM at all: the renderer's handler is tested through
+   * __cvlab.menuCommand, and the menu TEMPLATE is tested below in the main
+   * process, where it actually exists.
+   */
+  test('the command bar is visible in the header, not buried in a pane', () => {
+    for (const [name, shown] of Object.entries(r.headerControls)) {
       assert.ok(shown, `${name} is not visible in the interface`);
     }
-    assert.ok(r.menuAlsoHas, 'the app menu should keep a copy of every global control');
+    assert.equal(r.commandBarInHeader, true, 'the command bar should be in the app header');
+    assert.equal(r.noAppTitle, true,
+      'paneless\'s app title should be off — the OS chrome already names the app');
+  });
+
+  test('the application menu carries every global command', () => {
+    /*
+     * Built here rather than read from the live menu, because buildMenu is a
+     * pure function of its state and that is the thing worth pinning.
+     */
+    const sent = [];
+    const items = flatten(buildMenu({
+      state: { scaling: 'pixels', overlay: false, viewIsReset: false },
+      send: (id) => sent.push(id),
+    }).items);
+
+    const byLabel = (label) => items.find((i) => i.label === label);
+    for (const label of ['Open Image…', 'Save Session…', 'Discard Session…',
+                         'Reset View', 'New Slot Pane', 'New Log Pane']) {
+      assert.ok(byLabel(label), `the menu has no "${label}" item`);
+    }
+
+    // Settings show their state — the thing paneless's menu never did.
+    const scaling = items.filter((i) => i.type === 'radio' &&
+      ['smooth', 'pixels', 'actual'].includes(i.label));
+    assert.equal(scaling.length, 3, 'expected three scaling modes');
+    assert.deepEqual(scaling.filter((i) => i.checked).map((i) => i.label), ['pixels'],
+      'exactly the current scaling mode should be ticked');
+
+    const overlay = byLabel('Draw fits over tiles');
+    assert.equal(overlay.type, 'checkbox');
+    assert.equal(overlay.checked, false, 'the checkbox should follow the state it was built with');
+
+    assert.equal(byLabel('Reset View').enabled, true, 'enabled while the view is zoomed');
+    const whole = flatten(buildMenu({
+      state: { scaling: 'smooth', overlay: true, viewIsReset: true }, send: () => {},
+    }).items);
+    assert.equal(whole.find((i) => i.label === 'Reset View').enabled, false,
+      'disabled once the view is whole again');
+  });
+
+  test('replacing the default menu keeps copy/paste and developer tools', () => {
+    /*
+     * The trap this guards. Until src/menu.js existed, Menu.setApplicationMenu
+     * was never called and Electron installed its DEFAULT menu — which is what
+     * provided Cmd/Ctrl+C, V, X, A inside the command input, and Toggle
+     * Developer Tools. Installing any custom template drops both silently
+     * unless they are asked for by role.
+     */
+    const roles = flatten(buildMenu({
+      state: { scaling: 'smooth', overlay: true, viewIsReset: true }, send: () => {},
+    }).items).map((i) => i.role).filter(Boolean);
+
+    // Electron lower-cases roles when it expands a template, so these are
+    // `selectall` and `toggledevtools`, not the camelCase spellings the docs
+    // use for the input.
+    for (const role of ['copy', 'paste', 'cut', 'selectall']) {
+      assert.ok(roles.includes(role), `the Edit menu lost "${role}" — copy/paste will not work`);
+    }
+    assert.ok(roles.includes('toggledevtools'), 'Toggle Developer Tools is gone');
   });
 
   test('the app opens with a command pane, a log pane and a slot pane', () => {
@@ -563,9 +650,10 @@ app.whenReady().then(async () => {
     assert.ok(spread < 1.02, `panes zoomed by different factors: ${factors}`);
   });
 
-  test('Reset view restores the whole image, and knows when it is a no-op', () => {
-    assert.equal(r.resetEnabledWhenZoomed, true, 'should be enabled while zoomed in');
-    assert.equal(r.resetDisabledAfterwards, true, 'should disable once the view is reset');
+  test('Reset view restores the whole image', () => {
+    // Whether the menu item is ENABLED is a property of the template and is
+    // asserted where the template is built. This is the effect.
+    assert.equal(r.viewResetBeforeZoom, false, 'the wheel event should have zoomed in');
     for (const [slot, before] of Object.entries(r.zoomBefore)) {
       assert.ok(Math.abs(r.zoomAfterReset[slot] - before) < 0.01,
         `${slot} did not return to its unzoomed scale`);

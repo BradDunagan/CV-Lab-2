@@ -20,14 +20,12 @@
     paneStore,
     setDefaultPaneContentProvider,
     setDefaultPaneMenuProvider,
-    setDefaultAppMenuProvider,
-    appTitle,
   } from 'paneless';
   import 'paneless/styles/theme.css';
 
   import SlotPane from './panes/SlotPane.svelte';
-  import CommandPane from './panes/CommandPane.svelte';
   import LogPane from './panes/LogPane.svelte';
+  import CommandBar from './CommandBar.svelte';
   import {
     lab, viewport, display, slots, probe, status, setStatus, actions,
     refreshSlots, resetViewport, isViewReset, clearSession, hideProbe, bufferSlots,
@@ -48,7 +46,7 @@
    * file never created. rr solves it the same way: fall back to the title, and
    * re-register what the fallback resolved so the lookup is cheap next time.
    */
-  const byTitle = { Command: CommandPane, Log: LogPane };
+  const byTitle = { Log: LogPane };
   const isSlotTitle = (t) => typeof t === 'string' && (t === 'Slot' || t.startsWith('Slot '));
 
   function paneContentProvider(paneId, meta) {
@@ -85,33 +83,40 @@
   }
 
   const GAP = 8;
-  /*
-   * Tall enough for the pane's content plus a frame's chrome. A frame spends
-   * roughly 80px on its own header, the pane header and the title bar before
-   * the component gets a pixel, which is what clipped the command bar's hint
-   * line when this was set from the content height alone. Two rows now: the
-   * command line and the toolbar under it.
-   */
-  const COMMAND_H = 212;
 
   /**
    * A tiling rather than a cascade. Slot panes exist to be compared against
    * each other — §7's whole argument for uniform slots — so overlapping them
    * defeats the point. Four is the auto-open limit, which is exactly a 2x2.
+   *
+   * The log takes a column down the left; slots take the rest. Nothing is
+   * reserved at the top any more: the command bar lives in the app header now,
+   * not in a frame, which is what that space used to be held back for.
    */
+  const LOG_FRACTION = 0.36;
+
+  function logFrameRect() {
+    const { width, height } = contentBox();
+    return {
+      x: GAP,
+      y: GAP,
+      w: Math.round(width * LOG_FRACTION) - GAP,
+      h: height - GAP * 2,
+    };
+  }
+
   function slotFrameRect(index) {
     const { width, height } = contentBox();
-    const logW = Math.round(width * 0.36);
-    const left = logW + GAP * 2;
+    const left = Math.round(width * LOG_FRACTION) + GAP;
     const areaW = width - left - GAP;
-    const areaH = height - COMMAND_H - GAP * 3;
+    const areaH = height - GAP * 2;
     const cols = 2, rows = 2;
     const cellW = Math.floor((areaW - GAP) / cols);
     const cellH = Math.floor((areaH - GAP) / rows);
     const col = index % cols, row = Math.floor(index / cols) % rows;
     return {
       x: left + col * (cellW + GAP),
-      y: COMMAND_H + GAP * 2 + row * (cellH + GAP),
+      y: GAP + row * (cellH + GAP),
       w: cellW,
       h: cellH,
     };
@@ -230,37 +235,6 @@
     );
   }
 
-  function appMenuProvider(_contextId, suggested) {
-    const scalingItems = ['smooth', 'pixels', 'actual'].map((mode) => ({
-      id: `scaling-${mode}`,
-      type: 'button',
-      label: `${display.scaling === mode ? '● ' : '   '}${mode}`,
-      onClick: () => { display.scaling = mode; },
-    }));
-
-    return [
-      { id: 'new-slot-pane', type: 'button', label: 'New slot pane', onClick: () => newSlotPane(null) },
-      { id: 'new-log-pane', type: 'button', label: 'New log pane',
-        onClick: () => { const b = contentBox();
-          makeFrame('Log', LogPane, GAP, COMMAND_H + GAP * 2,
-            Math.round(b.width * 0.36), b.height - COMMAND_H - GAP * 3); } },
-      { id: 'new-command-pane', type: 'button', label: 'New command pane',
-        onClick: () => { const b = contentBox();
-          makeFrame('Command', CommandPane, GAP, GAP, b.width - GAP * 2, COMMAND_H); } },
-      { id: 'sep-view', type: 'separator' },
-      { id: 'overlay', type: 'button',
-        label: `${display.overlay ? '● ' : '   '}Draw fits over tiles`,
-        onClick: () => { display.overlay = !display.overlay; } },
-      { id: 'scaling', type: 'submenu', label: 'Scaling', items: scalingItems },
-      { id: 'reset-view', type: 'button', label: 'Reset view', enabled: !isViewReset(),
-        onClick: () => { resetViewport(); setStatus('View reset to the whole image.'); } },
-      { id: 'sep-session', type: 'separator' },
-      { id: 'save-session', type: 'button', label: 'Save session…', onClick: saveSession },
-      { id: 'reset-session', type: 'button', label: 'Discard session…', onClick: resetSession },
-      ...(suggested.length ? [{ id: 'sep-paneless', type: 'separator' }, ...suggested] : []),
-    ];
-  }
-
   /**
    * Slot panes get one extra item: which slot they show. Everything else in a
    * pane's menu — split, tab, collapse — is paneless's and is left alone.
@@ -311,10 +285,13 @@
       // DOM to click an item would test paneless; calling the provider and
       // invoking an item's onClick tests the wiring this file owns, which is
       // the part that can be wrong.
-      appMenu: () => appMenuProvider('app', []),
+      menuCommand: (id) => onMenuCommand(id),
       paneMenu: (paneId) => paneMenuProvider(paneId, []),
     };
   }
+
+  /** @type {any} */
+  let commandBar = $state();
 
   onMount(() => {
     exposeForTests();
@@ -323,13 +300,14 @@
     actions.newSlotPane = () => newSlotPane(null);
     setDefaultPaneContentProvider(paneContentProvider);
     setDefaultPaneMenuProvider(paneMenuProvider);
-    setDefaultAppMenuProvider(appMenuProvider);
-    appTitle.set('cv-lab-2', { fontWeight: '600' });
 
-    const box = contentBox();
-    makeFrame('Command', CommandPane, GAP, GAP, box.width - GAP * 2, COMMAND_H);
-    makeFrame('Log', LogPane, GAP, COMMAND_H + GAP * 2,
-      Math.round(box.width * 0.36), box.height - COMMAND_H - GAP * 3);
+    // The application menu is native now, so paneless's own app menu and its
+    // title-click trigger are both gone -- see showTitle on PanelessContainer.
+    const offMenu = lab.onMenuCommand(onMenuCommand);
+    publishMenuState();
+
+    const log = logFrameRect();
+    makeFrame('Log', LogPane, log.x, log.y, log.w, log.h);
     newSlotPane(null);
 
     refreshSlots();
@@ -337,8 +315,64 @@
       'Ready. Enter a command, or pick an operation to insert a template. ' +
         'Scroll a tile to zoom, drag to pan.'
     );
-
+    commandBar?.focus();
+    return offMenu;
   });
+
+  /* ------------------------------------------------------------------ */
+  /* the application menu                                                */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Mirror the settings the menu displays back to the main process.
+   *
+   * An Electron menu template is a SNAPSHOT: the radio tick beside the current
+   * scaling mode and the checkbox beside the overlay do not follow this state
+   * on their own, and neither does whether Reset View is enabled. Main rebuilds
+   * the whole menu whenever this arrives, which is cheap and much simpler than
+   * reaching in to mutate individual items.
+   */
+  function publishMenuState() {
+    lab.setMenuState({
+      scaling: display.scaling,
+      overlay: display.overlay,
+      viewIsReset: isViewReset(),
+    });
+  }
+
+  $effect(() => {
+    void display.scaling; void display.overlay;
+    void viewport.x; void viewport.y; void viewport.w; void viewport.h;
+    publishMenuState();
+  });
+
+  function onMenuCommand(id) {
+    if (id.startsWith('scaling:')) {
+      display.scaling = id.slice('scaling:'.length);
+      setStatus(`Scaling: ${display.scaling}`);
+      return;
+    }
+    switch (id) {
+      case 'open-image': commandBar?.openImage(); break;
+      case 'save-session': saveSession(); break;
+      case 'reset-session': resetSession(); break;
+      case 'toggle-overlay':
+        display.overlay = !display.overlay;
+        setStatus(`Fits ${display.overlay ? 'drawn over' : 'hidden on'} matching tiles`);
+        break;
+      case 'reset-view':
+        resetViewport();
+        setStatus('View reset to the whole image.');
+        break;
+      case 'new-slot-pane': newSlotPane(null); break;
+      case 'new-log-pane': {
+        const log = logFrameRect();
+        makeFrame('Log', LogPane, log.x, log.y, log.w, log.h);
+        break;
+      }
+      default: break;
+    }
+  }
 
   // Slots change only as a result of a command, and `slots.list` is replaced
   // wholesale when one runs — so this is the one place new slots are noticed.
@@ -384,7 +418,17 @@
 
 <div class="shell">
   <div class="stage">
-    <PanelessContainer />
+    <!--
+      showTitle={false}: on macOS and Windows the window chrome already names
+      the app twice — title bar and menu bar — so paneless's own title is a
+      third copy. Its click was also the app menu's only trigger, which is why
+      this is only safe now that the menu is native.
+    -->
+    <PanelessContainer showTitle={false}>
+      {#snippet headerContent()}
+        <CommandBar bind:this={commandBar} />
+      {/snippet}
+    </PanelessContainer>
   </div>
 
   <div class="statusbar">

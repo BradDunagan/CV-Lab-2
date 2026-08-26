@@ -1,9 +1,29 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
+
+const { buildMenu } = require('./menu');
+
+/**
+ * What the menu needs to know about the renderer, mirrored here.
+ *
+ * The renderer owns this state; the menu only reflects it. It is kept in the
+ * main process because a menu template is a snapshot -- Electron does not
+ * re-read it -- so the menu has to be rebuilt when any of this changes.
+ */
+const menuState = { scaling: 'smooth', overlay: true, viewIsReset: true };
+
+function installMenu(win) {
+  Menu.setApplicationMenu(
+    buildMenu({
+      state: menuState,
+      send: (id) => win?.webContents.send('menu:command', id),
+    })
+  );
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -58,6 +78,19 @@ function createWindow() {
     return win;
   }
   win.loadFile(page);
+  installMenu(win);
+
+  /*
+   * The renderer tells the main process when a setting it owns changes, so
+   * the menu's radio and checkbox items stay truthful. One-way and small:
+   * no pixels, no handles, just which scaling mode is current.
+   */
+  ipcMain.removeHandler('menu:state');
+  ipcMain.handle('menu:state', (_event, next) => {
+    Object.assign(menuState, next);
+    installMenu(win);
+  });
+
   return win;
 }
 

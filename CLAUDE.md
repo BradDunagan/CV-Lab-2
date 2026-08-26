@@ -32,6 +32,7 @@ src/lab/registry.js  operation definitions, validation, provenance records
 src/lab/parser.js    the command language
 src/lab/session.js   slots, execution, the log, the provenance graph
 src/lab/corners.js   corner hypotheses (pure JS — no pixels involved)
+src/menu.js          the application menu — global commands live here, not in the UI
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
@@ -58,6 +59,7 @@ npm run dev:renderer    # the same, in watch mode
 - **Node-API, never NAN.** One binary works under both Node and Electron. Verified, not assumed.
 - **`sandbox: false` on the window**, with `contextIsolation` on and `nodeIntegration` off. It exists so the preload can `require()` a real `.node`. Conditional on this window only ever loading local, first-party content.
 - **Pixels never cross the contextBridge.** It deep-copies typed arrays — measured. The preload owns the buffers and renders into the canvas directly. Svelte owns the DOM and only the DOM: a pane hands the preload a canvas **id**, because a DOM node cannot cross the bridge either.
+- **A custom application menu must keep `role: 'editMenu'` and `role: 'viewMenu'`.** Electron's default menu is what provides Cmd/Ctrl+C/V/X/A in the command input and Toggle Developer Tools; calling `setApplicationMenu` drops both silently. Pinned by a test.
 - **No dev server.** The renderer is always a `file://` URL, built by Vite. `sandbox: false` is conditional on this window only ever loading local, first-party content, and a window that can point at `http://localhost` is a window that can point anywhere.
 - **Electron forbids external ArrayBuffers** (`napi_status 22`). C-owned memory cannot be aliased from JS; access is an explicit copy, and the names say so.
 - **Determinism rules live in `design-lab-model.md` §5.** Fixed summation order, no `-ffast-math`, and *where two routes reach the same value, make them agree on purpose*. Canonical numbering for anything that assigns identities.

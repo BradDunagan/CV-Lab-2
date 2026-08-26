@@ -61,9 +61,10 @@ stops working fails the build rather than the reader.
 Turn on **fits** in the toolbar to draw the results over the image they came
 from.
 
-The command pane carries the toolbar: scaling, the fits overlay, Reset view,
-and the session actions. All of it is in the app menu too — click the title —
-but the toolbar is the copy you can see without knowing it is there.
+The command bar lives in the app header — it is the primary interaction, so it
+is not a pane you can close or lose. Everything else is in the **application
+menu**: scaling (a radio group), the fits overlay (a checkbox), Reset View, the
+session actions and the pane commands.
 
 Each command fills a **slot pane** — an empty one if there is one, otherwise a
 new one, up to four. Panes are [paneless](../paneless-workspace) frames: split
@@ -106,10 +107,12 @@ src/lab/registry.js    operation definitions, validation, provenance records
 src/lab/parser.js      the command language
 src/lab/session.js     slots, execution, the log, the provenance graph
 src/lab/corners.js     corner hypotheses (pure JS — no pixels involved)
-src/main.js            main process: window, save dialog
+src/main.js            main process: window, dialogs, menu wiring
+src/menu.js            the application menu template
 src/preload.js         owns the session and every buffer handle
-src/renderer/          Svelte 5 + paneless: App, lab state, and one component
-                       per pane. No require, no fs, no pixels
+src/renderer/          Svelte 5 + paneless: App, lab state, the header command
+                       bar, and one component per pane. No require, no fs,
+                       no pixels
 dist-renderer/         Vite's output — the only thing the window ever loads
 scripts/png.js         a PNG encoder, and the colour chunks `load` reads
 test/                  ten suites under plain node, plus test/renderer.js

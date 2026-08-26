@@ -18,6 +18,36 @@
   --cv-text: #d8d8e0;
   --cv-dim: #7c7c8a;
   --cv-accent: #6ea8fe;
+
+  /*
+   * Paneless's own chrome, mapped onto the palette above.
+   *
+   * These are the properties paneless reads with its original light-theme
+   * literals as fallbacks, so setting them here is the whole of the theming —
+   * no fork, no build flag. The header is sized for a text input rather than
+   * the default 28px badge strip, and its right-hand region is told to take
+   * the spare width, because that is where the command bar lives.
+   */
+  --paneless-header-height: 34px;
+  --paneless-header-bg: #17171d;
+  --paneless-header-text: #d8d8e0;
+  --paneless-header-border: #2a2a33;
+  --paneless-header-padding: 0 8px;
+  --paneless-header-right-grow: 1;
+  --paneless-header-item-hover: rgba(255, 255, 255, 0.08);
+
+  /*
+   * Items in the flex row rather than absolutely centred across the header.
+   * Centred is paneless's default and it overlaps whatever else is up there,
+   * because an absolutely positioned row reserves no space.
+   */
+  --paneless-header-items-position: static;
+  --paneless-header-items-justify: flex-start;
+  --paneless-header-items-gap: 8px;
+
+  --paneless-footer-bg: #17171d;
+  --paneless-footer-text: #d8d8e0;
+  --paneless-footer-border: #2a2a33;
 }
 
 html, body {
