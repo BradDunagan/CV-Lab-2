@@ -1,7 +1,7 @@
 name: build
 
-# Inert until this directory is a git repo with a GitHub remote.
-# Once it is: `git push` and watch three machines build the same code.
+# Three machines build the same code on every push to main.
+# The determinism step below is the one that needs all three to mean anything.
 
 on:
   push:

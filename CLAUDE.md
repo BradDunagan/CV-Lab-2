@@ -34,13 +34,13 @@ src/lab/session.js   slots, execution, the log, the provenance graph
 src/lab/corners.js   corner hypotheses (pure JS — no pixels involved)
 src/preload.js       owns the session and every buffer handle
 src/renderer/        page script; no require, no fs, no pixels
-test/                nine suites; six run under plain node
+test/                eleven suites; ten run under plain node
 ```
 
 ## Commands
 
 ```bash
-npm test                # everything — nine suites, ~274 tests
+npm test                # everything — eleven suites, ~285 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # launch the app
 npm run build:native    # compile the addon

@@ -469,6 +469,48 @@ dependencies in `make`, spreadsheet formula dependencies.
 
 ---
 
+## endpointGap
+
+**How far apart two edges actually *stopped*, measured between their nearest
+ends — not between their fitted lines.**
+
+Reported by `corners` on every candidate, and it is the field that decides
+whether a corner is real.
+
+The problem it solves: real edges systematically stop short of the corners
+they belong to. Blur rounds the vertex so the gradient direction rotates and
+region growing halts; [non-maximum suppression](#nms--non-maximum-suppression)
+deletes junction pixels outright — 21% of a rendered cube's edge pixels had
+four neighbours; and weak ends fall below `minMag`. A gap between a segment's
+end and the true corner is therefore the *normal* case, which is why `corners`
+reports evidence rather than making the call itself.
+
+**Not the same as `reach`, and the difference matters.** `reach` measures how
+far a line had to be *extended* to arrive at the intersection. Two unrelated
+lines can each be extended a long way and still meet somewhere perfectly
+precise and entirely meaningless. `endpointGap` asks whether the two edges
+*ended up near each other*, which is what "they meet here" physically means. A
+corner eroded by blur leaves both edges terminating a few pixels short of it,
+so their ends stay close even when the extrapolation is long.
+
+Measured on one synthetic cube — fourteen candidates, seven of them real:
+
+| | `endpointGap` | `reach` |
+|---|---|---|
+| the seven real corners | **1.3 – 3.5** | 1.1 – 33.2 |
+| the seven spurious ones | **49.2 – 65.4** | 46.4 – 92.1 |
+
+`endpointGap` separates them with a 14× margin and no overlap. `reach` does
+not: two genuine three-way vertices reach 33.2 and 22.2 px, inside the
+spurious range, because a corner can lie well past the far end of one of the
+edges meeting there. An earlier draft of the design doc named `reach` as the
+discriminator and was wrong.
+
+**Caveat**: one image, clean synthetic edges. Striking, and a single data
+point.
+
+---
+
 ## Hysteresis (double-threshold edge tracking)
 
 **Keep a weak edge if — and only if — it joins a strong one.**
@@ -930,6 +972,9 @@ adjustment, calibration. The word always means *what the model failed to
 explain*, and the interesting question is always which distance is being
 measured.
 
+See also [total least squares](#tls--total-least-squares-orthogonal-regression),
+which is the fit whose residuals these are.
+
 ---
 
 ## Sidecar (sidecar file)
@@ -996,6 +1041,52 @@ way to get large buffers to a worker without paying for a copy.
 
 **Elsewhere**: `structuredClone()` is now a plain global function in browsers
 and in Node, usable as a general deep-copy utility.
+
+---
+
+## TLS — total least squares (orthogonal regression)
+
+**A line fit that minimises each point's *perpendicular* distance to the line,
+rather than its vertical distance.**
+
+What `segments`, `merge` and `fit` all use, and the reason the endpoints this
+lab reports are sub-pixel.
+
+Ordinary least squares treats x as an input and y as a measurement, and
+minimises the vertical offsets. In an image neither axis is privileged — an
+edge can run in any direction — and OLS degenerates completely as a line
+approaches vertical, where the vertical offsets go to infinity. TLS is
+rotation-invariant: rotate the image, and you get the rotated fit.
+
+The form used here is closed and incremental. Six running sums —
+`n, Σx, Σy, Σx², Σy², Σxy` — give the 2×2 covariance, whose principal axis is
+the line:
+
+```
+θ = ½ · atan2(2·cov_xy, cov_xx − cov_yy)
+```
+
+Adding a point is O(1) and the line comes back in closed form, so a region can
+be refitted after *every* pixel it absorbs without the cost mattering. That is
+what lets `segments` test straightness as it grows rather than afterwards.
+`CvTls` in `native/kernels.h` is this struct.
+
+Two things fall out of it that the lab depends on:
+
+- **Endpoints are projected onto the fitted line**, not reported as the extreme
+  pixels themselves. The line is an average over every pixel in the segment,
+  so it localises better than any single pixel centre can — that is where the
+  sub-pixel accuracy comes from.
+- **The fit's own uncertainty is computable.** A fit over *n* pixels spanning
+  length *L* with RMS residual *s* has angular slop of about `s·√12 / (L·√n)`,
+  which is what `corners` propagates into `sigma`. `fit` reports `rms`
+  alongside the maximum [residual](#residual) for exactly this reason: the
+  maximum is a guarantee about the worst pixel, the RMS is what propagation
+  needs.
+
+**Elsewhere**: TLS is the errors-in-variables case of regression, and the same
+principal-axis computation appears as PCA, as the inertia tensor in mechanics,
+and as the covariance ellipse in statistics. All the same 2×2 eigenproblem.
 
 ---
 

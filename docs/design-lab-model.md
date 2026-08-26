@@ -744,7 +744,7 @@ never what it contains:
 |---|---|
 | Range | auto min/max · fixed `[lo, hi]` · percentile (2–98%) · **symmetric about zero** |
 | Curve | linear · log · abs · sqrt |
-| Colormap | gray · viridis · turbo · diverging · categorical |
+| Colormap | gray · viridis · turbo · diverging · categorical · **cyclic** |
 | Channel | 0 · 1 · 2 · all |
 
 Sensible defaults by data kind:
@@ -935,7 +935,12 @@ item genuinely deferrable.
         but from=srgb. Pass from=linear.
   ```
 
-  An embedded ICC profile is reported, not interpreted — saying "there is a
-  profile" is honest; guessing at its transfer curve would not be. PNG only:
+  An embedded ICC profile is read, not interpreted — saying "there is a
+  profile" is honest; guessing at its transfer curve would not be. *Gap:*
+  `readPngColour` returns `declared: 'icc'` and `load` then discards it, so
+  nothing actually reaches the user. Only `srgb` and `linear` declarations
+  cause a refusal today; a profiled file loads silently under the sRGB
+  convention. Same bucket takes an uninterpretable `gAMA` — a file declaring
+  gamma 0.5 is neither sRGB nor linear and is likewise waved through. PNG only:
   JPEG carries this in EXIF/ICC and WebP in its own chunks, and both fall back
   to the convention.

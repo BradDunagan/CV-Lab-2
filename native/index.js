@@ -60,8 +60,15 @@ module.exports = {
 
   // --- buffers (design-lab-model.md §1-2) -------------------------------
   //
-  // The C layer owns the memory; JS holds an opaque handle. bufferView()
-  // returns a typed array aliasing that same memory, with no copy.
+  // The C layer owns the memory; JS holds an opaque handle and reaches the
+  // pixels through an explicit COPY -- bufferRead and bufferWrite, named so
+  // that no caller assumes otherwise.
+  //
+  // There is deliberately no bufferView(). Electron refuses
+  // napi_create_external_arraybuffer with napi_status 22, because V8 is built
+  // with pointer compression and a backing store must live inside its memory
+  // cage, so JS cannot alias C memory at all here. See design-lab-model.md §8
+  // and electron-guide.md §1 -- both measured, in both runtimes.
 
   /**
    * @param {{width:number, height:number, channels?:number,
@@ -104,12 +111,16 @@ module.exports = {
 
   /**
    * Build a 3-channel f32 buffer from 8-bit RGBA, as Chromium's decoder
-   * produces it. Alpha is dropped. `as: 'linear'` applies the exact sRGB
-   * transfer function via a 256-entry lookup.
+   * produces it. Alpha is dropped.
+   *
+   * `from` says what the stored bytes MEAN; `as` says what the buffer should
+   * hold. When they differ the transfer function is applied as an exact
+   * 256-entry lookup -- 8-bit input makes the whole curve enumerable, so
+   * there is no per-pixel power function and no approximation.
    * @param {Uint8ClampedArray|Uint8Array} pixels
    * @param {number} width
    * @param {number} height
-   * @param {{as?:'srgb'|'linear'}} [opts]
+   * @param {{from?:'srgb'|'linear', as?:'srgb'|'linear'}} [opts]
    */
   bufferFromRGBA8: addon.bufferFromRGBA8,
 
@@ -140,7 +151,7 @@ module.exports = {
    * @param {{width:number, height:number, x?:number, y?:number, w?:number, h?:number,
    *          range?:'auto'|'fixed'|'percentile'|'symmetric', lo?:number, hi?:number,
    *          percentile?:number, curve?:'linear'|'log'|'abs'|'sqrt',
-   *          colormap?:'gray'|'viridis'|'turbo'|'diverging'|'categorical',
+   *          colormap?:'gray'|'viridis'|'turbo'|'diverging'|'categorical'|'cyclic',
    *          channel?:number}} spec
    * @returns {{pixels:Uint8ClampedArray, width:number, height:number, lo:number, hi:number}}
    */
@@ -155,8 +166,9 @@ module.exports = {
   /**
    * Geometry out of a segment label map — the first result that is not pixels.
    * @param {object} handle an i32 label map
-   * @returns {Array<{id:number, pixels:number, x0:number, y0:number, x1:number,
-   *   y1:number, length:number, angle:number, residual:number, cx:number, cy:number}>}
+   * @returns {Array<{type:'edge-segment', id:number, pixels:number,
+   *   x0:number, y0:number, x1:number, y1:number, length:number, angle:number,
+   *   residual:number, rms:number, cx:number, cy:number}>}
    */
   fitSegments: addon.fitSegments,
 };

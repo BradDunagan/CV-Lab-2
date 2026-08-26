@@ -800,7 +800,7 @@ above is only as good as its evidence.
 
 | Claim | How it was verified |
 |---|---|
-| Node-API is ABI-stable across runtimes | The addon built against Electron 43's headers loads and passes all 7 tests under plain Node 24 |
+| Node-API is ABI-stable across runtimes | The addon built against Electron 43's headers loads and passes `test/smoke.js` (7 tests) under plain Node 24. The other nine suites, ~285 tests, run against the same binary |
 | C writes into the JS buffer, no copy | `test/smoke.js` mutates through a separate `ArrayBuffer` view and checks the original |
 | Async work leaves the event loop free | A `setInterval` tick counter runs during a 64 MB invert; blocking would leave it at 0 |
 | contextBridge deep-copies typed arrays | Caller's array unmutated, returned object is a third object — measured in Electron 43 |
