@@ -2,6 +2,7 @@
 
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const path = require('node:path');
 
 function createWindow() {
@@ -37,7 +38,26 @@ function createWindow() {
     },
   });
 
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  /*
+   * The BUILT renderer, not the source. src/renderer/ is Svelte and needs
+   * Vite; dist-renderer/ is what Vite produces.
+   *
+   * A file:// URL, always -- there is no dev server, deliberately. The
+   * `sandbox: false` trade-off below is conditional on this window only ever
+   * loading local, first-party content, and pointing it at http://localhost
+   * during development would make that a habit rather than a guarantee.
+   * `npm run dev` rebuilds on change instead.
+   */
+  const page = path.join(__dirname, '..', 'dist-renderer', 'index.html');
+  if (!fsSync.existsSync(page)) {
+    dialog.showErrorBox(
+      'The renderer has not been built',
+      `Expected ${page}\n\nRun: npm run build:renderer`
+    );
+    app.quit();
+    return win;
+  }
+  win.loadFile(page);
   return win;
 }
 

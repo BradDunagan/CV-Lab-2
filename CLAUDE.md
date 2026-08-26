@@ -33,24 +33,28 @@ src/lab/parser.js    the command language
 src/lab/session.js   slots, execution, the log, the provenance graph
 src/lab/corners.js   corner hypotheses (pure JS — no pixels involved)
 src/preload.js       owns the session and every buffer handle
-src/renderer/        page script; no require, no fs, no pixels
+src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
+dist-renderer/       what Vite builds from it — this is what Electron loads
 test/                eleven suites; ten run under plain node
 ```
 
 ## Commands
 
 ```bash
-npm test                # everything — eleven suites, ~285 tests
+npm test                # everything — eleven suites, ~287 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
-npm start               # launch the app
+npm start               # build the renderer, then launch the app
 npm run build:native    # compile the addon
+npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
+npm run dev:renderer    # the same, in watch mode
 ```
 
 ## Constraints that are not negotiable without a reason
 
 - **Node-API, never NAN.** One binary works under both Node and Electron. Verified, not assumed.
 - **`sandbox: false` on the window**, with `contextIsolation` on and `nodeIntegration` off. It exists so the preload can `require()` a real `.node`. Conditional on this window only ever loading local, first-party content.
-- **Pixels never cross the contextBridge.** It deep-copies typed arrays — measured. The preload owns the buffers and renders into the canvas directly.
+- **Pixels never cross the contextBridge.** It deep-copies typed arrays — measured. The preload owns the buffers and renders into the canvas directly. Svelte owns the DOM and only the DOM: a pane hands the preload a canvas **id**, because a DOM node cannot cross the bridge either.
+- **No dev server.** The renderer is always a `file://` URL, built by Vite. `sandbox: false` is conditional on this window only ever loading local, first-party content, and a window that can point at `http://localhost` is a window that can point anywhere.
 - **Electron forbids external ArrayBuffers** (`napi_status 22`). C-owned memory cannot be aliased from JS; access is an explicit copy, and the names say so.
 - **Determinism rules live in `design-lab-model.md` §5.** Fixed summation order, no `-ffast-math`, and *where two routes reach the same value, make them agree on purpose*. Canonical numbering for anything that assigns identities.
 

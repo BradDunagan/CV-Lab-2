@@ -1,0 +1,31 @@
+/*
+ * The host page.
+ *
+ * paneless styles itself for a light theme with hardcoded colours; the lab has
+ * always been dark, because a display transform is easier to judge against a
+ * dark surround. Rather than fight paneless's internals, the app's own chrome
+ * uses these variables and paneless keeps its own look for the frame and pane
+ * furniture. Where paneless later moves to CSS variables (its
+ * docs/cv-lab-compatibility.md proposes exactly that), these are what they
+ * would map onto.
+ */
+:root {
+  color-scheme: dark;
+  --cv-tile-bg: #101014;
+  --cv-chrome: #17171d;
+  --cv-input: #0e0e12;
+  --cv-border: #2a2a33;
+  --cv-text: #d8d8e0;
+  --cv-dim: #7c7c8a;
+  --cv-accent: #6ea8fe;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0b0e;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+}
+
+#app { height: 100vh; }

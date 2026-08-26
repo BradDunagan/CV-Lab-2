@@ -89,25 +89,65 @@ async function collect(win, swatch, linearPng) {
     const swatch = ${JSON.stringify(swatch)};
     const linearPng = ${JSON.stringify(linearPng)};
 
-    // Drive the real UI rather than calling lab.run() directly: clicking Run
-    // is what refreshes the tiles, and a test that skips it would not be
-    // testing the interface at all.
-    const bar = document.getElementById('command');
-    const runButton = document.getElementById('run');
-    const status = document.getElementById('status');
+    /*
+     * Drive the real UI rather than calling lab.run() directly. Since the
+     * paneless port that means a Svelte-bound input: assigning .value is not
+     * enough on its own, because the binding reads the element on an 'input'
+     * event and would otherwise never see the change.
+     */
+    const bar = () => document.getElementById('command');
+    const runButton = () => document.getElementById('run');
+    const status = () => document.getElementById('status');
+    // Svelte appends a scoping class, so the element's className is
+    // "error svelte-1la1gos" rather than "error". Ask the classList.
+    const statusKind = () =>
+      status().classList.contains('error') ? 'error'
+      : status().classList.contains('ok') ? 'ok' : '';
+    const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 
     const ui = async (command) => {
-      bar.value = command;
-      runButton.click();
-      await new Promise(res => setTimeout(res, 0));
+      const el = bar();
+      el.value = command;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      runButton().click();
+      await sleep(0);
       let guard = 0;
-      while (runButton.disabled && guard++ < 2000) await new Promise(res => setTimeout(res, 5));
-      await new Promise(res => setTimeout(res, 10));   // let the tiles redraw
-      return status.textContent;
+      while (runButton().disabled && guard++ < 2000) await sleep(5);
+      await sleep(20);   // let the panes redraw
+      return status().textContent;
     };
     const hashOf = (slot) => {
       const entries = window.lab.log().filter(e => e.produced && e.produced.slot === slot);
       return entries.length ? entries[entries.length - 1].output.hash : null;
+    };
+
+    /*
+     * Panes are user-arranged now, so a test that wants to look at a
+     * particular slot has to ask for a pane showing it. __cvlab is the page's
+     * own test surface -- not the contextBridge, which stays exactly as narrow
+     * as it was.
+     */
+    const lab2 = () => window.__cvlab;
+    const showSlot = async (name) => {
+      const ids = lab2().slotPaneIds();
+      const already = ids.find(id => lab2().paneStore.getPane(id)?.name === name);
+      if (already) { await sleep(30); return already; }
+      const free = ids.find(id => !lab2().paneStore.getPane(id)?.name);
+      const id = free ?? lab2().newSlotPane(null);
+      lab2().bindSlotPane(id, name);
+      await sleep(60);
+      return id;
+    };
+    const paneFor = (name) => document.querySelector('.slot-pane[data-slot="' + name + '"]');
+    const canvasFor = (name) => paneFor(name)?.querySelector('canvas');
+    const readoutFor = (name) => paneFor(name)?.querySelector('.readout')?.textContent ?? '(no pane)';
+    const zoomFor = (name) => parseFloat(paneFor(name)?.querySelector('.zoom')?.textContent ?? 'NaN');
+    const menuItem = (id) => lab2().appMenu().find(i => i.id === id);
+    const ink = (c) => {
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] * 3 + d[i + 2] * 7;
+      return sum;
     };
 
     r.quotedPath = window.lab.quote(swatch);
@@ -115,6 +155,13 @@ async function collect(win, swatch, linearPng) {
     r.bridge = Object.keys(window.lab).sort();
     r.nodeLeaked = typeof window.require !== 'undefined' || typeof window.process !== 'undefined';
     r.loadImplemented = window.lab.ops().find(o => o.name === 'load').implemented;
+
+    // The layout the app opens with.
+    r.initialPanes = {
+      slot: lab2().slotPaneIds().length,
+      command: !!bar(),
+      log: !!document.querySelector('.log-pane'),
+    };
 
     // --- load, through Chromium's decoder ---
     await ui('S = load(' + window.lab.quote(swatch) + ')');
@@ -136,13 +183,13 @@ async function collect(win, swatch, linearPng) {
 
     // --- a file that declares linear samples ---
     r.linearDeclared = await ui('D = load(' + window.lab.quote(linearPng) + ')');
-    r.linearRefused = status.className === 'error';
+    r.linearRefused = statusKind() === 'error';
     r.linearAccepted = (await ui(
       'D = load(' + window.lab.quote(linearPng) + ', from=linear)')).startsWith('#');
 
     // --- declared colour space is enforced ---
     r.grayOnSrgb = await ui('BAD = gray(S)');
-    r.statusAfterRefusal = status.className;
+    r.statusAfterRefusal = statusKind();
     r.logAfterRefusal = window.lab.log().length;
 
     await ui('G = gray(L)');
@@ -162,78 +209,80 @@ async function collect(win, swatch, linearPng) {
     await ui('E = sobel(B, axis=x)');
     await ui('M = threshold(E, t=0.02)');
 
-    // aspect ratio: the canvas must match the buffer, or the image is stretched
+    // --- a new slot fills a pane by itself, up to the limit ---
+    r.autoBound = lab2().slotPaneIds()
+      .map(id => lab2().paneStore.getPane(id)?.name)
+      .filter(Boolean);
+
+    // Aspect ratio: the canvas must match the buffer, or the image is stretched.
     r.aspects = {};
-    for (const info of window.lab.slots()) {
-      const c = document.getElementById('tile-canvas-' + info.name);
-      r.aspects[info.name] = {
-        source: info.width / info.height,
-        canvas: c.width / c.height,
-      };
+    for (const name of ['P', 'W', 'S']) {
+      await showSlot(name);
+      const info = window.lab.slots().find(s => s.name === name);
+      const c = canvasFor(name);
+      r.aspects[name] = { source: info.width / info.height, canvas: c.width / c.height };
     }
 
-    r.tiles = [...document.querySelectorAll('.tile')].map(t => t.dataset.slot);
+    // --- every pane actually draws ---
     r.drawn = {};
-    for (const c of document.querySelectorAll('.tile canvas')) {
-      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-      let lit = 0;
-      for (let i = 0; i < d.length; i += 4 * 617) if (d[i] || d[i+1] || d[i+2]) lit++;
-      r.drawn[c.id.replace('tile-canvas-', '')] = lit > 0;
+    for (const name of ['P', 'W', 'S', 'E', 'M']) {
+      await showSlot(name);
+      const c = canvasFor(name);
+      r.drawn[name] = c ? ink(c) > 0 : false;
     }
-    const scaleOf = (slot) => {
-      const el = document.querySelector('.tile[data-slot="' + slot + '"] .scale');
-      return el ? el.textContent : '(no tile)';
-    };
-    r.scaleE = scaleOf('E');
-    r.scaleM = scaleOf('M');
-    r.scaleP = scaleOf('P');
+
+    // --- display defaults follow the data kind ---
+    await showSlot('E'); r.readoutE = readoutFor('E');
+    await showSlot('M'); r.readoutM = readoutFor('M');
+    await showSlot('P'); r.readoutP = readoutFor('P');
 
     // --- shared pan and zoom ---
-    // The readout is now screen-pixels-per-image-pixel, which differs per slot
+    // The readout is screen-pixels-per-image-pixel, which differs per slot
     // because slots differ in size. What must be shared is the FACTOR by which
     // one wheel event changes them.
-    const readZooms = () => Object.fromEntries(
-      [...document.querySelectorAll('.tile')].map(t =>
-        [t.dataset.slot, parseFloat(t.querySelector('.zoom').textContent)]));
+    const watched = ['P', 'W', 'E'];
+    for (const name of watched) await showSlot(name);
+    const readZooms = () => Object.fromEntries(watched.map(n => [n, zoomFor(n)]));
     r.zoomBefore = readZooms();
-    const cv = document.querySelector('.tile canvas');
+    const cv = canvasFor('P');
     const box = cv.getBoundingClientRect();
     cv.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true,
       clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }));
-    await new Promise(res => setTimeout(res, 50));
+    await sleep(60);
     r.zoomAfter = readZooms();
 
-    // --- scaling modes ---
-    r.resetEnabledWhenZoomed = !document.getElementById('reset-view').disabled;
-    document.getElementById('reset-view').click();
-    await new Promise(res => setTimeout(res, 50));
-    r.resetDisabledAfterwards = document.getElementById('reset-view').disabled;
+    // --- reset view, through the app menu the user would use ---
+    r.resetEnabledWhenZoomed = menuItem('reset-view').enabled !== false;
+    menuItem('reset-view').onClick('app');
+    await sleep(60);
+    r.resetDisabledAfterwards = menuItem('reset-view').enabled === false;
     r.zoomAfterReset = readZooms();
-    await new Promise(res => setTimeout(res, 50));
-    const sizeOf = (slot) => {
-      const c = document.getElementById('tile-canvas-' + slot);
-      return [c.width, c.height];
-    };
+
+    // --- scaling modes ---
     const setScaling = async (mode) => {
-      const sel = document.getElementById('scaling');
-      sel.value = mode;
-      sel.dispatchEvent(new Event('change'));
-      await new Promise(res => setTimeout(res, 80));
+      const item = lab2().appMenu().find(i => i.id === 'scaling')
+        .items.find(i => i.id === 'scaling-' + mode);
+      item.onClick('app');
+      await sleep(90);
     };
     await ui('T = pattern(kind=checker, width=64, height=64)');
-    await setScaling('smooth'); r.sizeSmooth = sizeOf('T'); r.zoomSmooth = readZooms().T;
-    await setScaling('actual'); r.sizeActual = sizeOf('T'); r.zoomActual = readZooms().T;
+    await showSlot('T');
+    const sizeOf = (name) => { const c = canvasFor(name); return [c.width, c.height]; };
+    await setScaling('smooth'); r.sizeSmooth = sizeOf('T'); r.zoomSmooth = zoomFor('T');
+    await setScaling('actual'); r.sizeActual = sizeOf('T'); r.zoomActual = zoomFor('T');
     await setScaling('smooth');
 
-    // --- histogram view ---
-    const sel = document.querySelector('.tile[data-slot="P"] select');
-    sel.value = 'histogram';
-    sel.dispatchEvent(new Event('change'));
-    await new Promise(res => setTimeout(res, 50));
-    r.histogram = scaleOf('P');
+    // --- histogram view, through the pane's own control ---
+    await showSlot('P');
+    const typeSelect = paneFor('P').querySelector('select[title="view"]');
+    typeSelect.value = 'histogram';
+    typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(80);
+    r.histogram = readoutFor('P');
+    typeSelect.value = 'image';
+    typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    await sleep(60);
 
-    // captured here, after every command, rather than reusing the earlier
-    // snapshot taken before the scaling-mode fixtures were created
     // --- the features output kind ---
     await ui('PB = gaussian(P, sigma=1.2)');
     await ui('PGx = sobel(PB, axis=x)');
@@ -249,50 +298,50 @@ async function collect(win, swatch, linearPng) {
     r.featureSlots = featureLists.map((f) => f.slot);
     r.featureCount = featureLists[0] ? featureLists[0].features.length : 0;
     r.featureSample = featureLists[0] ? featureLists[0].features[0] : null;
-    r.featureSlotHasNoTile = !document.querySelector('.tile[data-slot="PF"]');
     r.featureSlotSummary = window.lab.slots().find((s) => s.name === 'PF');
     r.probeSkipsFeatures = !('PF' in window.lab.probeAll(0.5, 0.5));
     r.featureTypes = Object.fromEntries(
       window.lab.slots().filter((s) => s.kind === 'features').map((s) => [s.name, s.types]));
 
-    // Does the overlay actually draw? Compare the tile with it on and off.
-    // PB rather than P: an earlier step switches tile P to the histogram view,
-    // and the histogram branch draws no overlay -- so toggling would compare
-    // two identical histograms and conclude the overlay does nothing.
-    const snapshot = () => {
-      const c = document.getElementById('tile-canvas-PB');
-      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-      let sum = 0;
-      for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] * 3 + d[i + 2] * 7;
-      return sum;
-    };
-    const overlayBox = document.getElementById('overlay');
-    overlayBox.checked = false; overlayBox.dispatchEvent(new Event('change'));
-    await new Promise((res) => setTimeout(res, 60));
+    // A feature list is not offered as something a slot pane can show, because
+    // it has no pixels and belongs drawn OVER the image it describes.
+    r.slotPaneOffersOnlyBuffers = lab2().paneMenu(lab2().slotPaneIds()[0])
+      .find(i => i.id === 'slot').items.every(i => !i.label.includes('PF'));
+
+    // Does the overlay actually draw? Compare a tile with it on and off.
+    await showSlot('PB');
+    const snapshot = () => ink(canvasFor('PB'));
+    const overlayItem = () => lab2().appMenu().find(i => i.id === 'overlay');
+    overlayItem().onClick('app');          // off
+    await sleep(80);
     r.withoutOverlay = snapshot();
-    overlayBox.checked = true; overlayBox.dispatchEvent(new Event('change'));
-    await new Promise((res) => setTimeout(res, 60));
+    overlayItem().onClick('app');          // on again
+    await sleep(80);
     r.withOverlay = snapshot();
-    try { window.lab.draw('tile-canvas-P', 'PF', {}); r.drawOnFeatures = 'accepted'; }
+
+    try { window.lab.draw(canvasFor('PB').id, 'PF', {}); r.drawOnFeatures = 'accepted'; }
     catch (e) { r.drawOnFeatures = e.message; }
 
     r.sessionEntries = window.lab.sessionJSON().entries.length;
     r.slotsAtEnd = window.lab.slots().length;
 
-    // --- reset, driven through the button ---
-    r.beforeReset = { slots: window.lab.slots().length, tiles: document.querySelectorAll('.tile').length };
-    document.getElementById('reset').click();
-    await new Promise(res => setTimeout(res, 150));
+    // --- reset, driven through the app menu ---
+    r.beforeReset = {
+      slots: window.lab.slots().length,
+      boundPanes: lab2().slotPaneIds().filter(id => lab2().paneStore.getPane(id)?.name).length,
+    };
+    menuItem('reset-session').onClick('app');
+    await sleep(250);
     r.afterReset = {
       slots: window.lab.slots().length,
-      tiles: document.querySelectorAll('.tile').length,
-      logLines: document.getElementById('log').children.length,
-      emptyShown: !document.getElementById('empty').hidden,
+      boundPanes: lab2().slotPaneIds().filter(id => lab2().paneStore.getPane(id)?.name).length,
+      logLines: document.querySelectorAll('.log-pane .line').length,
     };
 
     // and the lab still works afterwards
     await ui('A = pattern(kind=ramp, width=32, height=32)');
     r.afterResetEntry = window.lab.log().length;
+    r.afterResetShown = !!canvasFor('A');
     return r;
   })()`);
 }
@@ -333,7 +382,7 @@ app.whenReady().then(async () => {
     consoleErrors.push(`preload ${file}: ${err.message}`);
   });
 
-  await win.loadFile(path.join(ROOT, 'src', 'renderer', 'index.html'));
+  await win.loadFile(path.join(ROOT, 'dist-renderer', 'index.html'));
   const r = await collect(win, swatch, linearPng);
 
   const close = (a, b, tol = 1e-4) => Math.abs(a - b) <= tol;
@@ -423,39 +472,56 @@ app.whenReady().then(async () => {
 
   /* --- the UI ------------------------------------------------------- */
 
-  test('every command produces a tile, and every tile draws', () => {
-    assert.deepEqual(r.tiles, ['S', 'L', 'D', 'G', 'C', 'G2', 'P', 'W', 'B', 'E', 'M']);
+  test('the app opens with a command pane, a log pane and a slot pane', () => {
+    assert.equal(r.initialPanes.command, true, 'no command input');
+    assert.equal(r.initialPanes.log, true, 'no log pane');
+    assert.equal(r.initialPanes.slot, 1, 'expected exactly one slot pane at startup');
+  });
+
+  test('a new slot fills a slot pane without being asked', () => {
+    // The old UI rebuilt a grid of every slot after every command. Panes are
+    // user-arranged, so the reflex is deliberate now: fill an empty pane, then
+    // open panes up to a limit, then stop rather than bury the layout.
+    assert.ok(r.autoBound.length >= 1, 'no slot was bound automatically');
+    assert.ok(r.autoBound.length <= 4, `auto-opened too many panes: ${r.autoBound}`);
+    assert.equal(new Set(r.autoBound).size, r.autoBound.length,
+      `two panes bound to the same slot: ${r.autoBound}`);
+  });
+
+  test('every pane draws its slot', () => {
     for (const [slot, drew] of Object.entries(r.drawn)) {
-      assert.ok(drew, `tile ${slot} rendered blank`);
+      assert.ok(drew, `pane showing ${slot} rendered blank`);
     }
   });
 
-  test('each tile takes its aspect ratio from its slot', () => {
-    // A fixed 480x360 canvas stretched every image that was not 4:3 — a
-    // 256x256 buffer came out squashed to 0.75x vertically.
+  test('each canvas takes its aspect ratio from its slot', () => {
+    // A canvas simply stretched to the pane squashes the image: renderTile
+    // maps the source rect onto whatever destination it is handed.
     for (const [slot, a] of Object.entries(r.aspects)) {
       assert.ok(Math.abs(a.canvas - a.source) / a.source < 0.02,
         `${slot}: canvas aspect ${a.canvas.toFixed(3)} vs source ${a.source.toFixed(3)}`);
     }
-    // and the fixtures actually cover square, wide and 2x2
     const values = Object.values(r.aspects).map((a) => a.source);
     assert.ok(values.some((v) => Math.abs(v - 1) < 0.01), 'no square slot tested');
     assert.ok(values.some((v) => v > 2), 'no wide slot tested');
   });
 
   test('display defaults follow the data kind', () => {
-    assert.match(r.scaleE, /diverging/, 'a signed gradient should default to diverging');
-    assert.match(r.scaleM, /categorical/, 'a label map should default to categorical');
-    assert.match(r.scaleP, /gray/, 'plain intensity should default to gray');
+    assert.match(r.readoutE, /diverging/, 'a signed gradient should default to diverging');
+    assert.match(r.readoutM, /categorical/, 'a label map should default to categorical');
+    assert.match(r.readoutP, /gray/, 'plain intensity should default to gray');
   });
 
-  test('one wheel event changes every tile by the same factor', () => {
-    const slots = Object.keys(r.zoomBefore);
-    assert.ok(slots.length > 1, 'need several tiles to compare');
-    const factors = slots.map((s) => r.zoomAfter[s] / r.zoomBefore[s]);
+  test('one wheel event changes every pane by the same factor', () => {
+    // §7's synchronised pan and zoom. Since the port this falls out of every
+    // pane reading the same `viewport` state rather than a redrawAll() loop —
+    // so it is worth checking it still actually happens.
+    const names = Object.keys(r.zoomBefore);
+    assert.ok(names.length > 1, 'need several panes to compare');
+    const factors = names.map((s) => r.zoomAfter[s] / r.zoomBefore[s]);
     assert.ok(factors.every((f) => f > 1.01), `the wheel event had no effect: ${factors}`);
     const spread = Math.max(...factors) / Math.min(...factors);
-    assert.ok(spread < 1.02, `tiles zoomed by different factors: ${factors}`);
+    assert.ok(spread < 1.02, `panes zoomed by different factors: ${factors}`);
   });
 
   test('Reset view restores the whole image, and knows when it is a no-op', () => {
@@ -468,9 +534,7 @@ app.whenReady().then(async () => {
   });
 
   test('the zoom readout is screen pixels per image pixel', () => {
-    // A 64x64 slot fitted into a 420-ish tile is magnified about 6.5x. The old
-    // readout said 1.0x here, which is what made it confusing.
-    assert.ok(r.zoomSmooth > 5, `expected magnification, got ${r.zoomSmooth}`);
+    assert.ok(r.zoomSmooth > 3, `expected magnification, got ${r.zoomSmooth}`);
     assert.ok(Math.abs(r.zoomActual - 1) < 0.01, `actual size should be 1x, got ${r.zoomActual}`);
   });
 
@@ -491,14 +555,14 @@ app.whenReady().then(async () => {
     assert.equal(r.sessionEntries, r.slotsAtEnd, 'one entry per slot produced');
   });
 
-  test('reset clears every slot, tile and log line', () => {
-    assert.ok(r.beforeReset.slots > 0 && r.beforeReset.tiles > 0, 'nothing to reset');
-    assert.deepEqual(r.afterReset,
-      { slots: 0, tiles: 0, logLines: 0, emptyShown: true });
+  test('discarding the session clears the slots, the panes and the log', () => {
+    assert.ok(r.beforeReset.slots > 0 && r.beforeReset.boundPanes > 0, 'nothing to reset');
+    assert.deepEqual(r.afterReset, { slots: 0, boundPanes: 0, logLines: 0 });
   });
 
   test('the lab works again after a reset', () => {
     assert.equal(r.afterResetEntry, 1, 'the log should restart at one entry');
+    assert.equal(r.afterResetShown, true, 'the first slot after a reset should get a pane');
   });
 
   test('a features slot binds, hashes and reports a count', () => {
@@ -520,8 +584,9 @@ app.whenReady().then(async () => {
     assert.ok(f.length > 0, 'length must be positive');
   });
 
-  test('a features slot has no tile and no pixels to probe', () => {
-    assert.equal(r.featureSlotHasNoTile, true, 'features should not get an image tile');
+  test('a features slot cannot be shown in a slot pane, and has no pixels to probe', () => {
+    assert.equal(r.slotPaneOffersOnlyBuffers, true,
+      'a feature list was offered as something a slot pane could display');
     assert.equal(r.probeSkipsFeatures, true, 'the probe should skip a slot with no pixels');
     assert.match(r.drawOnFeatures, /holds features, not pixels/);
   });

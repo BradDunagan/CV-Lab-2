@@ -754,6 +754,46 @@ Three compilers: clang (macOS), MSVC (Windows), gcc (Linux). See
 
 Endianness is not a concern; all three targets are little-endian.
 
+### The renderer is a build now, and there is still no dev server
+
+The UI is Svelte 5 on top of [paneless](../../paneless-workspace), which means
+Vite compiles `src/renderer/` into `dist-renderer/` and Electron loads that.
+Three things about doing this in an Electron app rather than a web app:
+
+**No dev server, deliberately.** The obvious setup points `loadURL` at
+`http://localhost:5173` in development. This project does not, because
+`sandbox: false` above carries one condition — *this window must only ever load
+local, first-party content* — and a window that can point at localhost is a
+window that can point anywhere. `npm run dev` runs `vite build --watch` and the
+window stays on a `file://` URL, so the condition holds by construction rather
+than by remembering. The cost is a rebuild instead of hot reload; the addon
+already forces a restart on most changes anyway.
+
+**`base: './'`, or nothing loads.** Vite's default emits absolute `/assets/…`
+hrefs. Under `file://` there is no server root and `/assets/…` resolves to the
+filesystem root, so the page comes up blank with no error worth reading.
+
+**`modulePreload: false`.** Vite injects a small inline `<script>` to polyfill
+`link rel=modulepreload`, and the page's CSP is `script-src 'self'`, which
+refuses it. Nothing here is big enough for preloading to matter.
+
+`style-src` did have to gain `'unsafe-inline'`: Svelte injects component styles
+as inline `<style>` elements. That is inline *style*, not inline script — it
+cannot execute anything, and `script-src` stays as strict as it was.
+
+**Package the build, not the source.** `electron-builder.yml` excludes
+`src/renderer/**/*` and includes `dist-renderer/**/*`. Shipping both would put
+two copies of the UI in the bundle, one of which cannot run.
+`scripts/verify-package.js` asserts both halves, because "the installers built
+and the app opens on an error dialog" is the same shape of failure as the ASAR
+trap and deserves the same kind of check.
+
+Unlike the addon, the renderer bundle goes *inside* `app.asar`: Chromium reads
+it through Electron's patched `fs`, which reads the archive fine. Only
+`dlopen` cannot.
+
+---
+
 ### Threading rules for the addon
 
 - The `Execute` callback of `napi_create_async_work` runs on a **background

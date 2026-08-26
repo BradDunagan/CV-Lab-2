@@ -2,56 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <!--
+      Unchanged in spirit from the pre-Svelte page: no remote origins, no eval.
+      style-src gains 'unsafe-inline' because Svelte injects component styles as
+      inline <style> elements at runtime -- which is inline STYLE, not inline
+      script, and cannot execute anything.
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"
     />
     <title>cv-lab-2</title>
-    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="bar">
-      <button id="open">Open Image…</button>
-      <select id="op-menu" title="Insert a command template"></select>
-      <input id="command" type="text" spellcheck="false" autocomplete="off"
-             placeholder="A = pattern(kind=checker, width=512, height=512)" />
-      <button id="run">Run</button>
-      <div class="spacer"></div>
-      <label class="cols" title="Draw fitted segments over matching tiles">
-        <input id="overlay" type="checkbox" checked /> fits
-      </label>
-      <label class="cols">cols
-        <input id="cols" type="range" min="1" max="4" value="2" />
-      </label>
-      <select id="scaling" title="How a slot is scaled into its tile">
-        <option value="smooth">fit · smooth</option>
-        <option value="pixels">fit · pixels</option>
-        <option value="actual">actual size</option>
-      </select>
-      <button id="reset-view" title="Return to the whole image. Scroll a tile to zoom, drag to pan.">Reset view</button>
-      <button id="save">Save session</button>
-      <button id="reset" title="Discard every slot and the log">Reset</button>
-    </header>
-
-    <main>
-      <div id="tiles"></div>
-      <p id="empty">
-        No slots yet. Try <code>A = pattern(kind=checker, width=512, height=512)</code>,
-        then <code>B = gaussian(A, sigma=3)</code>.
-      </p>
-    </main>
-
-    <!-- One readout for every slot at once, §7. -->
-    <div id="probe" class="probe" hidden></div>
-
-    <footer>
-      <div id="log" class="log"></div>
-      <div class="status">
-        <span id="status">Ready.</span>
-        <span id="versions"></span>
-      </div>
-    </footer>
-
-    <script src="renderer.js"></script>
+    <div id="app"></div>
+    <script type="module" src="./main.js"></script>
   </body>
 </html>

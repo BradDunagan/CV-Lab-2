@@ -56,9 +56,12 @@ stops working fails the build rather than the reader.
 Turn on **fits** in the toolbar to draw the results over the image they came
 from.
 
-Each command creates a tile. Hover anywhere to read that pixel **in every slot
-at once**; scroll to zoom — all tiles move together. Pick an operation from the
-menu to have its command written into the bar for you.
+Each command fills a **slot pane** — an empty one if there is one, otherwise a
+new one, up to four. Panes are [paneless](../paneless-workspace) frames: split
+them, tab them, drag them between frames, resize them. Hover anywhere to read
+that pixel **in every slot at once**; scroll to zoom — all panes move together,
+because they all read one shared viewport. Pick an operation from the menu to
+have its command written into the bar for you.
 
 Notice that `E` renders on a diverging colormap centred on zero, because a
 Sobel response is signed, and `M` renders categorical, because a mask is an
@@ -96,7 +99,9 @@ src/lab/session.js     slots, execution, the log, the provenance graph
 src/lab/corners.js     corner hypotheses (pure JS — no pixels involved)
 src/main.js            main process: window, save dialog
 src/preload.js         owns the session and every buffer handle
-src/renderer/          page script; no require, no fs, no pixels
+src/renderer/          Svelte 5 + paneless: App, lab state, and one component
+                       per pane. No require, no fs, no pixels
+dist-renderer/         Vite's output — the only thing the window ever loads
 scripts/png.js         a PNG encoder, and the colour chunks `load` reads
 test/                  ten suites under plain node, plus test/renderer.js
                        which needs a real Electron renderer
@@ -112,6 +117,7 @@ notes/                   working notes; unlike docs/, never obliged to be curren
 |---|---|
 | `npm test` | Everything |
 | `npm run build:native` | Compile the addon with node-gyp |
+| `npm run build:renderer` | Vite build of the Svelte renderer |
 | `npm run rebuild:electron` | Rebuild against Electron's headers |
 | `npm start` | Launch the app |
 | `npm run package` | Unsigned installers into `dist/` |
@@ -129,6 +135,8 @@ condition: this window must only ever load local, first-party content.
 **Pixels never cross the contextBridge.** It deep-copies typed arrays — measured
 — so the preload owns the buffers and renders into the canvas directly, with
 downsampling done in C. A 12 MP slot in a 480×360 tile sends nothing at all.
+Svelte owns the DOM and only the DOM: a pane hands the preload a canvas **id**,
+never the element, because a DOM node cannot cross the bridge either.
 
 All three are explained in `docs/electron-guide.md`.
 

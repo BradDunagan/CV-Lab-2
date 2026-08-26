@@ -9,6 +9,12 @@
  * app dies on launch because the .node never made it into the bundle, or made
  * it in but is stranded inside app.asar where dlopen cannot reach it.
  *
+ * Since the renderer became a Vite build there is a second thing that can be
+ * absent from a perfectly green build: the bundle itself. src/renderer/ is
+ * Svelte source that only Vite can read and is deliberately NOT packaged, so
+ * if dist-renderer/ is missing the window has nothing to load and the app
+ * opens on an error dialog. Same shape of failure, same place to catch it.
+ *
  *   node scripts/verify-package.js
  */
 
@@ -70,7 +76,41 @@ for (const asar of asars) {
   }
 }
 
-// 3. Report the installers produced, so a silently-empty build is obvious.
+// 3. The built renderer must be inside the archive.
+//     It goes IN the asar rather than beside it: unlike a .node, it is read by
+//     Chromium through Electron's patched fs, which reads the archive fine.
+const { execFileSync } = require('node:child_process');
+for (const asar of asars) {
+  let listing = '';
+  try {
+    listing = execFileSync('npx', ['asar', 'list', asar], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    problems.push(`${path.relative(DIST, asar)}: could not be listed -- is it a valid asar?`);
+    continue;
+  }
+  const lines = listing.split('\n');
+  const built = lines.filter((l) => l.startsWith('/dist-renderer/'));
+  const source = lines.filter((l) => l.startsWith('/src/renderer/'));
+  const entry = built.some((l) => l === '/dist-renderer/index.html');
+  const script = built.some((l) => l === '/dist-renderer/renderer.js');
+
+  if (!entry || !script) {
+    problems.push(
+      `${path.relative(DIST, asar)}: dist-renderer/ is missing index.html or renderer.js ` +
+        `-- run \`npm run build:renderer\` before packaging`
+    );
+  } else {
+    console.log(`  ok   ${path.relative(DIST, asar)} carries the built renderer (${built.length} files)`);
+  }
+  if (source.length > 0) {
+    problems.push(
+      `${path.relative(DIST, asar)}: ships ${source.length} file(s) of src/renderer/ Svelte source, ` +
+        `which cannot run -- the "!src/renderer/**/*" exclusion stopped matching`
+    );
+  }
+}
+
+// 4. Report the installers produced, so a silently-empty build is obvious.
 const installers = all.filter((p) =>
   /\.(dmg|zip|exe|AppImage|deb|rpm|snap)$/.test(p) && fs.statSync(p).isFile()
 );

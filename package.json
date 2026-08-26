@@ -9,13 +9,15 @@
   },
   "scripts": {
     "build:native": "node-gyp rebuild",
+    "build:renderer": "vite build",
+    "dev:renderer": "vite build --watch",
     "lint:native": "node scripts/lint-native.js",
     "rebuild:electron": "node scripts/rebuild-electron.js",
     "test:native": "node test/smoke.js && node test/buffer.js && node test/kernels.js && node test/render.js",
     "sample": "node scripts/make-sample.js 12",
-    "start": "electron .",
-    "dev": "npm run rebuild:electron && electron .",
-    "package": "electron-builder --publish never",
+    "start": "npm run build:renderer && electron .",
+    "dev": "npm run rebuild:electron && npm run build:renderer && electron .",
+    "package": "npm run build:renderer && electron-builder --publish never",
     "verify:package": "node scripts/verify-package.js",
     "test:lab": "node test/registry.js && node test/session.js && node test/png.js && node test/corners.js",
     "test:determinism": "node test/determinism.js",
@@ -26,8 +28,12 @@
   "author": "Brad Dunagan <brad.dunagan@gmail.com>",
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3",
-    "node-gyp": "^13.0.1"
+    "node-gyp": "^13.0.1",
+    "paneless": "file:../paneless-workspace/packages/paneless",
+    "svelte": "^5.56.10",
+    "vite": "^7.3.6"
   }
 }

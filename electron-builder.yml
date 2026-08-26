@@ -23,11 +23,19 @@ asar: true
 asarUnpack:
   - build/Release/*.node
 
-# No runtime dependencies -- everything in package.json is a devDependency --
-# so the bundle is just our own source plus the compiled addon.
+# Still no runtime dependencies -- everything in package.json is a
+# devDependency, including svelte, vite and paneless, because Vite BUNDLES the
+# renderer into dist-renderer/ at build time. Nothing from node_modules is
+# needed at runtime.
+#
+# src/renderer/ is deliberately excluded: it is Svelte source that only Vite
+# can read, and shipping it would put two copies of the UI in the package, one
+# of which cannot run.
 files:
   - package.json
   - src/**/*
+  - "!src/renderer/**/*"
+  - dist-renderer/**/*
   - native/**/*.js
   - build/Release/*.node
 
