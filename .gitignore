@@ -12,3 +12,4 @@ tmp/
 # documentation is .md. Keeps `git add -A` from sweeping them in.
 docs/*.txt
 dist-renderer/
+dist-generate/

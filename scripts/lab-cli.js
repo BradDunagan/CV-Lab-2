@@ -191,8 +191,19 @@ app.whenReady().then(async () => {
   });
 
   const pageErrors = [];
-  win.webContents.on('console-message', (_e, level, message) => {
-    if (level >= 2) pageErrors.push(message);
+  /*
+   * Errors only.
+   *
+   * The positional (event, level, message) signature is deprecated in Electron
+   * 43, and its `level` is a NUMBER where 2 is a warning and 3 an error -- so
+   * the obvious `level >= 2` quietly promotes every warning to an error. That
+   * is how a Content-Security-Policy warning came to fail this run and print
+   * itself as a blank line. The event object reports level as a string.
+   */
+  win.webContents.on('console-message', (event) => {
+    if (event.level === 'error' && event.message.trim()) {
+      pageErrors.push(event.message.trim().slice(0, 300));
+    }
   });
 
   /*

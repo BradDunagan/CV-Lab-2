@@ -131,6 +131,8 @@ notes/                   working notes; unlike docs/, never obliged to be curren
 | `npm run build:native` | Compile the addon with node-gyp |
 | `npm run build:renderer` | Vite build of the Svelte renderer |
 | `npm run lab` | Run a pipeline over images, headless — see below |
+| `npm run build:generate` | Build the pt-lab image generator (needs the sibling checkout) |
+| `npm run generate` | Render beauty images with varying position and lighting |
 | `npm run rebuild:electron` | Rebuild against Electron's headers |
 | `npm start` | Launch the app |
 | `npm run package` | Unsigned installers into `dist/` |
@@ -155,6 +157,25 @@ does.
 The command language is unchanged — no variables, no loops (§4). The iteration
 lives in the runner, in JavaScript, which is what "embed a scripting engine
 rather than grow this into a language" means in practice.
+
+## Generating images to run over
+
+```bash
+npm run build:generate                       # once
+npm run generate -- --out generated/ --positions 3 --lighting 2
+npm run lab -- --script pipeline.lab --out results/ generated/*.png
+```
+
+The generator hosts [pt-lab](../pt-lab-workspace) — a GPU path tracer — in a
+window that is never shown, orbits the camera and varies the environment
+intensity, and writes one PNG per combination. It uses pt-lab's own
+`exportPNG`, so each file is **tagged sRGB** (`sRGB` + `gAMA` + `cHRM`) and
+`load` confirms the encoding instead of assuming it.
+
+It is built separately from the app and is not part of `npm test`: it needs a
+real GPU, takes ~20 s per image, and would otherwise pull three.js and an OIDN
+WASM blob into a bundle that has no use for them. It needs the sibling
+`pt-lab-workspace` checkout; nothing else does.
 
 ## Three decisions worth knowing about
 

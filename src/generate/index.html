@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      Served from the gen:// scheme, so 'self' is that origin. wasm-unsafe-eval
+      is needed by oidn-web, the denoiser, which instantiates a WebAssembly
+      module; it permits WASM compilation and nothing else — plain eval() and
+      inline script stay refused. blob: covers the object URL pt-lab creates to
+      hand the finished PNG to the download.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' data: blob:; worker-src 'self' blob:"
+    />
+    <title>CV-Lab image generator</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+    <canvas id="denoise" hidden></canvas>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
