@@ -83,6 +83,32 @@ function parseArgs(argv) {
 
 /** app.exit() does not flush stdout; a pending write to a pipe faults on
  *  Windows. Same lesson as scripts/lab-cli.js. */
+/**
+ * Report a usage problem and stop, BEFORE Electron starts.
+ *
+ * Argument parsing needs nothing from Electron, and exiting from inside it is
+ * where the trouble was: app.exit() terminates immediately and on Windows
+ * intermittently faults with 0xC0000005 -- exit code 3221225477 -- while
+ * Electron's threads are still unwinding. Both cases that failed on the
+ * windows runner were usage paths, `--help` and an unknown option, and neither
+ * had any reason to have started an app at all.
+ *
+ * app.quit() is not the answer either: it ignores process.exitCode and always
+ * exits 0, which is useless for a CLI.
+ *
+ * The write callback still matters -- process.exit() does not flush a pending
+ * write to a pipe any more than app.exit() does.
+ */
+function bail(stream, text, code) {
+  stream.write(text.endsWith('\n') ? text : `${text}\n`, () => process.exit(code));
+}
+
+/**
+ * Finish a run that actually did work, once a window exists.
+ *
+ * app.exit() is unavoidable here -- it is the only way to choose the exit
+ * code -- so flush first and keep the window of exposure small.
+ */
 function writeThenExit(stream, text, code) {
   stream.write(text.endsWith('\n') ? text : `${text}\n`, () => app.exit(code));
 }
@@ -98,30 +124,28 @@ protocol.registerSchemesAsPrivileged([{
 
 /* ------------------------------------------------------------------ */
 
-app.whenReady().then(async () => {
-  let opts;
-  try {
-    opts = parseArgs(process.argv.slice(2));
-  } catch (err) {
-    writeThenExit(process.stderr, `${err.message}\n\n${USAGE}`, 2);
-    return;
-  }
-  if (opts.help || !opts.out) {
-    writeThenExit(process.stdout, USAGE, opts.help ? 0 : 2);
-    return;
-  }
-  if (!fs.existsSync(PAGE)) {
-    writeThenExit(process.stderr,
-      `no generator build at ${PAGE}\nRun: npm run build:generate`, 2);
-    return;
-  }
-  if (!fs.existsSync(PT_ASSETS)) {
-    writeThenExit(process.stderr,
-      `pt-lab's assets are missing:\n  ${PT_ASSETS}\n` +
-      `The generator needs the sibling pt-lab-workspace checkout.`, 2);
-    return;
-  }
+/*
+ * Settled before the app starts -- none of it needs Electron, and every early
+ * exit from inside it was a chance to fault on shutdown. See bail() above.
+ */
+let opts;
+try {
+  opts = parseArgs(process.argv.slice(2));
+} catch (err) {
+  bail(process.stderr, `${err.message}\n\n${USAGE}`, 2);
+}
 
+if (opts && (opts.help || !opts.out)) {
+  bail(process.stdout, USAGE, opts.help ? 0 : 2);
+} else if (opts && !fs.existsSync(PAGE)) {
+  bail(process.stderr, `no generator build at ${PAGE}\nRun: npm run build:generate`, 2);
+} else if (opts && !fs.existsSync(PT_ASSETS)) {
+  bail(process.stderr,
+    `pt-lab's assets are missing:\n  ${PT_ASSETS}\n` +
+    `The generator needs the sibling pt-lab-workspace checkout.`, 2);
+}
+
+app.whenReady().then(async () => {
   fs.mkdirSync(opts.out, { recursive: true });
 
   protocol.handle('gen', (request) => {

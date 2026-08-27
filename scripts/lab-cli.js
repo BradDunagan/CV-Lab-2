@@ -106,6 +106,32 @@ and then runs your script, so write it against <slot>.
  * The callback fires once the stream has flushed, and writes are ordered, so
  * anything logged before this has flushed too.
  */
+/**
+ * Report a usage problem and stop, BEFORE Electron starts.
+ *
+ * Argument parsing needs nothing from Electron, and exiting from inside it is
+ * where the trouble was: app.exit() terminates immediately and on Windows
+ * intermittently faults with 0xC0000005 -- exit code 3221225477 -- while
+ * Electron's threads are still unwinding. Both cases that failed on the
+ * windows runner were usage paths, `--help` and an unknown option, and neither
+ * had any reason to have started an app at all.
+ *
+ * app.quit() is not the answer either: it ignores process.exitCode and always
+ * exits 0, which is useless for a CLI.
+ *
+ * The write callback still matters -- process.exit() does not flush a pending
+ * write to a pipe any more than app.exit() does.
+ */
+function bail(stream, text, code) {
+  stream.write(text.endsWith('\n') ? text : `${text}\n`, () => process.exit(code));
+}
+
+/**
+ * Finish a run that actually did work, once a window exists.
+ *
+ * app.exit() is unavoidable here -- it is the only way to choose the exit
+ * code -- so flush first and keep the window of exposure small.
+ */
 function writeThenExit(stream, text, code) {
   stream.write(text.endsWith('\n') ? text : `${text}\n`, () => app.exit(code));
 }
@@ -146,30 +172,30 @@ async function runOne(win, { image, script, opts }) {
 
 /* ------------------------------------------------------------------ */
 
-app.whenReady().then(async () => {
-  let opts;
-  try {
-    opts = parseArgs(process.argv.slice(2));
-  } catch (err) {
-    writeThenExit(process.stderr, `${err.message}\n\n${USAGE}`, 2);
-    return;
-  }
+/*
+ * Arguments and files are settled BEFORE the app starts. None of this needs
+ * Electron, and every early exit from inside it was a chance to fault on
+ * shutdown -- see bail() above.
+ */
+let opts;
+try {
+  opts = parseArgs(process.argv.slice(2));
+} catch (err) {
+  bail(process.stderr, `${err.message}\n\n${USAGE}`, 2);
+}
 
-  if (opts.help || (!opts.script && opts.images.length === 0)) {
-    writeThenExit(process.stdout, USAGE, opts.help ? 0 : 2);
-    return;
-  }
-
+if (opts && (opts.help || (!opts.script && opts.images.length === 0))) {
+  bail(process.stdout, USAGE, opts.help ? 0 : 2);
+} else if (opts) {
   const missing = opts.images.filter((p) => !fs.existsSync(p));
   if (missing.length > 0) {
-    writeThenExit(process.stderr, `no such image:\n  ${missing.join('\n  ')}`, 2);
-    return;
+    bail(process.stderr, `no such image:\n  ${missing.join('\n  ')}`, 2);
+  } else if (opts.script && !fs.existsSync(opts.script)) {
+    bail(process.stderr, `no such script: ${opts.script}`, 2);
   }
-  if (opts.script && !fs.existsSync(opts.script)) {
-    writeThenExit(process.stderr, `no such script: ${opts.script}`, 2);
-    return;
-  }
+}
 
+app.whenReady().then(async () => {
   const script = opts.script
     ? fs.readFileSync(opts.script, 'utf8').split(/\r?\n/)
         .map((line) => line.trim())
