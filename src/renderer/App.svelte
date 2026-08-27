@@ -25,6 +25,7 @@
 
   import SlotPane from './panes/SlotPane.svelte';
   import LogPane from './panes/LogPane.svelte';
+  import GeneratePane from './panes/GeneratePane.svelte';
   import CommandBar from './CommandBar.svelte';
   import {
     lab, viewport, display, slots, probe, status, setStatus, actions,
@@ -46,7 +47,7 @@
    * file never created. rr solves it the same way: fall back to the title, and
    * re-register what the fallback resolved so the lookup is cheap next time.
    */
-  const byTitle = { Log: LogPane };
+  const byTitle = { Log: LogPane, Generate: GeneratePane };
   const isSlotTitle = (t) => typeof t === 'string' && (t === 'Slot' || t.startsWith('Slot '));
 
   function paneContentProvider(paneId, meta) {
@@ -384,6 +385,18 @@
         setStatus('View reset to the whole image.');
         break;
       case 'new-slot-pane': newSlotPane(null); break;
+      case 'generate': {
+        // One at a time: a second frame would race the first over the same
+        // output directory and the same GPU.
+        const open = Object.entries(paneData.byId)
+          .find(([id]) => contentRegistry.get(id) === GeneratePane);
+        if (open) { setStatus('The Generate frame is already open.'); break; }
+        const box = contentBox();
+        makeFrame('Generate', GeneratePane,
+          Math.round(box.width * 0.18), Math.round(box.height * 0.14),
+          Math.round(box.width * 0.64), Math.round(box.height * 0.6));
+        break;
+      }
       case 'new-log-pane': {
         const log = logFrameRect();
         makeFrame('Log', LogPane, log.x, log.y, log.w, log.h);

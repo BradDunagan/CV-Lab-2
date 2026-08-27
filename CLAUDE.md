@@ -34,7 +34,8 @@ src/lab/session.js   slots, execution, the log, the provenance graph
 src/lab/corners.js   corner hypotheses (pure JS — no pixels involved)
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
 scripts/generate-cli.js  drives pt-lab to render varied images (needs a GPU)
-src/generate/        the generator's page — built separately, never in CI
+src/generate/        the generator: page (bundled separately) + main-process
+                     driver shared by the CLI and the app's Generate frame
 src/menu.js          the application menu — global commands live here, not in the UI
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels

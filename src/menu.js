@@ -93,6 +93,8 @@ function buildMenu({ state, send }) {
       submenu: [
         { label: 'New Slot Pane', accelerator: 'CmdOrCtrl+N', click: command('new-slot-pane') },
         { label: 'New Log Pane', click: command('new-log-pane') },
+        { type: 'separator' },
+        { label: 'Generate Images…', accelerator: 'CmdOrCtrl+G', click: command('generate') },
       ],
     },
 

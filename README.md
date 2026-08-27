@@ -166,9 +166,18 @@ npm run generate -- --out generated/ --positions 3 --lighting 2
 npm run lab -- --script pipeline.lab --out results/ generated/*.png
 ```
 
-The generator hosts [pt-lab](../pt-lab-workspace) — a GPU path tracer — in a
-window that is never shown, orbits the camera and varies the environment
-intensity, and writes one PNG per combination. It uses pt-lab's own
+Or from inside the app: **Panes → Generate Images…** (⌘G) opens a frame with
+the same parameters, a progress log, and a *show the render window* box — tick
+it and pt-lab's window appears, path tracing in front of you.
+
+The generator hosts [pt-lab](../pt-lab-workspace) — a GPU path tracer — in its
+own window, orbits the camera and varies the environment intensity, and writes
+one PNG per combination. `--show` does the same from the CLI.
+
+It defaults to a **room** scene, which isolates the subject. `--room none` uses
+pt-lab's default HDR environment: better-looking, and a poor CV fixture,
+because the blurred background and textured tabletop dominate the edge count —
+446 segments against 156 for the same object in a room. It uses pt-lab's own
 `exportPNG`, so each file is **tagged sRGB** (`sRGB` + `gAMA` + `cHRM`) and
 `load` confirms the encoding instead of assuming it.
 

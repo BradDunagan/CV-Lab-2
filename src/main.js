@@ -6,6 +6,13 @@ const fsSync = require('node:fs');
 const path = require('node:path');
 
 const { buildMenu } = require('./menu');
+const generator = require('./generate/driver');
+
+/*
+ * Must happen before the app is ready. Harmless when generation is never used:
+ * it registers a scheme, it does not start anything.
+ */
+generator.registerScheme();
 
 /*
  * The name the operating system shows, which is not the package name.
@@ -101,6 +108,31 @@ function createWindow() {
    * the menu's radio and checkbox items stay truthful. One-way and small:
    * no pixels, no handles, just which scaling mode is current.
    */
+  /*
+   * Image generation, driven from the Generate frame.
+   *
+   * The generator runs in its OWN window loading dist-generate/, not in the
+   * app's renderer — pt-lab is a GPU path tracer with three.js and an OIDN
+   * WASM blob behind it, and bundling that into the app would cost CI a
+   * checkout and the app a few megabytes for a feature the interface does not
+   * otherwise have. So progress comes back over IPC instead, and the app shows
+   * it rather than hosting it.
+   */
+  ipcMain.removeHandler('generate:check');
+  ipcMain.handle('generate:check', () => generator.checkPrerequisites());
+
+  ipcMain.removeHandler('generate:run');
+  ipcMain.handle('generate:run', async (_event, options) => {
+    try {
+      const { files, errors } = await generator.generate(options, (progress) => {
+        if (!win.isDestroyed()) win.webContents.send('generate:progress', progress);
+      });
+      return { ok: true, files, errors };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   ipcMain.removeHandler('menu:state');
   ipcMain.handle('menu:state', (_event, next) => {
     Object.assign(menuState, next);

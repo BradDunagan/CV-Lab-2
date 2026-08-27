@@ -261,6 +261,22 @@ contextBridge.exposeInMainWorld('lab', {
    *  checkbox items reflect reality. */
   setMenuState: (state) => ipcRenderer.invoke('menu:state', state),
 
+  /*
+   * Image generation. Small messages only: options in, progress events and a
+   * list of written paths out. No pixels — the renders are written to disk by
+   * the main process and read back through `load` like any other file.
+   */
+  generate: {
+    /** null if the generator can run, or a sentence saying what is missing. */
+    check: () => ipcRenderer.invoke('generate:check'),
+    run: (options) => ipcRenderer.invoke('generate:run', options),
+    onProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on('generate:progress', listener);
+      return () => ipcRenderer.removeListener('generate:progress', listener);
+    },
+  },
+
   /**
    * Every feature list currently bound, with the coordinate space it belongs
    * to, so the renderer can draw them over a tile of matching size.

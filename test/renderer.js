@@ -360,6 +360,25 @@ async function collect(win, swatch, linearPng) {
     typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
     await sleep(60);
 
+    // --- the Generate frame ---
+    /*
+     * Opened through the menu command, as the menu item does. Whether it can
+     * actually RENDER is not testable here -- pt-lab needs a GPU and the
+     * generator is never built in CI -- but everything up to that point is,
+     * including the case that matters when it is absent.
+     */
+    menu('generate');
+    await sleep(300);
+    r.generate = {
+      opened: !!document.querySelector('.generate-pane'),
+      // A second command must not open a second frame: two would race each
+      // other over one output directory and one GPU.
+      single: (menu('generate'), await sleep(200), document.querySelectorAll('.generate-pane').length),
+      // Either it offers the controls, or it says why it cannot.
+      usable: !!document.querySelector('.generate-pane .controls'),
+      explains: (document.querySelector('.generate-pane .unavailable')?.textContent ?? '').trim(),
+    };
+
     // --- the features output kind ---
     await ui('PB = gaussian(P, sigma=1.2)');
     await ui('PGx = sobel(PB, axis=x)');
@@ -447,6 +466,16 @@ app.whenReady().then(async () => {
   const menuState = [];
   ipcMain.handle('menu:state', (_event, state) => { menuState.push(state); });
 
+  /*
+   * The generator's prerequisite check. Answered here rather than left
+   * unhandled so the Generate frame can be exercised: on a machine with no
+   * dist-generate build -- every CI runner, since the generator is
+   * deliberately never built there -- this reports what is missing and the
+   * pane is expected to say so rather than offer a dead button.
+   */
+  const { checkPrerequisites } = require('../src/generate/driver');
+  ipcMain.handle('generate:check', () => checkPrerequisites());
+
   const win = new BrowserWindow({
     show: false,
     width: 1320,
@@ -476,9 +505,9 @@ app.whenReady().then(async () => {
 
   test('the bridge exposes only the lab API', () => {
     assert.deepEqual(r.bridge, ['basename', 'confirmReset', 'draw', 'features',
-      'histogram', 'log', 'onMenuCommand', 'openImage', 'ops', 'probeAll', 'quote',
-      'reset', 'run', 'saveSession', 'sessionJSON', 'setMenuState', 'slots',
-      'versions']);
+      'generate', 'histogram', 'log', 'onMenuCommand', 'openImage', 'ops',
+      'probeAll', 'quote', 'reset', 'run', 'saveSession', 'sessionJSON',
+      'setMenuState', 'slots', 'versions']);
   });
 
   test('no Node globals leak into page script', () => {
@@ -728,6 +757,17 @@ app.whenReady().then(async () => {
   test('the lab works again after a reset', () => {
     assert.equal(r.afterResetEntry, 1, 'the log should restart at one entry');
     assert.equal(r.afterResetShown, true, 'the first slot after a reset should get a pane');
+  });
+
+  test('the Generate frame opens once, and degrades honestly without a build', () => {
+    assert.equal(r.generate.opened, true, 'the menu command should open a Generate frame');
+    assert.equal(r.generate.single, 1, 'a second command should not open a second frame');
+    // One or the other, never neither: a pane offering nothing and explaining
+    // nothing is the failure worth catching.
+    const offersControls = r.generate.usable;
+    const saysWhyNot = /not built|missing|checkout/i.test(r.generate.explains);
+    assert.ok(offersControls || saysWhyNot,
+      `the frame neither offered controls nor explained why: ${JSON.stringify(r.generate)}`);
   });
 
   test('a features slot binds, hashes and reports a count', () => {
