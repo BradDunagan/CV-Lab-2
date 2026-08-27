@@ -12,9 +12,10 @@
    * `show the render window` and pt-lab's own window appears, path tracing in
    * front of you, while this pane tracks the sweep.
    *
-   * Deliberately a first increment. The parameters below are the ones the CLI
-   * already takes; the room kinds, camera and material controls pt-lab exposes
-   * are the obvious next things to grow here.
+   * Every control here is one field in the options object and one key the
+   * driver already understands, which is what makes growing it cheap — nothing
+   * about the boundary changes when a control is added. `scene` and `truth`
+   * arrived exactly that way.
    */
   import { onMount } from 'svelte';
   import { lab, setStatus } from '../lab.svelte.js';
@@ -29,15 +30,23 @@
 
   const options = $state({
     out: 'generated',
+    scene: 'helmet',
     size: 384,
     samples: 48,
     positions: 3,
     lighting: 2,
-    room: 'room',
+    // 'default' means "whatever this scene asks for" -- the helmet wants a
+    // plain room, the cube wants an area-lit one so that every strong edge in
+    // frame has geometry behind it.
+    room: 'default',
+    truth: false,
+    aovs: false,
+    denoise: false,
     show: false,
   });
 
-  const ROOMS = ['room', 'room-emissive', 'room-arealight', 'none'];
+  const SCENES = ['helmet', 'cube'];
+  const ROOMS = ['default', 'room', 'room-emissive', 'room-arealight', 'none'];
 
   let total = $derived(options.positions * options.lighting);
   let estimate = $derived(total * Math.max(6, Math.round(options.samples * 0.42)));
@@ -60,11 +69,16 @@
     ready = null;
     setStatus(`Generating ${total} image(s)…`);
 
-    // `none` is this app's word for pt-lab's default HDR-environment scene,
-    // which is not one of its room kinds.
+    /*
+     * Three states, and they are all different. `default` leaves the key off
+     * so the scene's own room applies; `none` is this app's word for pt-lab's
+     * default HDR-environment scene, which is not one of its room kinds; a
+     * name is a room kind.
+     */
+    const { room, ...rest } = options;
     const result = await lab.generate.run({
-      ...options,
-      room: options.room === 'none' ? null : options.room,
+      ...rest,
+      ...(room === 'default' ? {} : { room: room === 'none' ? null : room }),
     });
 
     running = false;
@@ -95,10 +109,28 @@
                               bind:value={options.positions} disabled={running} /></label>
       <label>lighting <input type="number" min="1" max="8"
                              bind:value={options.lighting} disabled={running} /></label>
-      <label>scene
+      <label title="cube has twelve edges and eight vertices in known places">
+        scene
+        <select bind:value={options.scene} disabled={running}>
+          {#each SCENES as name}<option value={name}>{name}</option>{/each}
+        </select>
+      </label>
+      <label>room
         <select bind:value={options.room} disabled={running}>
           {#each ROOMS as kind}<option value={kind}>{kind}</option>{/each}
         </select>
+      </label>
+      <label class="check" title="one <name>.gt.json per image: where the edges really are">
+        <input type="checkbox" bind:checked={options.truth} disabled={running} />
+        ground truth
+      </label>
+      <label class="check" title="depth, normal and albedo passes, into <out>/aov/">
+        <input type="checkbox" bind:checked={options.aovs} disabled={running} />
+        AOV passes
+      </label>
+      <label class="check" title="off in pt-lab by default: every image so far carried the raw noise floor">
+        <input type="checkbox" bind:checked={options.denoise} disabled={running} />
+        denoise
       </label>
       <label class="check" title="pt-lab's own window, path tracing in front of you">
         <input type="checkbox" bind:checked={options.show} disabled={running} />
@@ -117,8 +149,14 @@
         Loading the model and building its BVH…
       {:else}
         Roughly {estimate}s for {total} image{total === 1 ? '' : 's'}.
-        A room isolates the subject; <code>none</code> uses pt-lab's HDR
-        environment, whose blurred background dominates the edge count.
+        {#if options.scene === 'cube'}
+          A cube has twelve edges and eight vertices in known places, nine and
+          seven of them visible from a general viewpoint — which is what makes
+          <em>is this corner real</em> a question with an answer.
+        {:else}
+          A room isolates the subject; <code>none</code> uses pt-lab's HDR
+          environment, whose blurred background dominates the edge count.
+        {/if}
       {/if}
     </p>
 
@@ -128,6 +166,10 @@
           <span class="n">{shot.index + 1}/{shot.total}</span>
           <span class="name">{shot.name}</span>
           yaw={shot.yaw.toFixed(2)} intensity={shot.intensity}
+          {#if shot.truth}
+            <span class="gt">gt {shot.truth.visibleEdges}/{shot.truth.edges} edges,
+              {shot.truth.visibleVertices}/{shot.truth.vertices} vertices</span>
+          {/if}
           <span class="ms">{(shot.elapsedMs / 1000).toFixed(1)}s</span>
         </div>
       {/each}
@@ -136,7 +178,11 @@
       {:else if done}
         <div class="line ok">
           {done.files.length} image(s) written. Run them with:
-          <code>npm run lab -- --script pipeline.lab --out results/ {options.out}/*.png</code>
+          <code>npm run lab -- --script pipelines/geometry.lab --as linear{
+            options.truth ? ` --truth ${options.out}` : ''} --out results/ {options.out}/*.png</code>
+          {#if options.truth}
+            then <code>npm run score -- results/</code>
+          {/if}
         </div>
       {/if}
     </div>
@@ -173,6 +219,7 @@
   .n { color: var(--cv-dim, #7c7c8a); }
   .name { color: var(--cv-accent, #6ea8fe); }
   .ms { color: var(--cv-dim, #7c7c8a); }
+  .gt { color: #7ee787; }
   .ok { color: #7ee787; }
   .err { color: #ff7b81; }
   .unavailable { color: var(--cv-dim, #7c7c8a); }

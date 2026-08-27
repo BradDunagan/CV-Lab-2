@@ -12,6 +12,8 @@
 
 const { Registry, defineOp } = require('./registry');
 const { findCorners } = require('./corners');
+const { readGroundTruth } = require('./groundtruth');
+const { matchFeatures } = require('./match');
 
 /**
  * Bind a declared operation to its C kernel.
@@ -70,7 +72,41 @@ function loadKernel(decodeFile) {
   };
 }
 
-function buildOps({ decodeFile } = {}) {
+/**
+ * `groundTruth`'s kernel: a JSON file in, feature records out.
+ *
+ * Injected the same way `load`'s decoder is, though for a different reason.
+ * `load` HAS to borrow Chromium's decoder, which exists only in a renderer;
+ * reading a JSON file is plain Node and works everywhere, so this defaults to
+ * a real read and the injection point exists for tests rather than for
+ * capability. That is why, unlike `load`, this operation is never unimplemented.
+ */
+function groundTruthKernel(readTextFile) {
+  return async ({ params }) => {
+    if (!params.path) throw new Error('groundTruth: path is required');
+    const text = await readTextFile(params.path);
+    const { features, width, height } = readGroundTruth(text, params.path);
+    const wanted = params.kind;
+    return {
+      kind: 'features',
+      features: wanted === 'both'
+        ? features
+        : features.filter((f) => f.type === (wanted === 'edges' ? 'gt-edge' : 'gt-vertex')),
+      // Ground truth has the dimensions of the image it was measured in, the
+      // same as any other feature list -- and `match` checks them, because
+      // scoring a 512-pixel run against 256-pixel truth would otherwise
+      // produce numbers rather than an error.
+      width,
+      height,
+    };
+  };
+}
+
+function defaultReadTextFile(filePath) {
+  return require('node:fs/promises').readFile(filePath, 'utf8');
+}
+
+function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
   return [
     defineOp({
       name: 'load',
@@ -327,6 +363,68 @@ function buildOps({ decodeFile } = {}) {
         width: inputs[0].width,
         height: inputs[0].height,
       }),
+    }),
+
+    defineOp({
+      name: 'groundTruth',
+      version: 1,
+      summary: 'Read a renderer\'s ground truth: where the edges really are.',
+      // A source, like load and pattern -- it takes no slot, it takes a file.
+      inputs: [],
+      params: [
+        { name: 'path', type: 'string', default: '' },
+        // Edges and vertices answer different questions and go to different
+        // comparisons, so which you want is stated rather than assumed.
+        { name: 'kind', type: 'enum', values: ['edges', 'vertices', 'both'], default: 'both' },
+      ],
+      output: { kind: 'features' },
+      cancellable: false,
+      kernel: groundTruthKernel(readTextFile),
+    }),
+
+    defineOp({
+      name: 'match',
+      version: 1,
+      summary: 'Score detected features against ground truth: hits, misses, inventions.',
+      // Two feature lists in, one out. The first operation to consume the kind
+      // twice, and the reason feature types are namespaced: which ground truth
+      // applies is decided by what the detected records SAY they are.
+      inputs: [
+        { name: 'src', kind: 'features' },
+        { name: 'truth', kind: 'features' },
+      ],
+      params: [
+        // Three pixels is about what blur plus non-maximum suppression moves an
+        // edge by, so it is the scale at which "the same edge" stops being a
+        // judgement call. Run it wider and watch precision to see if it matters.
+        { name: 'maxDistance', type: 'number', default: 3, min: 0 },
+        { name: 'maxAngle', type: 'number', default: 20, min: 0, max: 90 },
+        // Which ground-truth edges a detector is answerable for. An edge hidden
+        // behind its own object exists and cannot be seen, and marking a
+        // detector down for missing it would be nonsense.
+        { name: 'minVisible', type: 'number', default: 0.5, min: 0, max: 1 },
+        // Which ground-truth vertices count as CORNERS rather than bends. A
+        // sphere's silhouette is a polyline whose interior points are vertices
+        // of degree two that run almost straight through; a cube's sit near 90.
+        { name: 'minAngle', type: 'number', default: 30, min: 0, max: 90 },
+      ],
+      output: { kind: 'features' },
+      kernel: ({ inputs, params }) => {
+        const [src, truth] = inputs;
+        if (src.width !== truth.width || src.height !== truth.height) {
+          throw new Error(
+            `match: the two feature lists were measured in different images — ` +
+              `${src.width}x${src.height} against ${truth.width}x${truth.height}. ` +
+              `Their coordinates do not mean the same thing.`
+          );
+        }
+        return {
+          kind: 'features',
+          features: matchFeatures(src.features, truth.features, params),
+          width: src.width,
+          height: src.height,
+        };
+      },
     }),
 
     defineOp({

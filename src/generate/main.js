@@ -77,10 +77,68 @@ const api = {
     lab.setObjectTransform(id, { ...current, ...t });
   },
 
+  /**
+   * Replace the whole scene with a built-in one, by library key.
+   *
+   * pt-lab's default scene is a glTF model that arrives through `modelUrl` and
+   * is NOT in the object library, so nothing can address it: no transform, no
+   * per-object ground truth. `applyScene` rebuilds from the library instead —
+   * floor, the objects named here, and a room — and every one of them comes
+   * back with an id from `listObjects()`.
+   *
+   * That matters more than convenience. A helmet is a dense textured mesh with
+   * almost no clean vertices; a cube has eight, in known places. Ground truth
+   * needs a subject whose corners exist.
+   */
+  applyScene({ room = 'room-arealight', objects = [] } = {}) {
+    lab.applyScene({
+      version: 1,
+      room,
+      objects: objects.map((key) => ({ key, included: true })),
+      camera: null,
+    });
+    return lab.listObjects();
+  },
+
+  /**
+   * The auxiliary passes for the current camera: depth, normal, albedo.
+   *
+   * Raster-only, so the whole set costs a frame next to the ~20 s the beauty
+   * render takes. They are written UNTAGGED, carrying linear code values, so
+   * anything reading them has to say `from=linear` — the lab refuses to guess.
+   */
+  aovs(size, base, which) {
+    return lab.exportAOVs(size, base, which);
+  },
+
+  /**
+   * Where the edges of this view really are.
+   *
+   * Plain data, not pixels: the scene's own silhouette, crease and boundary
+   * edges projected into image space, with visibility taken from the depth
+   * pass, plus the vertices they meet at. This is the thing the whole exercise
+   * is for — until now nothing checked whether the corners the pipeline finds
+   * are the corners that exist.
+   */
+  groundTruth(size, opts) {
+    return lab.groundTruthGeometry(size, opts);
+  },
+
   /** The two levers the plan asks to vary lighting with. */
   lighting({ intensity, room } = {}) {
     if (typeof intensity === 'number') lab.setEnvironmentIntensity(intensity);
     if (room) lab.setRoom(room);
+  },
+
+  /**
+   * Turn OIDN denoising on or off for subsequent exports.
+   *
+   * Off in pt-lab by default, which is worth knowing rather than assuming:
+   * every image this generator has produced until now carried the raw
+   * path-traced noise floor.
+   */
+  denoise(enabled) {
+    return lab.setDenoiseEnabled(enabled);
   },
 
   quality({ samples, bounces, scale } = {}) {

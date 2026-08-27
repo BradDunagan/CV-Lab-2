@@ -42,7 +42,8 @@ const ROOT = path.join(__dirname, '..');
 /* ------------------------------------------------------------------ */
 
 function parseArgs(argv) {
-  const opts = { images: [], script: null, out: null, from: 'srgb', as: 'srgb', slot: 'A', quiet: false };
+  const opts = { images: [], script: null, out: null, from: 'srgb', as: 'srgb',
+                 slot: 'A', truth: null, truthSlot: 'T', quiet: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = () => {
@@ -61,6 +62,11 @@ function parseArgs(argv) {
       case '--from': opts.from = next(); break;
       case '--as': opts.as = next(); break;
       case '--slot': opts.slot = next(); break;
+      // Per image, like the load line above it, and for the same reason: §4
+      // keeps the command language free of variables, so anything that varies
+      // per image is composed out here rather than typed in there.
+      case '--truth': opts.truth = next(); break;
+      case '--truth-slot': opts.truthSlot = next(); break;
       case '--quiet': opts.quiet = true; break;
       case '--help': case '-h': opts.help = true; break;
       default:
@@ -83,6 +89,8 @@ cv-lab-2 batch runner
   --from srgb|linear   what the file's samples MEAN      (default srgb)
   --as   srgb|linear   what the buffer should hold       (default srgb)
   --slot <name>     slot the image loads into            (default A)
+  --truth <dir>     ground truth to score against: <dir>/<name>.gt.json
+  --truth-slot <n>  slot the ground truth loads into     (default T)
   --quiet           only report failures
 
 The script is the command language, unchanged — no variables, no loops. Each
@@ -91,6 +99,14 @@ image gets a fresh session that starts with
   <slot> = load("<image>", from=<from>, as=<as>)
 
 and then runs your script, so write it against <slot>.
+
+With --truth, one more line is prepended:
+
+  <truth-slot> = groundTruth("<dir>/<name>.gt.json")
+
+so a script can end with 'M = match(C, T)' and score itself. Write that
+directory with 'npm run generate -- --truth'. A missing file for one image is a
+failure for that image and not for the run.
 `.trim();
 
 /**
@@ -150,7 +166,15 @@ async function runOne(win, { image, script, opts }) {
   const quoted = await call(`quote(${JSON.stringify(image)})`);
   const load = `${opts.slot} = load(${quoted}, from=${opts.from}, as=${opts.as})`;
 
-  const commands = [load, ...script];
+  const prelude = [load];
+  if (opts.truth) {
+    const name = path.basename(image).replace(/\.[^.]+$/, '');
+    const truthPath = path.join(opts.truth, `${name}.gt.json`);
+    const quotedTruth = await call(`quote(${JSON.stringify(truthPath)})`);
+    prelude.push(`${opts.truthSlot} = groundTruth(${quotedTruth})`);
+  }
+
+  const commands = [...prelude, ...script];
   for (const command of commands) {
     // One statement at a time, so a failure names the line that failed
     // rather than the whole script.

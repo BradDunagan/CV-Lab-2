@@ -52,6 +52,57 @@ Rust libraries expose C interfaces when they need to be called from elsewhere.
 
 ---
 
+## AOV — arbitrary output variable
+
+**A rendering pass that outputs something other than the picture: depth,
+surface normals, base colour, object identity, motion.**
+
+The term comes from production rendering — RenderMan's, then everyone's — where
+a frame is delivered not as one image but as a stack of them, so that a
+compositor can relight, re-fog or re-grade without re-rendering. Also called a
+*render pass* or, when the values describe surfaces rather than light, a
+*G-buffer* (geometry buffer), which is the same idea arrived at from real-time
+rendering.
+
+**Why they matter here.** They are how a renderer answers a question the
+picture cannot. Given only the beauty render, "is this edge real geometry?" has
+no answer; given the depth pass, it does.
+
+The three this project asks pt-lab for, and what each one settles:
+
+| Pass | Holds | Answers |
+|---|---|---|
+| **depth** | distance from the camera, per pixel | is there a step here — one surface ending in front of another? |
+| **normal** | which way the surface faces | is there a fold here, with no step? |
+| **albedo** | base colour, unlit | is this just paint? |
+
+Together they decompose *why* an edge is in a picture. A depth step is an
+**occlusion**; a normal step with no depth step is a **crease**; an albedo step
+with neither is texture; and an edge with none of the three is shading — a
+shadow boundary or a specular terminator, which is a real image edge belonging
+to the light rather than to the object.
+
+**They are not colour, and that is a trap.** These passes carry raw linear code
+values — metres, packed vector components, unlit reflectance — so pt-lab writes
+them as PNGs with **no colour chunks at all**, deliberately, because an sRGB tag
+would invite a decoder to apply a transfer curve that was never there. Reading
+one requires saying `from=linear`; under this project's sRGB-by-convention
+default the numbers come back silently and nonlinearly wrong. See
+`design-lab-model.md` §11.
+
+**Precision costs.** An 8-bit channel is nowhere near enough for depth, so
+pt-lab packs a 24-bit fixed-point value across R, G and B — which is why a depth
+pass looks like a rainbow of fine stripes rather than a smooth ramp, and why it
+carries a `maxDepth` scale factor alongside it. Decode with
+`depth = (R + G/255 + B/65025) / 255 × maxDepth`.
+
+**Elsewhere**: Blender's render passes, Arnold and V-Ray AOVs, the G-buffer in
+any deferred renderer, and the auxiliary inputs an ML denoiser takes — OIDN
+wants albedo and normal for exactly the reason above, because they show it where
+the real boundaries are when the colour input is still noise.
+
+---
+
 ## ASAR — Atom Shell Archive
 
 **Electron's app bundle: one file containing all of your application's files
@@ -500,14 +551,68 @@ Measured on one synthetic cube — fourteen candidates, seven of them real:
 | the seven real corners | **1.3 – 3.5** | 1.1 – 33.2 |
 | the seven spurious ones | **49.2 – 65.4** | 46.4 – 92.1 |
 
-`endpointGap` separates them with a 14× margin and no overlap. `reach` does
-not: two genuine three-way vertices reach 33.2 and 22.2 px, inside the
-spurious range, because a corner can lie well past the far end of one of the
-edges meeting there. An earlier draft of the design doc named `reach` as the
+On that image it separates them with a 14× margin and no overlap. `reach` does
+not: two genuine three-way vertices reach 33.2 and 22.2 px, inside the spurious
+range, because a corner can lie well past the far end of one of the edges
+meeting there. An earlier draft of the design doc named `reach` as the
 discriminator and was wrong.
 
-**Caveat**: one image, clean synthetic edges. Striking, and a single data
-point.
+**The clean separation was a property of that image.** Scored against
+[ground truth](#ground-truth) over twenty-four views, `endpointGap` is still
+the best single field and the ranges overlap: real corners run to 18 px at the
+99th percentile, invented ones start below 1 px, and the best threshold — 3.9
+px — keeps 92% of the real ones at 71% precision. Paired with `sigma`, which
+`design-lab-model.md` had explicitly ruled out as a discriminator, it reaches
+94% precision at 84% recall. The two ask genuinely different questions: this
+one whether the edges *stopped* near each other, `sigma` whether either fit was
+determined well enough to extrapolate at all.
+
+---
+
+## Ground truth
+
+**What is actually there, known independently of whatever your method
+reported.**
+
+Borrowed from remote sensing, where it is literal: a satellite says a field is
+wheat, and somebody walks out to the field and looks. Everywhere else it keeps
+the same shape — a reference answer obtained by some route the system under test
+had no access to, against which that system's output is scored.
+
+**Why a renderer can supply it and a photograph cannot.** A photograph of a cube
+does not come with a list of where its edges are; producing one means a person
+marking them by hand, which is slow, subjective, and available in quantities of
+about ten. A *rendered* cube comes with the cube: the mesh, the camera and the
+transform are all sitting there, so where its twelve edges land in the image is
+arithmetic. Change the pose and it is arithmetic again, a thousand times, for
+free. That is the whole reason `design-lab-model.md` §5 has a ground-truth section at all.
+
+**The three limits, which are not fine print.** Every number scored against
+geometric ground truth has to be read with these in view:
+
+- **A geometric edge need not be a visible one.** Two walls meeting under flat
+  lighting produce no gradient at all. Failing to detect it is not a failure.
+- **A visible edge need not be geometric.** Shadow boundaries, specular
+  terminators and texture are real image edges, and none of them are in the
+  geometry. A "false positive" against this ground truth may be a perfectly
+  good detection of something that is not a shape.
+- **The ground truth resolves what the image cannot.** A table top 5 cm thick
+  seen from four metres has two edges in the model and one in the picture.
+
+So the honest reading of a match rate here is *how much of what the pipeline
+found is explained by geometry* — not *how often the pipeline is right*.
+
+**Related terms.** A **fixture** is the input a test runs on; ground truth is
+the answer it is graded against. **Annotation** or **labelling** is ground truth
+produced by people. **Synthetic data** is the approach this project takes: build
+the scene, and the labels come out of the construction rather than out of a
+person.
+
+**Elsewhere**: every supervised machine-learning dataset is ground truth plus
+inputs; benchmark suites like BSDS (edges), KITTI (depth and detection) and
+Middlebury (stereo) are named for their ground truth rather than their images;
+and the sim-to-real gap is the standing objection to getting it this way — a
+renderer's idea of an edge is cleaner than a camera's.
 
 ---
 
@@ -833,6 +938,56 @@ analogue, but it accumulates automatically over time rather than being granted.
 
 ---
 
+## Precision and recall
+
+**Two numbers for two different ways of being wrong, and you need both because
+either one alone is trivially gamed.**
+
+| | Question | Ruined by |
+|---|---|---|
+| **precision** | of the things I reported, how many were real? | reporting too much |
+| **recall** | of the things that were real, how many did I report? | reporting too little |
+
+Report every possible corner in the image and recall reaches 100% with
+precision near zero. Report one corner you are certain of and precision reaches
+100% with recall near zero. Quoting either alone says nothing.
+
+```
+precision = hit / (hit + invented)        recall = hit / (hit + missed)
+```
+
+**F1** is their harmonic mean — `2PR / (P + R)` — a single number for comparing
+methods, harmonic rather than arithmetic so that being terrible at one cannot be
+averaged away by being good at the other.
+
+**Why they are the right frame for `corners`.** That operation is deliberately
+built to have low precision and high recall: `design-lab-model.md` §5 says in as
+many words that it produces *hypotheses, not detections*, and leaves the
+deciding to a later stage. Measured against ground truth over twenty-four views
+it comes out at 25% precision and 82% recall, which reads as a failure and is
+the design working — nearly every real corner found, and a pile of candidates carrying
+their own evidence for something downstream to sort.
+
+**The vocabulary underneath**: a **true positive** is a hit, a **false
+positive** something reported that was not there, a **false negative** something
+there that was not reported. *True negative* — correctly saying nothing — is
+usually meaningless in detection, since there is no finite list of things not
+detected, which is why *accuracy* is not used here.
+
+**A trap worth naming.** Both depend entirely on what counts as a match, and
+that threshold is a free parameter nobody can see in the resulting percentage. A
+corner three pixels from a true one is a hit at `maxDistance=3` and a miss at
+`maxDistance=2`. Quote the threshold with the number or the number means
+nothing — the same rule `design-lab-model.md` §5 learned about cost tables whose
+parameters were not written down.
+
+**Elsewhere**: information retrieval, where the terms come from; ROC and
+precision–recall curves, which plot the trade-off as a threshold sweeps rather
+than fixing it; and mAP, the object-detection standard, which is the area under
+that curve averaged over classes.
+
+---
+
 ## Range (display)
 
 **Which span of data values maps onto the visible scale.**
@@ -1007,6 +1162,55 @@ made?"
 **Elsewhere you will meet them**: `.xmp` files beside camera raw images,
 `.srt` subtitles beside a video, `.json` label files beside images in machine
 learning datasets.
+
+---
+
+## Silhouette, crease and boundary edges
+
+**Three reasons a mesh has an edge where a picture might show a line — and only
+one of them depends on where you are standing.**
+
+| | What it is | View-dependent? |
+|---|---|---|
+| **silhouette** | one adjacent face points towards the camera, the other away: the object ends here against whatever is behind it | **yes** |
+| **crease** | two faces meet at a sharp angle | no |
+| **boundary** | only one face uses the edge — the mesh is open here | no |
+
+**Why the split matters.** A sphere has no creases whatsoever: every pair of
+adjacent facets differs by a few degrees, so no dihedral threshold finds
+anything. It still has a perfectly obvious outline. Ground truth built from
+creases alone would call the strongest edge in the picture an invention, so a
+silhouette test has to be there too — and it has to be recomputed for every
+view, since which edges are silhouette edges changes as the camera moves.
+
+The reverse case is a cube seen straight on: its four silhouette edges are also
+creases, and its remaining visible crease reads as a line down the middle of the
+picture with nothing behind it.
+
+**How they are found.** Build a map from each undirected edge to the faces using
+it, then:
+
+- one face → **boundary**
+- two faces whose normals differ by more than the crease angle → **crease**
+- two faces where one faces the camera and the other does not → **silhouette**
+
+A cube's edges are both silhouette and crease; `pt-lab` reports silhouette,
+because it is the stronger claim about the *image* — one side of it is not the
+object at all — and keeps the dihedral angle so the sharpness is still there.
+
+**The crease angle is a real choice.** Set it at 1° and a smooth sphere yields
+every one of its 2,300 facet boundaries; set it at 20° and it yields none, which
+is right. Set it too high and a genuinely faceted model stops having edges.
+
+**Where a silhouette differs from an outline.** A silhouette edge is a property
+of the geometry, and there is one wherever front meets back — including deep
+inside the object's outline, where a limb passes in front of a torso. It is a
+self-occlusion boundary as much as an outer boundary.
+
+**Elsewhere**: exactly the same three cases drive non-photorealistic and
+toon-outline rendering, which draws them on purpose; three.js's `EdgesGeometry`
+extracts creases and boundaries and has no notion of silhouettes, because those
+cannot be precomputed.
 
 ---
 

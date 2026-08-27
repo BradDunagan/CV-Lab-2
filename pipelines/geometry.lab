@@ -1,0 +1,34 @@
+// The full pipeline, from an image to scored geometry.
+//
+// Run it over a directory the generator wrote WITH ground truth:
+//
+//   npm run generate -- --out generated/ --scene cube --truth
+//   npm run lab -- --script pipelines/geometry.lab --as linear \
+//                  --truth generated/ --out results/ generated/*.png
+//
+// --as linear matters: `gray` computes luminance, and the luminance
+// coefficients are only valid on linear values. Loading as srgb makes the
+// runtime refuse rather than quietly compute luma (design-lab-model.md §2).
+//
+// A and T are prepended by the runner, one per image:
+//   A = load("<image>", from=srgb, as=linear)
+//   T = groundTruth("<truth-dir>/<name>.gt.json")
+
+G  = gray(A)
+B  = gaussian(G, sigma=1.4)
+Gx = sobel(B, axis=x)
+Gy = sobel(B, axis=y)
+M  = sobel(B, axis=mag)
+
+// nms wants the MAGNITUDE, not a signed derivative -- it drops everything <= 0,
+// so passing Gx here silently produces nothing. That is the mistake the
+// README's own example shipped with.
+N  = nms(M, Gx, Gy)
+S  = segments(N, Gx, Gy)
+R  = merge(S)
+F  = fit(R)
+C  = corners(F)
+
+// What the pipeline found, against what is actually there.
+MF = match(F, T)
+MC = match(C, T)

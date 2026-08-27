@@ -32,15 +32,22 @@ src/lab/registry.js  operation definitions, validation, provenance records
 src/lab/parser.js    the command language
 src/lab/session.js   slots, execution, the log, the provenance graph
 src/lab/corners.js   corner hypotheses (pure JS — no pixels involved)
+src/lab/groundtruth.js   reads a renderer's ground truth in as features
+src/lab/match.js     scores detected features against it (pure JS)
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
 scripts/generate-cli.js  drives pt-lab to render varied images (needs a GPU)
+scripts/score.js     tallies match records: precision, recall, and which
+                     corner field actually discriminates
+scripts/overlay.js   draws ground truth and detections over an image — every
+                     defect in the scoring machinery was found this way
 src/generate/        the generator: page (bundled separately) + main-process
                      driver shared by the CLI and the app's Generate frame
 src/menu.js          the application menu — global commands live here, not in the UI
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
-test/                eleven suites; ten run under plain node
+test/                twelve suites; eleven run under plain node
+pipelines/           .lab scripts for the batch runner
 ```
 
 ## Commands
@@ -50,10 +57,12 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — eleven suites, ~287 tests
+npm test                # everything — twelve suites, ~334 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
+npm run score -- results/           # found, against what is really there
+npm run overlay -- <img> results/   # ...and the same thing as a picture
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run dev:renderer    # the same, in watch mode
@@ -77,11 +86,16 @@ npm run dev:renderer    # the same, in watch mode
 - **A check that runs in one place can pass for the wrong reason.** An implicit `posix_memalign` declaration warned on every Linux build for weeks and never once on macOS.
 - **Read CI logs for warnings, not only errors.** That is how the above survived three green checkmarks.
 - **Cost is quadratic in segment count, not resolution.** A megapixel of pixel work is ~30 ms; a busy scene is what hurts.
+- **A scoring table reports a number whether or not it is right.** Both defects in the ground-truth machinery were invisible in the tally and obvious in one overlay image — as were the two fixtures before them that nobody had looked at. `npm run overlay` exists for that, and it is not a convenience.
+- **Check that a fix helped.** A visibility tolerance was "improved" against a degenerate view and made the measurement strictly worse everywhere else.
 
 ## Open questions
 
 In `design-lab-model.md` §11 — whether `load` should default to `as=linear`;
-whether higher-precision decoding is worth a native decoder; and whether
+whether higher-precision decoding is worth a native decoder; whether
 `pt-lab-workspace` writes gamma-encoded or linear PNGs, which matters because
 every image in `assets/` declares nothing and the lab assumes sRGB by
-convention.
+convention; and whether the corner thresholds measured over twenty-four views
+of a cube hold on anything that is not a cube. The AOV passes are exported and
+nothing yet consumes them — classifying an unmatched detection as texture,
+shading or noise is the next thing they are for.

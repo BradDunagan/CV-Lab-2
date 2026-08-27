@@ -236,6 +236,113 @@ test('several images each get a fresh session', () => {
     'two different images must not load to the same buffer');
 });
 
+/* --- ground truth --------------------------------------------------- */
+
+/*
+ * The fixture is a white square from 25 to 71 inside a black 96x96 frame, so
+ * its four edges and four corners are known exactly rather than measured. The
+ * boundary falls between the last black pixel and the first white one, which
+ * puts it at 24.5 and 71.5.
+ *
+ * Written by hand rather than rendered: this suite tests the RUNNER, and
+ * pulling in a GPU path tracer to produce a fixture whose answer is already
+ * arithmetic would be a slower way to learn less.
+ */
+const truthDir = path.join(tmp, 'truth');
+fs.mkdirSync(truthDir, { recursive: true });
+{
+  const lo = 24.5;
+  const hi = 71.5;
+  const corner = (id, x, y) => ({
+    id, x, y, z: 1, degree: 2, visibleDegree: 2,
+    onFrame: true, visible: true, angle: 90, objects: ['Square'],
+  });
+  const edge = (id, x0, y0, x1, y1) => ({
+    id, cause: 'silhouette', objects: ['Square'],
+    x0, y0, x1, y1, z0: 1, z1: 1,
+    length: Math.hypot(x1 - x0, y1 - y0),
+    angle: ((Math.atan2(y1 - y0, x1 - x0) * 180 / Math.PI) % 180 + 180) % 180,
+    dihedral: 90, visible: 1, clipped: false, v0: 0, v1: 0,
+  });
+  fs.writeFileSync(path.join(truthDir, 'square.gt.json'), JSON.stringify({
+    size: 96,
+    edges: [
+      edge(1, lo, lo, hi, lo), edge(2, hi, lo, hi, hi),
+      edge(3, hi, hi, lo, hi), edge(4, lo, hi, lo, lo),
+    ],
+    vertices: [corner(1, lo, lo), corner(2, hi, lo), corner(3, hi, hi), corner(4, lo, hi)],
+  }));
+}
+
+const scored = writeScript('scored.lab', [
+  'L  = toLinear(A)',
+  'G  = gray(L)',
+  'B  = gaussian(G, sigma=1.4)',
+  'Gx = sobel(B, axis=x)',
+  'Gy = sobel(B, axis=y)',
+  'M  = sobel(B, axis=mag)',
+  'N  = nms(M, Gx, Gy)',
+  'S  = segments(N, Gx, Gy)',
+  'R  = merge(S)',
+  'F  = fit(R)',
+  'C  = corners(F)',
+  'MF = match(F, T)',
+  'MC = match(C, T)',
+]);
+const scoredOut = path.join(tmp, 'scored');
+const scoredRun = run(['--script', scored, '--image', image, '--truth', truthDir,
+                       '--out', scoredOut]);
+
+test('--truth prepends a ground-truth load, so a script can score itself', () => {
+  assert.equal(scoredRun.code, 0, scoredRun.out);
+  const session = JSON.parse(fs.readFileSync(path.join(scoredOut, 'square.session.json'), 'utf8'));
+  // load, groundTruth, and one per line of the script.
+  assert.equal(session.entries.length, 15);
+  const entry = session.entries[1];
+  // The log holds the RESOLVED record, not the line that was typed — defaults
+  // filled in and parameters in canonical order (§3). So `kind=both` is there
+  // even though nobody wrote it, and the slot lives beside the text.
+  assert.equal(entry.target, 'T');
+  assert.match(entry.text, /^groundTruth\(kind=both, path=/, entry.text);
+  assert.match(entry.text, /square\.gt\.json/);
+});
+
+test('the square\'s four corners are all found, and located', () => {
+  /*
+   * Not plumbing. The fixture has four right angles in known places, so this
+   * asserts the pipeline finds every one of them and puts them where they
+   * actually are -- which is the whole claim ground truth exists to check.
+   */
+  const lists = JSON.parse(fs.readFileSync(path.join(scoredOut, 'square.features.json'), 'utf8'));
+  const matches = lists.find((l) => l.slot === 'MC').features;
+  const hits = matches.filter((r) => r.role === 'hit');
+  assert.equal(hits.length, 4, `expected all four corners found, got ${hits.length}`);
+  assert.equal(matches.filter((r) => r.role === 'miss').length, 0);
+  for (const hit of hits) {
+    assert.ok(hit.distance <= 3, `corner ${hit.detected} landed ${hit.distance} px out`);
+  }
+});
+
+test('every edge of the square is matched to real geometry', () => {
+  const lists = JSON.parse(fs.readFileSync(path.join(scoredOut, 'square.features.json'), 'utf8'));
+  const matches = lists.find((l) => l.slot === 'MF').features;
+  assert.equal(matches.filter((r) => r.role === 'miss').length, 0,
+    'all four sides should be found');
+  for (const hit of matches.filter((r) => r.role === 'hit')) {
+    assert.equal(hit.cause, 'silhouette');
+  }
+});
+
+test('a missing ground-truth file fails that image and says which', () => {
+  // One image without truth must not take the whole run down silently.
+  const { code, out: text } = run(['--script', scored, '--image', image,
+                                   '--truth', path.join(tmp, 'absent'), '--out',
+                                   path.join(tmp, 'no-truth')]);
+  assert.equal(code, 1, 'a pipeline that cannot load its truth should exit 1');
+  assert.match(text, /FAIL\s+square/);
+  assert.match(text, /square\.gt\.json/, 'the missing file should be named');
+});
+
 /* ------------------------------------------------------------------- */
 
 fs.rmSync(tmp, { recursive: true, force: true });

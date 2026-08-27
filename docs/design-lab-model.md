@@ -558,13 +558,17 @@ and two lines crossing at angle θ combine as `√(e₁²+e₂²)/|sin θ|`. Whi
 `fit` reports `rms` as well as the maximum `residual` — the maximum is a
 guarantee about the worst pixel, the RMS is what propagation needs.
 
-**`sigma` measures precision, not correctness**, and that is the thing most
-likely to be misread. On the cube, all fourteen candidates located to better
-than one pixel — including nonsense at 92 px of reach. Two long, clean,
-well-determined lines extended a long way still intersect *precisely*; they
-simply intersect somewhere that is not a corner. `endpointGap` and `support` separate real from invented; `sigma` says how
-well-located an answer is once you already believe it. **`reach` does not
-separate them** — see the measurement below.
+**`sigma` measures precision, not correctness** — which is true, and was taken
+too far here. On the cube, all fourteen candidates located to better than one
+pixel, including nonsense at 92 px of reach: two long, clean, well-determined
+lines extended a long way do intersect *precisely*, somewhere that is not a
+corner. An earlier version concluded from that `sigma` says how well-located an
+answer is once you already believe it, and nothing more. Over twenty-four views
+it is nearly as good a discriminator as `endpointGap` and the two together are
+much better than either — because most invented corners come not from long
+clean lines but from short fragments, which `sigma` is built to be sceptical
+of. The measurement is below. `support` is the field that turned out to carry
+nothing, and **`reach` remains the weakest** of the three continuous ones.
 
 ### What the cube measured
 
@@ -587,8 +591,166 @@ a discriminator. It measures how much geometry was invented, which is worth
 reporting; it is not what tells you whether the corner is real.
 
 **Caveat**: one image, of a synthetic cube, with clean edges. The margin is
-striking and it is a single data point. Re-check on a photograph before
-relying on it.
+striking and it is a single data point. Re-check before relying on it.
+
+That re-check has now happened, against ground truth, over twenty-four views.
+**The separation does not survive it** — see below. The table above is left
+standing because it is what that image really measured.
+
+### Ground truth: asking the renderer instead of arguing
+
+Everything above was measured by reading one picture. That is how the `reach`
+error got in, and it is a bad way to settle a claim about a detector.
+
+A photograph does not come with a list of where its edges are. A **render**
+does: the mesh, the camera and the transform are all sitting there, so where a
+cube's twelve edges land in the image is arithmetic — and arithmetic again for
+the next pose, a thousand times, at no cost. So `pt-lab` was asked for it, and
+answers in two forms:
+
+| | What it is | Cost |
+|---|---|---|
+| **AOV passes** | depth, surface normal and unlit albedo for the view | one raster frame |
+| **Projected geometry** | every silhouette, crease and mesh-boundary edge in image space, with how much of it is visible, and the vertices they meet at | one raster frame plus arithmetic |
+
+The passes decompose *why* an edge is in the picture — a depth step is an
+occlusion, a normal step with no depth step is a crease, an albedo step with
+neither is texture, and an edge with none of the three belongs to the lighting.
+The projected geometry is what answers the corner question, and it has to be
+geometry rather than a pass: **a corner is a point**, and extracting points
+from an edge image is the problem under test, so a raster ground truth would
+grade the pipeline against a second implementation of the same guesswork.
+
+**The AOV passes are not colour, and the lab must be told so.** They carry raw
+linear code values, so `pt-lab` writes them with no colour chunks at all,
+deliberately — an sRGB tag would invite a decoder to apply a curve that was
+never there. `readPngColour` returns `undeclared` and the sRGB convention takes
+over, silently and nonlinearly wrong. They must be read `from=linear`. This is
+the same hazard §11 records for `gAMA 1.0` files, arriving through the door
+nobody was watching.
+
+**It is two ordinary operations**, not a side channel: `groundTruth` reads the
+renderer's JSON into `gt-edge` and `gt-vertex` features, and `match` scores a
+detected list against it. So the comparison lands in the log with its
+parameters resolved and its result content-hashed, exactly like a blur.
+`groundTruth` also demonstrates why feature types are namespaced (§1): `match`
+sends `edge-segment` to the edges and `edge-corner` to the vertices by reading
+what the records say they are.
+
+#### What ground truth cannot settle
+
+Three limits, and they are not fine print. Every number below has to be read
+with all three in view.
+
+- **A geometric edge need not be a visible one.** Two walls meeting under flat
+  lighting produce no gradient at all. Failing to detect it is not a failure.
+- **A visible edge need not be geometric.** Shadow boundaries, specular
+  terminators and texture are real image edges and none of them are in the
+  ground truth. On the cube, the strongest unmatched detection in several views
+  is the shadow the cube casts — a correct detection of something that is not a
+  shape.
+- **The ground truth resolves what the image cannot.** The table top is 5 cm
+  thick, which is two edges in the model and one line in the picture.
+
+So a match rate says *how much of what the pipeline found is explained by
+geometry*, not *how often the pipeline is right*. Recall in particular is a
+floor, not an estimate.
+
+#### Two defects, both found by looking rather than by reading
+
+Worth recording because in both cases the table was perfectly plausible.
+
+**A tolerance tuned on a degenerate fixture.** The renderer's visibility test
+reported 22% of a cube's hidden back edge as visible, so its slope tolerance
+was made robust — and measured against a view whose answer is known, the fix
+was strictly worse: two genuinely visible edges fell to 0.42 and 0.49. The 22%
+was the fixture. That first view had the camera at yaw 0 on an axis-aligned
+cube, so the hidden back edges projected *exactly onto* the visible silhouette
+edges and no test at any tolerance could have separated them. The cube scene
+now offsets every yaw by 0.35 rad for that reason alone.
+
+**Recall asked from the wrong side.** Scoring credited, per detection, the
+single nearest ground-truth edge — so one fitted segment lying down the middle
+of twelve facets of a ball's silhouette scored one found and eleven missed.
+Recall read 40%. Precision walks the detections and recall walks the ground
+truth; they are not each other's inverse, and one pass cannot do both. 65%
+after the fix.
+
+Neither shows up in a scoring table, which reports a number either way. Both
+were obvious in one overlay image, which is what `npm run overlay` is for.
+
+#### What twenty-four views measured
+
+`--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
+`pipelines/geometry.lab` at its defaults; matched at 3 px and 20°. 372 segments
+and 661 corner candidates in total.
+
+|  | detected | real | invented | missed | precision | recall |
+|---|---|---|---|---|---|---|
+| segments | 372 | 252 | 120 | 204 | 68% | 55% |
+| corners | 661 | 162 | 499 | 36 | 25% | 82% |
+
+**25% precision at 82% recall is `corners` working as designed**, not failing.
+It is specified to produce hypotheses and leave the deciding to a later stage,
+so it finds nearly every real corner and invents three for each one. The
+question was never whether that ratio is good; it is whether the evidence each
+candidate carries can sort them. Now measurable:
+
+| field | keep | real | invented | best F1 | at |
+|---|---|---|---|---|---|
+| `endpointGap` | below | p50 **2.04**, p90 3.52, p99 18.07 | p1 0.83, p10 2.78, p50 27.29 | **0.80** | 3.9 px |
+| `sigma` | below | p50 0.11, p90 0.21 | p1 0.09, p10 0.15, p50 0.38 | **0.76** | 0.14 px |
+| `reach` | below | p50 3.09, p90 16.59 | p1 0.86, p10 4.55, p50 22.29 | 0.70 | 6.5 px |
+| `support` | above | p50 1, p90 3 | p50 1, p90 2 | 0.40 | ≥2 |
+| `angle` | above | p50 70.0 | p50 67.7 | 0.40 | — |
+
+**Three corrections fall out of that table, and one thing holds.**
+
+**`endpointGap` is still the best single field, and it does not separate
+cleanly.** At 3.9 px it keeps 92% of the real corners at 71% precision, which
+is useful and is not the fourteen-fold gap with no overlap that one image
+showed. Real corners run to 18 px at the 99th percentile and invented ones
+start at 0.83.
+
+**`sigma` is a discriminator, and this document said it was not.** The claim
+above — *`sigma` says how well-located an answer is once you already believe
+it* — was reasoned from a true observation: two long clean lines extended a
+long way do intersect precisely. What it missed is that most invented corners
+do not come from long clean lines. They come from short fragments extrapolated
+a long way, and those have large `sigma` for exactly the reason `sigma` exists.
+On the cube's nine long segments the field carried no information; across
+twenty-four views averaging fifteen segments each, it very nearly matches
+`endpointGap` on its own.
+
+**Together they are much better than either alone:**
+
+```
+endpointGap <= 7 px  AND  sigma <= 0.2 px      F1 0.89   precision 94%   recall 84%
+endpointGap alone                              F1 0.80   precision 71%   recall 92%
+sigma alone                                    F1 0.76   precision 73%   recall 78%
+```
+
+They are close to independent, which is why: one asks whether the two edges
+stopped near each other, the other asks whether the fit was well enough
+determined to be extrapolated at all. **94% precision from two numbers that
+cost nothing** is the headline result of the whole exercise.
+
+**`support` contributes nothing.** This document names it alongside
+`endpointGap` as separating real from invented. It does not: F1 0.40 alone, and
+adding it to the pair above leaves the best combination at `support >= 1`,
+which is every candidate. Three edges meeting at a vertex do agree — but a
+cube's silhouette vertices have only two, and coincidental agreement between
+unrelated extrapolations is common enough to cancel the signal. Worth reporting,
+not worth thresholding.
+
+**`reach` remains the weakest of the three continuous fields**, which is the one
+thing here that confirms rather than corrects: F1 0.70 against `endpointGap`'s
+0.80, and its real and invented distributions almost coincide below 5 px.
+
+**Caveat, again, and it is a different one this time.** Twenty-four views of one
+synthetic cube under one lighting sweep. The poses vary and the subject does
+not, so this measures a detector against *a cube*, well. It says nothing yet
+about a photograph, and the thresholds above are certainly tuned to this scene.
 
 ### The expensive follow-up, and why it may never be needed
 
@@ -598,11 +760,15 @@ whether gradient magnitude is elevated along an extrapolated path, or re-run
 operation consuming corners, so that it runs only where a hypothesis already
 exists.
 
-**It has not been built, and on present evidence it is not needed.** A free
-geometric signal — `endpointGap`, computed from endpoints that were already to
-hand — separated real from spurious perfectly on the one image tested. Spending
-an image pass to recover information that costs nothing would be the wrong
-trade.
+**It has not been built, and on present evidence it is still not needed —
+though the evidence has changed underneath that sentence.** It used to read
+that `endpointGap` separated real from spurious *perfectly*, on the one image
+tested. Twenty-four views say it does not: 71% precision on its own. What
+rescues the conclusion is that pairing it with `sigma` reaches **94% precision
+at 84% recall**, and both numbers are already sitting in the record. Spending
+an image pass to recover information that costs nothing would still be the
+wrong trade — but that is now a claim about a two-field test rather than a
+one-field one, and the margin is 94% rather than "perfectly".
 
 What would justify revisiting it: a case where two edges genuinely meet but
 both erode so far back that their endpoints are no longer near each other.
@@ -945,6 +1111,16 @@ item genuinely deferrable.
 - **Slot naming.** Auto `A`, `B`, `C` with optional renaming, or user-named
   from the start? Letters are quicker to type; names are self-documenting in a
   saved session.
+- **Ground truth beyond a cube.** Twenty-four views settled which corner
+  fields discriminate (§5) and every one of them was a synthetic cube in a lit
+  room. Two things it cannot say: whether the same thresholds hold on a
+  photograph, where edges are noisier and geometry is not a box; and what the
+  *helmet's* segments are actually made of — the apparatus runs on that scene
+  unchanged, and the answer is the one the 156-segment count has been waiting
+  for since it was measured. The AOV passes exist for that question and nothing
+  yet consumes them: classifying an unmatched detection as texture, shading or
+  noise needs a per-pixel comparison the lab has no operation for.
+
 - **Multi-image operations.** Stereo pairs, image stacks and frame sequences
   all want more than "two inputs". Does a slot ever hold a *stack*, or is that
   N slots and an operation that takes a list?

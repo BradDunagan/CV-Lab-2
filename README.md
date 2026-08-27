@@ -132,7 +132,9 @@ notes/                   working notes; unlike docs/, never obliged to be curren
 | `npm run build:renderer` | Vite build of the Svelte renderer |
 | `npm run lab` | Run a pipeline over images, headless — see below |
 | `npm run build:generate` | Build the pt-lab image generator (needs the sibling checkout) |
-| `npm run generate` | Render beauty images with varying position and lighting |
+| `npm run generate` | Render images with varying position and lighting, optionally with ground truth |
+| `npm run score` | Tally what the pipeline found against what is really there |
+| `npm run overlay` | Draw ground truth and detections over an image, so you can look |
 | `npm run rebuild:electron` | Rebuild against Electron's headers |
 | `npm start` | Launch the app |
 | `npm run package` | Unsigned installers into `dist/` |
@@ -185,6 +187,53 @@ It is built separately from the app and is not part of `npm test`: it needs a
 real GPU, takes ~20 s per image, and would otherwise pull three.js and an OIDN
 WASM blob into a bundle that has no use for them. It needs the sibling
 `pt-lab-workspace` checkout; nothing else does.
+
+## Checking the answers against the scene
+
+A pipeline that reports fourteen corners is not telling you whether any of them
+are real. The renderer knows — it has the meshes and the camera — so it can be
+asked:
+
+```bash
+npm run generate -- --out generated/ --scene cube --truth --aovs
+npm run lab -- --script pipelines/geometry.lab --as linear \
+               --truth generated/ --out results/ generated/*.png
+npm run score   -- results/
+npm run overlay -- generated/p0-l0.png results/ overlays/
+```
+
+`--scene cube` renders a 10 cm cube on a table in a lit room. A cube has twelve
+edges and eight vertices in known places, nine and seven of them visible from a
+general viewpoint, which is what makes *is this corner real* a question with an
+answer — unlike the helmet, whose image edges are overwhelmingly paint.
+
+`--truth` writes one `<name>.gt.json` per image: every silhouette, crease and
+mesh-boundary edge projected into image space, with the fraction of it that is
+really visible taken from the depth pass, plus the vertices they meet at.
+`--aovs` writes the depth, normal and albedo passes it came from, into
+`generated/aov/` — **untagged**, carrying linear code values, so read them with
+`from=linear`.
+
+Inside the lab it is two ordinary operations, so the comparison is logged and
+content-hashed like everything else:
+
+```lab
+T  = groundTruth("generated/p0-l0.gt.json")
+MF = match(F, T)
+MC = match(C, T)
+```
+
+Three things every number out of this has to be read with. **A geometric edge
+need not be a visible one** — two walls meeting under flat lighting produce no
+gradient. **A visible edge need not be geometric** — shadows and specular
+terminators are real image edges and are not in the ground truth. **The ground
+truth resolves what the image cannot** — a 5 cm table top has two edges in the
+model and one in the picture. So a match rate says *how much of what the
+pipeline found is explained by geometry*, not *how often it is right*.
+
+`npm run overlay` is not a convenience. Both real defects in this machinery
+were found by looking at a picture rather than reading a table — see
+`design-lab-model.md` §5.
 
 ## Three decisions worth knowing about
 

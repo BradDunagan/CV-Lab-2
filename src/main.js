@@ -124,10 +124,10 @@ function createWindow() {
   ipcMain.removeHandler('generate:run');
   ipcMain.handle('generate:run', async (_event, options) => {
     try {
-      const { files, errors } = await generator.generate(options, (progress) => {
+      const { files, truth, errors } = await generator.generate(options, (progress) => {
         if (!win.isDestroyed()) win.webContents.send('generate:progress', progress);
       });
-      return { ok: true, files, errors };
+      return { ok: true, files, truth, errors };
     } catch (err) {
       return { ok: false, error: err.message };
     }

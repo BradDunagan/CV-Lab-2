@@ -30,38 +30,62 @@
  */
 
 const { app } = require('electron');
-const { generate, registerScheme, checkPrerequisites, DEFAULTS } =
+const { generate, registerScheme, checkPrerequisites, DEFAULTS, SCENES } =
   require('../src/generate/driver');
 
 /* ------------------------------------------------------------------ */
 
 const USAGE = `
-CV-Lab image generator — beauty renders from pt-lab
+CV-Lab image generator — renders from pt-lab
 
   npm run generate -- --out <dir> [options]
 
   --out <dir>        where to write the PNGs (required)
-  --size <px>        square render size                (default 512)
-  --samples <n>      path-tracing samples per image    (default 96)
-  --positions <n>    object rotations to step through  (default 3)
-  --lighting <n>     environment intensities           (default 2)
+  --scene <name>     helmet | cube                       (default helmet)
+  --size <px>        square render size                  (default 512)
+  --samples <n>      path-tracing samples per image      (default 96)
+  --positions <n>    camera positions to step through    (default 3)
+  --lighting <n>     light intensities                   (default 2)
   --room <kind>      room | room-emissive | room-arealight | none
-                     (default room — see below)
+                     (default: whatever the scene asks for)
+  --aovs             also write the depth, normal and albedo passes
+  --truth            also write <name>.gt.json: where the edges really are
+  --crease-angle <d> how sharp a fold counts as an edge  (default 20)
+  --denoise          run OIDN over each export (off in pt-lab by default)
   --show             show the render window and watch it converge
   --dry-run          set everything up, render nothing
 
+SCENES
+
+  helmet   pt-lab's damaged helmet, lit by a plain room. Every number recorded
+           so far was measured here. A poor ground-truth subject: its image
+           edges are overwhelmingly paint rather than geometry.
+  cube     a 10 cm cube on a table, with a ball beside it, in a room lit by an
+           area light. Twelve edges and eight vertices in known places, nine
+           and seven of them visible from a general viewpoint — which is what
+           makes 'is this corner real' a question with an answer.
+
 --room none uses pt-lab's default scene, which lights the subject with a
 photographic HDR environment. It looks better and is a poor CV fixture: the
-blurred background and textured tabletop dominate the edge count. A room
-isolates the subject, which is why it is the default here.
+blurred background and textured tabletop dominate the edge count.
+
+GROUND TRUTH
+
+--truth asks the renderer where the edges actually are, and writes one JSON per
+image: silhouette, crease and boundary edges projected into image space, each
+with the fraction of it that is really visible, plus the vertices they meet at.
+Pass that directory to 'npm run lab -- --truth <dir>' to score against it.
+
+--aovs writes the passes those edges were derived from, into <out>/aov/. They
+are UNTAGGED and carry linear code values, so read them with from=linear — an
+untagged depth pass decoded under the sRGB convention is silently wrong.
 
 Each image is named <position>-<lighting>.png and tagged sRGB by pt-lab, so
-\`npm run lab\` can confirm its encoding rather than assume it.
+'npm run lab' can confirm its encoding rather than assume it.
 `.trim();
 
 function parseArgs(argv) {
-  const opts = { out: null, size: 512, samples: 96, positions: 3, lighting: 2,
-                 room: 'room', show: false, dryRun: false };
+  const opts = { ...DEFAULTS };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const num = () => {
@@ -71,17 +95,30 @@ function parseArgs(argv) {
     };
     switch (arg) {
       case '--out': opts.out = argv[++i]; break;
+      case '--scene': {
+        const name = argv[++i];
+        if (!SCENES[name]) {
+          throw new Error(`unknown scene "${name}" (have: ${Object.keys(SCENES).join(', ')})`);
+        }
+        opts.scene = name;
+        break;
+      }
       case '--size': opts.size = num(); break;
       case '--samples': opts.samples = num(); break;
       case '--positions': opts.positions = num(); break;
       case '--lighting': opts.lighting = num(); break;
+      case '--crease-angle': opts.creaseAngle = num(); break;
       case '--room': {
         const kind = argv[++i];
         // `none` is this CLI's word for "leave pt-lab's default scene alone",
-        // which is the HDR environment. pt-lab has no such room kind.
+        // which is the HDR environment. pt-lab has no such room kind. Not
+        // passing --room at all is a third thing again: the scene's own room.
         opts.room = kind === 'none' ? null : kind;
         break;
       }
+      case '--aovs': opts.aovs = true; break;
+      case '--denoise': opts.denoise = true; break;
+      case '--truth': opts.truth = true; break;
       case '--show': opts.show = true; break;
       case '--dry-run': opts.dryRun = true; break;
       case '--help': case '-h': opts.help = true; break;
@@ -151,23 +188,31 @@ if (opts && (opts.help || !opts.out)) {
 app.whenReady().then(async () => {
   console.log('Initialising the path tracer (loads a model and builds a BVH)…');
 
-  const { files, errors } = await generate(opts, (event) => {
+  const { files, truth, errors } = await generate(opts, (event) => {
     if (event.type === 'ready') {
       console.log(`  ready in ${(event.elapsedMs / 1000).toFixed(1)}s — ` +
-        `${event.status.mode}, ${event.total} image(s) to render`);
+        `${event.status.mode}, scene ${event.scene}` +
+        `${event.room ? ` in ${event.room}` : ''}, ` +
+        `${event.total} image(s) to render`);
     } else if (event.type === 'shot' && event.dryRun) {
       console.log(`  (dry run) ${event.name}  yaw=${event.yaw.toFixed(2)} ` +
         `offset=${event.offset.toFixed(2)} intensity=${event.intensity}`);
     } else if (event.type === 'shot') {
+      const gt = event.truth
+        ? `  gt ${event.truth.visibleEdges}/${event.truth.edges} edges, ` +
+          `${event.truth.visibleVertices}/${event.truth.vertices} vertices`
+        : '';
       console.log(`  ok   ${event.name}  yaw=${event.yaw.toFixed(2)} ` +
         `offset=${event.offset.toFixed(2)} intensity=${event.intensity}  ` +
-        `${(event.elapsedMs / 1000).toFixed(1)}s`);
+        `${(event.elapsedMs / 1000).toFixed(1)}s${gt}`);
     }
   });
 
   if (errors.length > 0) console.error(`\npage errors:\n  ${errors.slice(0, 5).join('\n  ')}`);
   writeThenExit(process.stdout,
-    `\n${files.length} image(s) -> ${opts.out}`,
+    `\n${files.length} image(s)` +
+      (truth.length > 0 ? `, ${truth.length} ground truth` : '') +
+      ` -> ${opts.out}`,
     errors.length > 0 ? 1 : 0);
 }).catch((err) => {
   writeThenExit(process.stderr,
