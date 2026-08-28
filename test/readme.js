@@ -32,6 +32,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const { createRegistry } = require('../src/lab/ops');
@@ -73,10 +74,21 @@ function labBlocks(markdown) {
  * it, `match` really consumes it alongside the F and C the earlier blocks
  * produced, and a change that broke either would still break the build.
  *
- * Its size is read out of the README's own `pattern(width=…)` rather than
- * written here, because `match` refuses two feature lists measured in
- * different images and a hardcoded 512 would go stale the moment the example
- * changed.
+ * IN A TEMPORARY DIRECTORY, and that is not tidiness.
+ *
+ * The README says `groundTruth("generated/p0-l0.gt.json")`, and `generated/` is
+ * the default output directory — so anyone who actually runs the generator, as
+ * this document tells them to, has a real file at exactly that path. The first
+ * version of this skipped writing when the file already existed, which is right
+ * (never overwrite someone's data) and left the suite failing with
+ * `match: the two feature lists were measured in different images` the moment
+ * the tool was used as documented. Running the examples with the working
+ * directory moved makes the relative path resolve somewhere this test owns:
+ * hermetic, and a real `generated/` is neither read nor touched.
+ *
+ * The size is read out of the README's own `pattern(width=…)` rather than
+ * written here, because `match` refuses two feature lists measured in different
+ * images and a hardcoded 512 would go stale the moment the example changed.
  */
 function writeStandInTruth(blocks) {
   const size = Number(/pattern\([^)]*width=(\d+)/.exec(blocks.join('\n'))?.[1]);
@@ -86,8 +98,8 @@ function writeStandInTruth(blocks) {
   const paths = [...blocks.join('\n').matchAll(/groundTruth\(\s*"([^"]+)"/g)].map((m) => m[1]);
   const written = [];
   for (const rel of paths) {
+    if (path.isAbsolute(rel)) continue; // not ours to invent
     const file = path.join(process.cwd(), rel);
-    if (fs.existsSync(file)) continue;
     /*
      * Lines on the checkerboard's own block boundaries, so `match` has
      * something it can actually hit rather than scoring a list of misses.
@@ -117,7 +129,11 @@ function writeStandInTruth(blocks) {
 (async () => {
   const markdown = fs.readFileSync(README, 'utf8');
   const blocks = labBlocks(markdown);
-  const standIns = writeStandInTruth(blocks);
+
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'cvlab-readme-'));
+  const cwd = process.cwd();
+  process.chdir(sandbox);
+  writeStandInTruth(blocks);
 
   await test('the README still contains runnable examples', () => {
     // Guards everything below: zero blocks would make every other assertion
@@ -209,13 +225,8 @@ function writeStandInTruth(blocks) {
     assert.ok(session.slots.get('F').value.features.length > 0);
   });
 
-  for (const file of standIns) {
-    fs.rmSync(file, { force: true });
-    // Leave no directory behind either: the default output directory is one a
-    // reader will really use, and an empty one appearing after `npm test` is
-    // confusing.
-    try { fs.rmdirSync(path.dirname(file)); } catch { /* not empty: not ours */ }
-  }
+  process.chdir(cwd);
+  fs.rmSync(sandbox, { recursive: true, force: true });
 
   console.log(failures === 0
     ? '\nAll README tests passed.'

@@ -117,9 +117,10 @@ dist-renderer/         Vite's output — the only thing the window ever loads
 scripts/png.js         a PNG encoder, and the colour chunks `load` reads
 test/                  ten suites under plain node, plus test/renderer.js
                        which needs a real Electron renderer
+docs/cv-lab-users-manual.md  how to operate it: every operation, every parameter
 docs/electron-guide.md   builds, CI, packaging, signing, costs (written after doing it)
 docs/design-lab-model.md slots, ops, commands, reproducibility (written before)
-docs/glossary.md         terms used in both, explained from scratch
+docs/glossary.md         terms used in all three, explained from scratch
 notes/                   working notes; unlike docs/, never obliged to be current
 ```
 
