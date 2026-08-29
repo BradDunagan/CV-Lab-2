@@ -133,6 +133,7 @@ notes/                   working notes; unlike docs/, never obliged to be curren
 | `npm run build:renderer` | Vite build of the Svelte renderer |
 | `npm run lab` | Run a pipeline over images, headless — see below |
 | `npm run build:generate` | Build the pt-lab image generator (needs the sibling checkout) |
+| `npm run dev:generate` | The same, in watch mode, for editing pt-lab alongside |
 | `npm run generate` | Render images with varying position and lighting, optionally with ground truth |
 | `npm run score` | Tally what the pipeline found against what is really there |
 | `npm run overlay` | Draw ground truth and detections over an image, so you can look |

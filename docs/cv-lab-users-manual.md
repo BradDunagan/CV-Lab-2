@@ -528,6 +528,10 @@ npm run build:generate                                    # once
 npm run generate -- --out generated/ --scene cube --truth --aovs
 ```
 
+`build:generate` is needed **once**, and again whenever pt-lab's source
+changes — see below. `npm run dev:generate` is the same build in watch mode, if
+you are editing pt-lab and cv-lab-2 together.
+
 | option | default | |
 |---|---|---|
 | `--out <dir>` | — | required |
@@ -601,6 +605,30 @@ loads into a hidden Chromium renderer inside its own process tree, and drives.
                             │  a.click() on a blob: URL → download
                             ▼
                      generated/*.png, generated/aov/*.png
+```
+
+**Changing pt-lab means rebuilding, and nothing else.** The alias resolves to
+pt-lab's *source*, so `npm run build:generate` picks up any edit there — you
+never build pt-lab itself, and its own `npm run pkg:build` output is bypassed
+entirely. Three things do not follow that rule:
+
+| what changed | what to run |
+|---|---|
+| pt-lab's `src/` | `npm run build:generate` |
+| pt-lab's **assets** (the glTF model, the HDR, the denoiser weights) | nothing — `gen://lab/assets/` serves them from the checkout at runtime |
+| pt-lab gained a **dependency** | `npm install` in `pt-lab-workspace` first; its deps resolve from *its* `node_modules` |
+| `src/generate/driver.js` | nothing — Electron requires it directly, it is not bundled |
+
+Forgetting the rebuild used to be silent, and it is the worst kind of silent:
+the old bundle runs and produces images that look completely reasonable, so the
+symptom is "my change did nothing". `checkPrerequisites` now compares the
+bundle's timestamp against every file it was built from and refuses first:
+
+```
+The generator build is older than its sources.
+  ../pt-lab-workspace/packages/pt-lab/src/lib/pathtracer.ts changed after
+  dist-generate/generate.js was built.
+Run: npm run build:generate
 ```
 
 **pt-lab is a Vite alias, not a dependency.** `vite.generate.config.mjs` points

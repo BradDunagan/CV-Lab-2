@@ -94,9 +94,14 @@
 
 <div class="generate-pane">
   {#if unavailable}
+    <!--
+      The first line of the message is the headline and the rest is detail.
+      A fixed heading was fine while the only case was a missing build; it is
+      wrong for a STALE one, which is a different problem with a different fix.
+    -->
     <div class="unavailable">
-      <p><b>The generator is not built.</b></p>
-      <pre>{unavailable}</pre>
+      <p><b>{unavailable.split('\n')[0]}</b></p>
+      <pre>{unavailable.split('\n').slice(1).join('\n')}</pre>
     </div>
   {:else}
     <div class="controls">

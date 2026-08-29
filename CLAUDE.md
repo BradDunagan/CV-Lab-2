@@ -67,6 +67,8 @@ npm run overlay -- <img> results/   # ...and the same thing as a picture
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run dev:renderer    # the same, in watch mode
+npm run build:generate  # the generator bundle — rerun whenever pt-lab's source
+                        # changes; a stale one is refused rather than run
 ```
 
 ## Constraints that are not negotiable without a reason

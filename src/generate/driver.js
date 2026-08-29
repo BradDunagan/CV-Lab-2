@@ -53,14 +53,87 @@ function installHandler() {
   handlerInstalled = true;
 }
 
-/** What is missing, if anything, phrased as something a person can act on. */
+const PT_SRC = path.join(ROOT, '..', 'pt-lab-workspace', 'packages', 'pt-lab', 'src');
+
+/**
+ * Every file the bundle in dist-generate/ is built FROM.
+ *
+ * `src/generate/driver.js` is deliberately absent: Electron requires it
+ * directly, so it is not bundled and editing it cannot make a build stale.
+ * pt-lab's whole `src/` tree is here, .glb assets included, because
+ * `bundled.ts` discovers those with import.meta.glob at build time and a new
+ * one really does change the output.
+ */
+function buildInputs() {
+  const inputs = [
+    path.join(ROOT, 'vite.generate.config.mjs'),
+    path.join(__dirname, 'main.js'),
+    path.join(__dirname, 'index.html'),
+  ];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // the sibling checkout is missing; a different check reports that
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else inputs.push(full);
+    }
+  };
+  walk(PT_SRC);
+  return inputs;
+}
+
+/** The most recently modified of a list of files, or null if none exist. */
+function newestOf(files) {
+  let newest = null;
+  for (const file of files) {
+    let stat;
+    try {
+      stat = fs.statSync(file);
+    } catch {
+      continue;
+    }
+    if (newest === null || stat.mtimeMs > newest.mtimeMs) newest = { file, mtimeMs: stat.mtimeMs };
+  }
+  return newest;
+}
+
+/**
+ * What is wrong, if anything, phrased as something a person can act on.
+ *
+ * The FIRST LINE is a headline and the rest is detail — the Generate pane
+ * shows them differently, and "the generator is not built" and "the generator
+ * build is stale" are not the same sentence.
+ *
+ * That third check exists because the failure it catches is silent. pt-lab is
+ * a Vite ALIAS, resolved at build time, so editing pt-lab and re-running the
+ * generator without rebuilding runs the old bundle and produces images that
+ * look completely reasonable. The symptom is "my change did nothing", which
+ * costs a sweep to notice and can cost several to diagnose.
+ */
 function checkPrerequisites() {
   if (!fs.existsSync(PAGE)) {
-    return `No generator build at ${PAGE}\nRun: npm run build:generate`;
+    return `The generator is not built.\n  Expected a bundle at ${PAGE}\n` +
+      `Run: npm run build:generate`;
   }
   if (!fs.existsSync(PT_ASSETS)) {
-    return `pt-lab's assets are missing:\n  ${PT_ASSETS}\n` +
+    return `pt-lab's assets are missing.\n  ${PT_ASSETS}\n` +
       `The generator needs the sibling pt-lab-workspace checkout.`;
+  }
+
+  // Compared against the NEWEST output rather than a named one: Vite rewrites
+  // every output each build, so they share a timestamp, and taking the newest
+  // means a stray file left by an older build cannot raise a false alarm.
+  const built = newestOf([path.join(PAGE, 'generate.js'), path.join(PAGE, 'index.html')]);
+  const source = newestOf(buildInputs());
+  if (built && source && source.mtimeMs > built.mtimeMs) {
+    return `The generator build is older than its sources.\n` +
+      `  ${path.relative(ROOT, source.file)} changed after ${path.relative(ROOT, built.file)} was built.\n` +
+      `Run: npm run build:generate`;
   }
   return null;
 }
@@ -404,6 +477,6 @@ async function generate(options = {}, onProgress = () => {}) {
 }
 
 module.exports = {
-  generate, plan, registerScheme, checkPrerequisites,
-  DEFAULTS, SCENES, PAGE, PT_ASSETS,
+  generate, plan, registerScheme, checkPrerequisites, buildInputs,
+  DEFAULTS, SCENES, PAGE, PT_ASSETS, PT_SRC,
 };

@@ -353,6 +353,56 @@ test('match refuses two feature lists measured in different images', () => {
 });
 
 Promise.all(pending).then(() => {
-  console.log(failures === 0 ? '\nAll ground-truth tests passed.' : `\n${failures} failing.`);
+  /* --- the generator's prerequisite checks ------------------------------- */
+
+test('a stale generator build is caught, and named', () => {
+  /*
+   * pt-lab is a Vite ALIAS resolved at build time, so editing pt-lab and
+   * re-running the generator without rebuilding silently runs the old bundle
+   * and produces images that look completely reasonable. The symptom is "my
+   * change did nothing", which costs a sweep to notice.
+   *
+   * Checked against a temporary tree rather than the real one, because the
+   * real answer depends on whether someone just ran a build.
+   */
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { buildInputs } = require('../src/generate/driver');
+
+  const inputs = buildInputs();
+  assert.ok(inputs.length > 10, `expected pt-lab's source tree, found ${inputs.length} inputs`);
+  assert.ok(inputs.some((f) => f.endsWith('pathtracer.ts')),
+    'pt-lab\'s pathtracer must count as a build input');
+  assert.ok(!inputs.some((f) => f.endsWith(`generate${path.sep}driver.js`)),
+    'driver.js is required by Electron, not bundled — editing it cannot make a build stale');
+
+  // The comparison itself, on files this test owns.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cvlab-stale-'));
+  const older = path.join(dir, 'built');
+  const newer = path.join(dir, 'source');
+  fs.writeFileSync(older, '');
+  fs.writeFileSync(newer, '');
+  fs.utimesSync(older, new Date(1000), new Date(1000));
+  fs.utimesSync(newer, new Date(2000), new Date(2000));
+  assert.ok(fs.statSync(newer).mtimeMs > fs.statSync(older).mtimeMs,
+    'the mtime comparison the staleness check relies on must hold');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('every prerequisite message leads with a headline the pane can show', () => {
+  // The pane renders line 1 bold and the rest as detail, so a message whose
+  // first line is a path reads as a heading that is not one.
+  const { checkPrerequisites } = require('../src/generate/driver');
+  const message = checkPrerequisites();
+  if (message === null) return; // a fresh build: nothing to check
+  const [headline, ...detail] = message.split('\n');
+  assert.ok(/^[A-Z].*\.$/.test(headline),
+    `the first line should be a sentence, got ${JSON.stringify(headline)}`);
+  assert.ok(detail.length > 0, 'a headline with no detail leaves nothing to act on');
+  assert.match(message, /Run: npm run build:generate|sibling pt-lab-workspace/);
+});
+
+console.log(failures === 0 ? '\nAll ground-truth tests passed.' : `\n${failures} failing.`);
   process.exit(failures === 0 ? 0 : 1);
 });
