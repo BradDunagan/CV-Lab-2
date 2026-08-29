@@ -569,6 +569,90 @@ Beauty renders are **tagged sRGB** by pt-lab, so `load` confirms the encoding
 rather than assuming it. The AOV passes are **untagged on purpose** — they carry
 linear code values, not colour — and must be read `from=linear`.
 
+### How the generator actually works
+
+Worth knowing before you change anything here, and worth knowing anyway,
+because the obvious guesses are all wrong. There is **no browser**, no
+localhost, no server and no HTTP. pt-lab is compiled into a page that cv-lab-2
+loads into a hidden Chromium renderer inside its own process tree, and drives.
+
+```
+┌─ cv-lab-2 main process (Node) ─────────────────────────────────────┐
+│                                                                    │
+│  scripts/generate-cli.js        src/main.js ← IPC ← Generate pane  │
+│                    └──────┬───────────┘                            │
+│                    src/generate/driver.js                          │
+│                      · registers gen://                            │
+│                      · owns the BrowserWindow                      │
+│                      · intercepts will-download                    │
+│                      · computes the sweep (plan)                   │
+└───────────────────────────┬────────────────────────────────────────┘
+                            │  win.webContents.executeJavaScript("__gen.…")
+                            │  ↑ return values (structured clone)
+┌───────────────────────────▼────────────────────────────────────────┐
+│  generator renderer — a hidden BrowserWindow, gen://lab/index.html │
+│                                                                    │
+│    dist-generate/generate.js  =  src/generate/main.js              │
+│                                  + pt-lab (three.js, OIDN, WebGL)  │
+│    globalThis.__gen = { init, applyScene, camera, lighting,        │
+│                         quality, denoise, render, aovs,            │
+│                         groundTruth, status, objects, transform }  │
+└────────────────────────────────────────────────────────────────────┘
+                            │  a.click() on a blob: URL → download
+                            ▼
+                     generated/*.png, generated/aov/*.png
+```
+
+**pt-lab is a Vite alias, not a dependency.** `vite.generate.config.mjs` points
+`'pt-lab'` at `../pt-lab-workspace/packages/pt-lab/src/index.ts` and bundles its
+*source*. It is deliberately absent from `package.json`, because a `file:`
+dependency must resolve at **install** time even when nothing imports it — so
+adding it would break `npm ci` anywhere the sibling checkout is missing, CI
+included. Only that one config knows pt-lab exists, and only
+`npm run build:generate` reads it. That is also why this is a separate bundle:
+three.js and an OIDN WASM blob have no business in the app's renderer, and CI
+runners have software GL only, so building it there would cost minutes for an
+artifact nobody can use.
+
+**Why a custom `gen://` scheme rather than `file://`.** three.js's loaders fetch
+the glTF model and the HDR environment, and **Chromium refuses `fetch()` on
+`file://`** — the first attempt died with a bare "Failed to fetch". `gen://` is
+registered before app-ready with `supportFetchAPI: true`, which gives a real
+origin in-process: no TCP port, nothing listening. `gen://lab/` serves the built
+page and `gen://lab/assets/` serves pt-lab's own assets straight out of the
+sibling checkout, which is where its default URLs already point.
+
+**Two directions, both deliberately small.** Options go in through
+`executeJavaScript` against a named global. Results come back two ways, and the
+split is on purpose:
+
+- **Images come back as downloads.** pt-lab delivers an export by triggering
+  one, and that is worth keeping rather than reading the canvas here, because
+  `exportPNG` also converges to the sample target, denoises, downscales and tags
+  the PNG as sRGB. The driver catches `will-download` and chooses the save path.
+- **Ground truth comes back as a return value.** It is small, it is data rather
+  than an image, and `maxDepth` travels with it — so nothing has to parse a
+  float back out of a filename.
+
+**No pixels cross the boundary.** Renders go to disk and come back through
+`load` like any other file, which is the same rule the lab follows internally
+(`design-lab-model.md` §8).
+
+Two consequences worth knowing:
+
+**The window is real, just hidden.** `--show`, or *show the render window* in
+the Generate pane, makes it visible and you watch pt-lab path-trace. Nothing
+about the output changes — `exportPNG` renders offscreen at the requested size
+either way. It was hidden by default for no better reason than not wanting a
+window stealing focus for minutes, and the cost of that was nobody looking at
+the images for a long time.
+
+**The app never hosts the tracer.** The Generate pane sends options over IPC and
+displays progress; the main process runs pt-lab in its own window. That boundary
+is why growing the frame is cheap — every new pt-lab control is one field in the
+pane and one key in the options object, and nothing about the plumbing changes.
+`--scene`, `--truth`, `--aovs` and `--denoise` all arrived exactly that way.
+
 ---
 
 ## 7. Ground truth
