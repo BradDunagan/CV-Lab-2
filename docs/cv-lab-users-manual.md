@@ -521,12 +521,28 @@ so the batch path cannot drift from what the app does.
 
 ## 6. Generating images
 
-Needs a GPU and the sibling `pt-lab-workspace` checkout. Not part of `npm test`.
+Not part of `npm test`.
 
 ```bash
 npm run build:generate                                    # once
 npm run generate -- --out generated/ --scene cube --truth --aovs
 ```
+
+Both need the sibling `pt-lab-workspace` checkout, and they need **different
+parts of it**. Only the second needs a GPU:
+
+| | needs from the checkout | GPU |
+|---|---|---|
+| `build:generate` | `packages/pt-lab/src/`, and pt-lab's own `node_modules` for three, three-gpu-pathtracer and oidn-web | no — it is a Vite build |
+| `generate` | `packages/demo/public/assets/` — the glTF model, the HDR environment, and with `--denoise` the `.tza` denoiser weights | **yes** — path tracing is WebGL |
+
+The runtime dependency is easy to miss because it is not an import. pt-lab's
+default URLs are `./assets/…`, which resolve against `gen://lab/index.html`, and
+the protocol handler maps `assets/` straight onto the sibling checkout. So the
+files are fetched over the custom scheme at render time, out of a directory
+`build:generate` never touches — and they are fetched on **every** run, `--scene
+cube` included, because `init()` loads the model and the environment before
+`applyScene` replaces them.
 
 `build:generate` is needed **once**, and again whenever pt-lab's source
 changes — see below. `npm run dev:generate` is the same build in watch mode, if
