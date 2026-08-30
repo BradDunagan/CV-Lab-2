@@ -528,21 +528,26 @@ npm run build:generate                                    # once
 npm run generate -- --out generated/ --scene cube --truth --aovs
 ```
 
-Both need the sibling `pt-lab-workspace` checkout, and they need **different
-parts of it**. Only the second needs a GPU:
+**The sibling `pt-lab-workspace` checkout is a build dependency, not a runtime
+one.** Only `generate` needs a GPU:
 
-| | needs from the checkout | GPU |
+| | needs the checkout | GPU |
 |---|---|---|
-| `build:generate` | `packages/pt-lab/src/`, and pt-lab's own `node_modules` for three, three-gpu-pathtracer and oidn-web | no — it is a Vite build |
-| `generate` | `packages/demo/public/assets/` — the glTF model, the HDR environment, and with `--denoise` the `.tza` denoiser weights | **yes** — path tracing is WebGL |
+| `build:generate` | **yes** — `packages/pt-lab/src/` for the code, `packages/demo/public/assets/` for the model, environment and denoiser weights, and pt-lab's own `node_modules` for three, three-gpu-pathtracer and oidn-web | no — it is a Vite build |
+| `generate` | **no** — a built `dist-generate/` carries everything it needs | **yes** — path tracing is WebGL |
 
-The runtime dependency is easy to miss because it is not an import. pt-lab's
-default URLs are `./assets/…`, which resolve against `gen://lab/index.html`, and
-the protocol handler maps `assets/` straight onto the sibling checkout. So the
-files are fetched over the custom scheme at render time, out of a directory
-`build:generate` never touches — and they are fetched on **every** run, `--scene
-cube` included, because `init()` loads the model and the environment before
-`applyScene` replaces them.
+That is what the copy step in `vite.generate.config.mjs` is for. pt-lab's
+default URLs are `./assets/…`, resolved against `gen://lab/index.html`, and
+those files live in the *demo* package rather than the library — so without the
+copy the generator fetched them out of the checkout at render time, and a
+complete, correct build could still fail on its first frame because the checkout
+had moved. They are fetched on **every** run, `--scene cube` included, because
+`init()` loads the model and the environment before `applyScene` replaces them.
+
+A bundle built before that copy existed still works: the handler falls back to
+the checkout when the bundle has no assets of its own. One function,
+`assetsDir()`, decides for both the handler and the prerequisite check, so the
+two cannot disagree about where a file is meant to come from.
 
 `build:generate` is needed **once**, and again whenever pt-lab's source
 changes — see below. `npm run dev:generate` is the same build in watch mode, if
@@ -631,7 +636,7 @@ entirely. Three things do not follow that rule:
 | what changed | what to run |
 |---|---|
 | pt-lab's `src/` | `npm run build:generate` |
-| pt-lab's **assets** (the glTF model, the HDR, the denoiser weights) | nothing — `gen://lab/assets/` serves them from the checkout at runtime |
+| pt-lab's **assets** (the glTF model, the HDR, the denoiser weights) | `npm run build:generate` — they are copied into the bundle, so swapping one takes effect on the next build rather than immediately. That is deliberate: it pins what was rendered to what the bundle was built against |
 | pt-lab gained a **dependency** | `npm install` in `pt-lab-workspace` first; its deps resolve from *its* `node_modules` |
 | `src/generate/driver.js` | nothing — Electron requires it directly, it is not bundled |
 
@@ -663,8 +668,9 @@ the glTF model and the HDR environment, and **Chromium refuses `fetch()` on
 `file://`** — the first attempt died with a bare "Failed to fetch". `gen://` is
 registered before app-ready with `supportFetchAPI: true`, which gives a real
 origin in-process: no TCP port, nothing listening. `gen://lab/` serves the built
-page and `gen://lab/assets/` serves pt-lab's own assets straight out of the
-sibling checkout, which is where its default URLs already point.
+page, and `gen://lab/assets/` serves the model, environment and denoiser weights
+the build copied in beside it — which is where pt-lab's default URLs already
+point.
 
 **Two directions, both deliberately small.** Options go in through
 `executeJavaScript` against a named global. Results come back two ways, and the

@@ -1,10 +1,65 @@
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PT_LAB = path.resolve(HERE, '..', 'pt-lab-workspace', 'packages', 'pt-lab', 'src', 'index.ts');
+const PT_ROOT = path.resolve(HERE, '..', 'pt-lab-workspace', 'packages');
+const PT_LAB = path.join(PT_ROOT, 'pt-lab', 'src', 'index.ts');
+const PT_ASSETS = path.join(PT_ROOT, 'demo', 'public', 'assets');
+const OUT = path.resolve(HERE, 'dist-generate');
+
+/**
+ * Copy pt-lab's demo assets into the bundle.
+ *
+ * pt-lab's default URLs are `./assets/…` — the glTF model, the HDR
+ * environment, and the denoiser weights — and those files live in the DEMO
+ * package's public directory, not in the library. Without this the generator
+ * fetched them out of the sibling checkout at render time, which meant a build
+ * could be complete and correct and still fail on the first frame because the
+ * checkout had moved.
+ *
+ * Copying them here makes `dist-generate/` self-contained: the BUILD needs the
+ * sibling checkout, and running the generator does not. The same split the
+ * source already had.
+ *
+ * The cost, stated because it used to be the other way round: pt-lab's assets
+ * are now a BUILD INPUT. Swapping the helmet or the environment takes effect
+ * on the next `npm run build:generate` rather than immediately, and
+ * `checkPrerequisites` counts them when deciding a bundle is stale. For a
+ * fixture generator that is the better default — it pins what was rendered to
+ * what the bundle was built against.
+ */
+function copyPtLabAssets() {
+  return {
+    name: 'cv-lab-copy-pt-lab-assets',
+    apply: 'build',
+    closeBundle() {
+      if (!fs.existsSync(PT_ASSETS)) {
+        this.warn(
+          `pt-lab's assets are not at ${PT_ASSETS}. The bundle will not be ` +
+          `self-contained; the generator will look for them at run time instead.`
+        );
+        return;
+      }
+      const target = path.join(OUT, 'assets');
+      fs.mkdirSync(target, { recursive: true });
+      for (const name of fs.readdirSync(PT_ASSETS)) {
+        const from = path.join(PT_ASSETS, name);
+        const to = path.join(target, name);
+        const src = fs.statSync(from);
+        if (!src.isFile()) continue;
+        // Skip what is already current: these are ~9 MB in total and --watch
+        // reruns this on every rebuild.
+        let dst = null;
+        try { dst = fs.statSync(to); } catch { /* not there yet */ }
+        if (dst && dst.mtimeMs >= src.mtimeMs && dst.size === src.size) continue;
+        fs.copyFileSync(from, to);
+      }
+    },
+  };
+}
 
 /*
  * The image generator, built separately from the app.
@@ -30,7 +85,7 @@ const PT_LAB = path.resolve(HERE, '..', 'pt-lab-workspace', 'packages', 'pt-lab'
 export default defineConfig({
   root: 'src/generate',
   base: './',
-  plugins: [svelte()],
+  plugins: [svelte(), copyPtLabAssets()],
   resolve: {
     alias: { 'pt-lab': PT_LAB },
   },

@@ -20,6 +20,35 @@ const { pathToFileURL } = require('node:url');
 const ROOT = path.join(__dirname, '..', '..');
 const PAGE = path.join(ROOT, 'dist-generate');
 const PT_ASSETS = path.join(ROOT, '..', 'pt-lab-workspace', 'packages', 'demo', 'public', 'assets');
+const BUNDLED_ASSETS = path.join(PAGE, 'assets');
+
+/**
+ * The two files `init()` fetches on every run, whatever the scene.
+ *
+ * The denoiser weights are deliberately not here: they are only fetched when
+ * denoising is on, so a bundle without them is usable and refusing to start
+ * over them would be wrong.
+ */
+const CORE_ASSETS = ['damaged-helmet.glb', 'royal_esplanade_1k.hdr'];
+
+/**
+ * Where pt-lab's assets are coming from this run — the bundle, or the sibling
+ * checkout, or nowhere.
+ *
+ * `build:generate` copies them into the bundle, so a built generator is
+ * self-contained and the checkout is a BUILD dependency rather than a runtime
+ * one. The fallback keeps an older bundle, built before that copy existed,
+ * working rather than failing on its first frame.
+ *
+ * One function so there is exactly one rule: the protocol handler and the
+ * prerequisite check cannot disagree about where a file is meant to come from.
+ */
+function assetsDir() {
+  for (const dir of [BUNDLED_ASSETS, PT_ASSETS]) {
+    if (CORE_ASSETS.every((name) => fs.existsSync(path.join(dir, name)))) return dir;
+  }
+  return null;
+}
 
 const SCHEME = 'gen';
 
@@ -43,10 +72,11 @@ function installHandler() {
   if (handlerInstalled) return;
   protocol.handle(SCHEME, (request) => {
     const rel = decodeURIComponent(new URL(request.url).pathname).replace(/^\/+/, '');
-    // pt-lab's default model and environment URLs are ./assets/…, so those come
-    // from its own checkout; everything else is the built page.
+    // pt-lab's default model and environment URLs are ./assets/…, which the
+    // build copies into the bundle; assetsDir() falls back to the checkout for
+    // a bundle built before it did.
     const file = rel.startsWith('assets/')
-      ? path.join(PT_ASSETS, rel.slice('assets/'.length))
+      ? path.join(assetsDir() ?? BUNDLED_ASSETS, rel.slice('assets/'.length))
       : path.join(PAGE, rel || 'index.html');
     return net.fetch(pathToFileURL(file).toString());
   });
@@ -70,21 +100,27 @@ function buildInputs() {
     path.join(__dirname, 'main.js'),
     path.join(__dirname, 'index.html'),
   ];
-  const walk = (dir) => {
-    let entries;
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return; // the sibling checkout is missing; a different check reports that
-    }
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else inputs.push(full);
-    }
-  };
-  walk(PT_SRC);
+  // pt-lab's demo assets are copied into the bundle, so they are a build input
+  // now. Swapping the helmet used to take effect immediately and now needs a
+  // rebuild -- which is the trade that makes a built generator self-contained.
+  walkInto(PT_ASSETS, inputs);
+  walkInto(PT_SRC, inputs);
   return inputs;
+}
+
+/** Every file under `dir`, appended to `into`. Missing directories are skipped. */
+function walkInto(dir, into) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return; // the sibling checkout is missing; a different check reports that
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walkInto(full, into);
+    else into.push(full);
+  }
 }
 
 /** The most recently modified of a list of files, or null if none exist. */
@@ -120,9 +156,12 @@ function checkPrerequisites() {
     return `The generator is not built.\n  Expected a bundle at ${PAGE}\n` +
       `Run: npm run build:generate`;
   }
-  if (!fs.existsSync(PT_ASSETS)) {
-    return `pt-lab's assets are missing.\n  ${PT_ASSETS}\n` +
-      `The generator needs the sibling pt-lab-workspace checkout.`;
+  if (assetsDir() === null) {
+    return `pt-lab's assets are missing.\n` +
+      `  Not in the bundle: ${BUNDLED_ASSETS}\n` +
+      `  Nor in the checkout: ${PT_ASSETS}\n` +
+      `The build copies them into the bundle, so this usually means the sibling ` +
+      `pt-lab-workspace checkout was absent when it ran.\nRun: npm run build:generate`;
   }
 
   // Compared against the NEWEST output rather than a named one: Vite rewrites
@@ -478,5 +517,5 @@ async function generate(options = {}, onProgress = () => {}) {
 
 module.exports = {
   generate, plan, registerScheme, checkPrerequisites, buildInputs,
-  DEFAULTS, SCENES, PAGE, PT_ASSETS, PT_SRC,
+  DEFAULTS, SCENES, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS, assetsDir,
 };

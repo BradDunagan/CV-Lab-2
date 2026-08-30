@@ -187,8 +187,12 @@ because the blurred background and textured tabletop dominate the edge count —
 
 It is built separately from the app and is not part of `npm test`: it needs a
 real GPU, takes ~20 s per image, and would otherwise pull three.js and an OIDN
-WASM blob into a bundle that has no use for them. It needs the sibling
-`pt-lab-workspace` checkout; nothing else does.
+WASM blob into a bundle that has no use for them.
+
+`npm run build:generate` needs the sibling `pt-lab-workspace` checkout — for
+pt-lab's source and for the model, environment and denoiser weights it copies
+into the bundle. **`npm run generate` does not**: a built `dist-generate/` is
+self-contained. Nothing else in the project touches pt-lab at all.
 
 ## Checking the answers against the scene
 

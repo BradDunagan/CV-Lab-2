@@ -390,6 +390,47 @@ test('a stale generator build is caught, and named', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('the assets a run cannot start without, and the ones it can', () => {
+  /*
+   * `init()` fetches the model and the environment on every run, whatever the
+   * scene — so a bundle missing either cannot render at all and the generator
+   * should refuse up front. The denoiser weights are different: they are only
+   * fetched when denoising is on, so a bundle without them is perfectly
+   * usable and refusing to start over them would be wrong.
+   */
+  const { CORE_ASSETS } = require('../src/generate/driver');
+  assert.deepEqual([...CORE_ASSETS].sort(),
+    ['damaged-helmet.glb', 'royal_esplanade_1k.hdr']);
+  assert.ok(!CORE_ASSETS.some((f) => f.endsWith('.tza')),
+    'the denoiser weights are optional — needed only with --denoise');
+});
+
+test('a built bundle carries its own assets, so a run needs no checkout', () => {
+  /*
+   * The point of copying them in at build time: `build:generate` needs the
+   * sibling pt-lab-workspace checkout and `npm run generate` does not. Checked
+   * against the real bundle, and skipped when there is not one, because this
+   * suite runs under plain node where a build may never have happened.
+   */
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { assetsDir, BUNDLED_ASSETS, CORE_ASSETS } = require('../src/generate/driver');
+  const built = CORE_ASSETS.every((f) => fs.existsSync(path.join(BUNDLED_ASSETS, f)));
+  if (!built) return; // nothing built here; the flag below is what would catch a regression
+  assert.equal(assetsDir(), BUNDLED_ASSETS,
+    'a bundle with its own assets must be preferred over the sibling checkout');
+});
+
+test("pt-lab's assets count as build inputs, so swapping one is caught", () => {
+  // The trade for a self-contained bundle: they used to take effect with no
+  // rebuild, and now a stale bundle is refused instead.
+  const fs = require('node:fs');
+  const { buildInputs, PT_ASSETS } = require('../src/generate/driver');
+  if (!fs.existsSync(PT_ASSETS)) return; // no sibling checkout here
+  assert.ok(buildInputs().some((f) => f.startsWith(PT_ASSETS)),
+    "pt-lab's demo assets must be build inputs now that the build copies them");
+});
+
 test('every prerequisite message leads with a headline the pane can show', () => {
   // The pane renders line 1 bold and the rest as detail, so a message whose
   // first line is a path reads as a heading that is not one.
