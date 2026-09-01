@@ -146,7 +146,7 @@ notes/                   working notes; unlike docs/, never obliged to be curren
 ## Running it without the app
 
 ```bash
-npm run lab -- --script pipeline.lab --out results/ assets/*.png
+npm run lab -- --script pipelines/geometry.lab --out results/ assets/*.png
 ```
 
 Each image gets a fresh session that begins with `A = load(...)` and then runs
@@ -163,44 +163,68 @@ The command language is unchanged — no variables, no loops (§4). The iteratio
 lives in the runner, in JavaScript, which is what "embed a scripting engine
 rather than grow this into a language" means in practice.
 
-## Generating images to run over
+## Generating images
+
+Change the lighting, change the pose, re-run your pipeline over the result, see
+whether the geometry still comes out. That loop is what the lab is for, so the
+generator **ships as part of the application**: **Panes → Generate Images…**
+(⌘G) in an installed CV-Lab, with no checkout, no build and nothing else to
+install. It needs a GPU capable of WebGL path tracing, takes about 20 s per
+image, and adds ~17 MB to the installer.
+
+The pane has the parameters, a progress log, and a *show the render window*
+box — tick it and pt-lab's own window appears, path tracing in front of you.
+Images default to `~/Pictures/CV-Lab`, because a packaged app inherits a
+working directory it never chose.
+
+From a working copy there is a command line too:
 
 ```bash
 npm run build:generate                       # once
 npm run generate -- --out generated/ --positions 3 --lighting 2
-npm run lab -- --script pipeline.lab --out results/ generated/*.png
+npm run lab -- --script pipelines/geometry.lab --out results/ generated/*.png
 ```
 
-Or from inside the app: **Panes → Generate Images…** (⌘G) opens a frame with
-the same parameters, a progress log, and a *show the render window* box — tick
-it and pt-lab's window appears, path tracing in front of you.
+It hosts [pt-lab](../pt-lab-workspace) — a GPU path tracer — in its own window,
+orbits the camera, varies the environment intensity, and writes one PNG per
+combination. `--show` does from the CLI what the checkbox does in the pane.
+`--dry-run` prints the sweep without rendering, which is worth doing before
+committing several minutes.
 
-The generator hosts [pt-lab](../pt-lab-workspace) — a GPU path tracer — in its
-own window, orbits the camera and varies the environment intensity, and writes
-one PNG per combination. `--show` does the same from the CLI.
+Two scenes. **`helmet`** is pt-lab's damaged helmet, and every number recorded
+in `notes/` was measured on it. **`cube`** is a 10 cm cube on a table with a
+ball beside it — twelve edges and eight vertices in known places, which is what
+makes ground truth possible; see the next section. `--truth` and `--aovs` write
+what is really in the frame alongside the render.
 
-It defaults to a **room** scene, which isolates the subject. `--room none` uses
+It defaults to a **room**, which isolates the subject. `--room none` uses
 pt-lab's default HDR environment: better-looking, and a poor CV fixture,
 because the blurred background and textured tabletop dominate the edge count —
-446 segments against 156 for the same object in a room. It uses pt-lab's own
-`exportPNG`, so each file is **tagged sRGB** (`sRGB` + `gAMA` + `cHRM`) and
-`load` confirms the encoding instead of assuming it.
+446 segments against 156 for the same object in a room. Beauty renders go
+through pt-lab's own `exportPNG`, so each is **tagged sRGB** (`sRGB` + `gAMA` +
+`cHRM`) and `load` confirms the encoding instead of assuming it. `--denoise`
+runs OIDN over each export; it is off by default, matching pt-lab, so every
+image recorded so far carries the raw path-traced noise floor.
 
-It is built separately from the app and is not part of `npm test`: it needs a
-real GPU, takes ~20 s per image, and would otherwise pull three.js and an OIDN
-WASM blob into a bundle that has no use for them.
+### What needs the sibling checkout, and when
 
-`npm run build:generate` needs the sibling `pt-lab-workspace` checkout — for
-pt-lab's source and for the model, environment and denoiser weights it copies
-into the bundle. **`npm run generate` does not**: a built `dist-generate/` is
-self-contained.
+`npm run build:generate` does — for pt-lab's source, and for the model,
+environment and denoiser weights it copies into the bundle. **`npm run
+generate` does not**, and neither does the installed app: a built
+`dist-generate/` is self-contained. That split is what lets the feature ship,
+and `npm run package` builds the generator into the `app.asar`.
 
-That is what lets it ship. `npm run package` builds the generator and puts it
-inside the `app.asar`, so **an installed CV-Lab can generate its own fixtures**
-— Panes → Generate Images… (⌘G), no checkout and no build. Varying lighting and
-pose and re-running a pipeline over the result is the loop the lab is for, so
-it is a feature rather than a developer tool. It needs a GPU capable of WebGL
-path tracing, and adds about 17 MB to the installer.
+Two guards, because both failures are silent. The bundle is refused if it is
+**older than its sources**, since a stale one runs happily and produces images
+that look completely reasonable. And `build:generate` refuses a bundle whose
+pt-lab does not **define** the methods `src/generate/main.js` calls — a
+checkout one commit behind builds, packages and launches cleanly, then throws
+the moment `--truth` is used, and that shipped once already.
+
+It is a separate build from `build:renderer` and no part of `npm test`: it
+needs a real GPU, and it would otherwise pull three.js and an OIDN WASM blob
+into a renderer bundle that has no use for them. `npm run dev:generate` is the
+same build in watch mode, for editing pt-lab and cv-lab-2 together.
 
 ## Checking the answers against the scene
 
