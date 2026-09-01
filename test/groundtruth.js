@@ -431,6 +431,69 @@ test("pt-lab's assets count as build inputs, so swapping one is caught", () => {
     "pt-lab's demo assets must be build inputs now that the build copies them");
 });
 
+/* --- the generator bundle guard --------------------------------------- */
+
+test('a called-but-undefined pt-lab method is caught, a called-and-defined one is not', () => {
+  /*
+   * The distinction this whole check turns on. `src/generate/main.js` is plain
+   * JavaScript calling a pt-lab built from a sibling checkout, so a method that
+   * does not exist there is a RUNTIME error -- the bundle builds, the app
+   * packages and launches, and the call throws when a user asks for an image.
+   *
+   * Both halves live in the same bundled file: main.js's call
+   * (`lab.groundTruthGeometry(...)`) and pt-lab's definition
+   * (`groundTruthGeometry(size, opts) {`). Searching for the NAME finds the
+   * call whether or not the definition is there, so the naive check passes
+   * exactly when it matters. The dot is what separates them.
+   */
+  const { definedIn, missingFrom } = require('../scripts/check-generate-bundle');
+
+  const bothPresent = 'class L{groundTruthGeometry(a,b){return 1}}\nx=lab.groundTruthGeometry(256)';
+  const callOnly = 'x=lab.groundTruthGeometry(256)';
+  assert.equal(definedIn(bothPresent, 'groundTruthGeometry'), true);
+  assert.equal(definedIn(callOnly, 'groundTruthGeometry'), false,
+    'a call site alone must not read as a definition — this is the whole point');
+  assert.deepEqual(missingFrom(callOnly, ['groundTruthGeometry']), ['groundTruthGeometry']);
+
+  // Shapes the minified bundle really contains.
+  assert.equal(definedIn('async exportAOVs(t,e="view",s={}){', 'exportAOVs'), true);
+  assert.equal(definedIn('{exportAOVs(t){}}', 'exportAOVs'), true);
+  // …and a longer name that merely ends with it must not count.
+  assert.equal(definedIn('myExportAOVs(t){}', 'exportAOVs'), false);
+});
+
+test('the page\'s pt-lab calls are found by name', () => {
+  const { methodsCalledOnLab } = require('../scripts/check-generate-bundle');
+  const found = methodsCalledOnLab(`
+    lab.init({});
+    lab. setRoom('room');
+    const t = lab.getObjectTransform(id);
+    other.notALabMethod();
+    lab.init({});
+  `);
+  assert.deepEqual(found, ['getObjectTransform', 'init', 'setRoom'],
+    'deduplicated, sorted, and only calls on the lab');
+});
+
+test('the real bundle defines every pt-lab method the real page calls', () => {
+  /*
+   * The end-to-end form, against the actual build when there is one. Skipped
+   * rather than failed without a build, because this suite runs under plain
+   * node where the generator may never have been built -- the postbuild hook
+   * is what enforces it where it matters.
+   */
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const bundle = path.join(__dirname, '..', 'dist-generate', 'generate.js');
+  if (!fs.existsSync(bundle)) return;
+
+  const { methodsCalledOnLab, missingFrom } = require('../scripts/check-generate-bundle');
+  const page = fs.readFileSync(path.join(__dirname, '..', 'src', 'generate', 'main.js'), 'utf8');
+  const called = methodsCalledOnLab(page);
+  assert.ok(called.length > 5, `expected the page to call pt-lab, found ${called.length} methods`);
+  assert.deepEqual(missingFrom(fs.readFileSync(bundle, 'utf8'), called), []);
+});
+
 test('every prerequisite message leads with a headline the pane can show', () => {
   // The pane renders line 1 bold and the rest as detail, so a message whose
   // first line is a path reads as a heading that is not one.

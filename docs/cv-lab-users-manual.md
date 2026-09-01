@@ -659,10 +659,29 @@ entirely. Three things do not follow that rule:
 | pt-lab gained a **dependency** | `npm install` in `pt-lab-workspace` first; its deps resolve from *its* `node_modules` |
 | `src/generate/driver.js` | nothing — Electron requires it directly, it is not bundled |
 
+**A checkout that is BEHIND is caught at build time.** `src/generate/main.js`
+is plain JavaScript calling pt-lab, so a method the bundled pt-lab does not
+have is a runtime error rather than a build one — the bundle builds, the app
+packages and launches, and `--truth` throws the moment it is used. Two CI jobs
+went green over installers in exactly that state. `build:generate` now ends by
+checking that every `lab.<method>()` the page calls is *defined* in the bundle
+and not merely called there, which is a distinction a search for the name
+cannot make, since both the call and the definition end up in the same file:
+
+```
+FAIL: the bundled pt-lab does not define 2 method(s) that
+src/generate/main.js calls:
+  - lab.exportAOVs()
+  - lab.groundTruthGeometry()
+…
+Check that the sibling checkout has the commit you expect — an unpushed
+one is the usual cause — then: npm run build:generate
+```
+
 Forgetting the rebuild used to be silent, and it is the worst kind of silent:
 the old bundle runs and produces images that look completely reasonable, so the
-symptom is "my change did nothing". `checkPrerequisites` now compares the
-bundle's timestamp against every file it was built from and refuses first:
+symptom is "my change did nothing". `checkPrerequisites` compares the bundle's
+timestamp against every file it was built from and refuses first:
 
 ```
 The generator build is older than its sources.

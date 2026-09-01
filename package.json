@@ -17,6 +17,7 @@
     "build:native": "node-gyp rebuild",
     "build:renderer": "vite build",
     "build:generate": "vite build --config vite.generate.config.mjs",
+    "postbuild:generate": "node scripts/check-generate-bundle.js",
     "dev:renderer": "vite build --watch",
     "dev:generate": "vite build --config vite.generate.config.mjs --watch",
     "lint:native": "node scripts/lint-native.js",
