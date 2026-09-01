@@ -140,7 +140,8 @@ notes/                   working notes; unlike docs/, never obliged to be curren
 | `npm run rebuild:electron` | Rebuild against Electron's headers |
 | `npm start` | Launch the app |
 | `npm run package` | Unsigned installers into `dist/` |
-| `npm run verify:package` | Assert the addon survived packaging |
+| `npm run verify:package` | Assert the addon and the generator survived packaging |
+| `npm run smoke:package` | Launch the packaged app and check it actually works |
 
 ## Running it without the app
 
@@ -192,7 +193,14 @@ WASM blob into a bundle that has no use for them.
 `npm run build:generate` needs the sibling `pt-lab-workspace` checkout — for
 pt-lab's source and for the model, environment and denoiser weights it copies
 into the bundle. **`npm run generate` does not**: a built `dist-generate/` is
-self-contained. Nothing else in the project touches pt-lab at all.
+self-contained.
+
+That is what lets it ship. `npm run package` builds the generator and puts it
+inside the `app.asar`, so **an installed CV-Lab can generate its own fixtures**
+— Panes → Generate Images… (⌘G), no checkout and no build. Varying lighting and
+pose and re-running a pipeline over the result is the loop the lab is for, so
+it is a feature rather than a developer tool. It needs a GPU capable of WebGL
+path tracing, and adds about 17 MB to the installer.
 
 ## Checking the answers against the scene
 

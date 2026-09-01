@@ -521,7 +521,16 @@ so the batch path cannot drift from what the app does.
 
 ## 6. Generating images
 
-Not part of `npm test`.
+Varying the lighting and the pose and re-running your pipeline over the result
+is the loop this lab is for, so **image generation ships as part of the
+application**. In an installed CV-Lab it is **Panes → Generate Images…** (⌘G),
+with no checkout, no build and nothing to install — the path tracer, the model
+and the environment are all inside the app.
+
+It needs a GPU capable of WebGL path tracing, which is the one real
+requirement, and about 20 s per image.
+
+From a working copy there is a command line as well:
 
 ```bash
 npm run build:generate                                    # once
@@ -529,12 +538,18 @@ npm run generate -- --out generated/ --scene cube --truth --aovs
 ```
 
 **The sibling `pt-lab-workspace` checkout is a build dependency, not a runtime
-one.** Only `generate` needs a GPU:
+one** — which is what lets the feature ship at all. Only `generate` needs a
+GPU:
 
 | | needs the checkout | GPU |
 |---|---|---|
 | `build:generate` | **yes** — `packages/pt-lab/src/` for the code, `packages/demo/public/assets/` for the model, environment and denoiser weights, and pt-lab's own `node_modules` for three, three-gpu-pathtracer and oidn-web | no — it is a Vite build |
-| `generate` | **no** — a built `dist-generate/` carries everything it needs | **yes** — path tracing is WebGL |
+| `generate`, and the installed app | **no** — a built `dist-generate/` carries everything it needs | **yes** — path tracing is WebGL |
+
+`npm run package` runs `build:generate` and puts `dist-generate/` inside the
+`app.asar`, about 17 MB of the installer. It needs no `asarUnpack`, unlike the
+native addon: `net.fetch` on a `file://` URL reads inside an archive, verified
+rather than assumed — a 3.7 MB glTF comes back byte-identical.
 
 That is what the copy step in `vite.generate.config.mjs` is for. pt-lab's
 default URLs are `./assets/…`, resolved against `gen://lab/index.html`, and
@@ -571,7 +586,11 @@ you are editing pt-lab and cv-lab-2 together.
 
 About **20 s per image**. `--dry-run` before committing several minutes.
 
-The same thing from inside the app: **Panes → Generate Images…** (⌘G).
+The pane takes the same options. Where it writes them differs, and deliberately:
+a relative path resolves against a working directory an installed app never
+chose — `/` on macOS when launched from Finder — so the pane asks the main
+process for somewhere real and offers **`~/Pictures/CV-Lab`**. The CLI keeps
+relative-to-cwd, which is what a CLI should do.
 
 **The two scenes are for different questions.** `helmet` is a dense textured
 mesh whose image edges are overwhelmingly paint — a fine detector workout and a

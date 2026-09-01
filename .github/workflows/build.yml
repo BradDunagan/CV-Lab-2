@@ -131,6 +131,19 @@ jobs:
           token: ${{ secrets.PANELESS_TOKEN }}
           path: paneless-workspace
 
+      # pt-lab is the image generator's path tracer, and image generation ships
+      # AS PART OF THE APP -- varying lighting and pose to test a pipeline
+      # against is the point of the lab, not a developer convenience. So the
+      # package job needs it, exactly as it needs paneless for the renderer.
+      #
+      # No token: unlike paneless-workspace this repository is public. The
+      # directory name differs from the repository name on purpose -- every
+      # path in cv-lab-2 expects a `pt-lab-workspace` sibling.
+      - uses: actions/checkout@v4
+        with:
+          repository: BradDunagan/pt-lab
+          path: pt-lab-workspace
+
       # Must be >= 22.12. Electron 43, @electron/rebuild 4 and node-gyp 13 all
       # declare it, and node-gyp 13's bundled undici genuinely breaks on Node 20
       # with "webidl.util.markAsUncloneable is not a function" during configure.
@@ -148,6 +161,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential xvfb
 
       - run: npm ci
+
+      # pt-lab is consumed from SOURCE through a Vite alias, so building the
+      # generator compiles its TypeScript here -- and therefore has to resolve
+      # pt-lab's own runtime dependencies (three, three-gpu-pathtracer,
+      # oidn-web) out of ITS node_modules. Same shape as the paneless step
+      # below, and for the same reason.
+      - name: Install pt-lab's dependencies
+        working-directory: pt-lab-workspace
+        run: npm ci
 
       # paneless is consumed from SOURCE, not from a published package, so
       # Vite compiles its TypeScript and Svelte here -- and therefore has to
@@ -255,6 +277,19 @@ jobs:
       # was dropped from the bundle or stranded inside app.asar.
       - name: Verify package layout
         run: npm run verify:package
+
+      # Layout is not behaviour, and the difference has already cost this
+      # project a release. Every check above passed while the packaged app was
+      # dead on launch: the preload required a file that was never in the
+      # bundle, threw, and the window came up with no `window.lab` at all. This
+      # starts the real artifact and asks whether it works.
+      - name: Smoke-test the packaged app
+        if: runner.os != 'Linux'
+        run: npm run smoke:package
+
+      - name: Smoke-test the packaged app (Linux, under xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run smoke:package
 
       - name: Upload installers
         uses: actions/upload-artifact@v4

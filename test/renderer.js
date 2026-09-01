@@ -467,14 +467,21 @@ app.whenReady().then(async () => {
   ipcMain.handle('menu:state', (_event, state) => { menuState.push(state); });
 
   /*
-   * The generator's prerequisite check. Answered here rather than left
-   * unhandled so the Generate frame can be exercised: on a machine with no
-   * dist-generate build -- every CI runner, since the generator is
-   * deliberately never built there -- this reports what is missing and the
-   * pane is expected to say so rather than offer a dead button.
+   * The generator's two startup questions, answered here rather than left
+   * unhandled so the Generate frame can be exercised. On a machine with no
+   * dist-generate build -- a CI runner at this point in the job, since the
+   * generator is not built until packaging -- the check reports what is
+   * missing and the pane is expected to say so rather than offer a dead
+   * button.
+   *
+   * Both are needed. An unhandled invoke rejects, and the pane calls these on
+   * mount, so leaving one out surfaces as an uncaught rejection in the page --
+   * which the "logged no errors" assertion below catches, exactly as it
+   * should.
    */
-  const { checkPrerequisites } = require('../src/generate/driver');
+  const { checkPrerequisites, defaultOutputDir } = require('../src/generate/driver');
   ipcMain.handle('generate:check', () => checkPrerequisites());
+  ipcMain.handle('generate:defaults', () => ({ out: defaultOutputDir() }));
 
   const win = new BrowserWindow({
     show: false,

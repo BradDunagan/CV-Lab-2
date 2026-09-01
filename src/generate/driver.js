@@ -12,7 +12,7 @@
  * `onProgress` and decide what to do with it — print it, or send it to a pane.
  */
 
-const { BrowserWindow, protocol, net, session } = require('electron');
+const { app, BrowserWindow, protocol, net, session } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -139,30 +139,63 @@ function newestOf(files) {
 }
 
 /**
+ * Is this a packaged app rather than a working copy?
+ *
+ * Guarded, because driver.js is also required by the CLIs and by tests, where
+ * `app` exists but may not, and where reading it must never be what fails.
+ */
+function isPackaged() {
+  try {
+    return Boolean(app?.isPackaged);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * What is wrong, if anything, phrased as something a person can act on.
  *
  * The FIRST LINE is a headline and the rest is detail — the Generate pane
  * shows them differently, and "the generator is not built" and "the generator
  * build is stale" are not the same sentence.
  *
- * That third check exists because the failure it catches is silent. pt-lab is
- * a Vite ALIAS, resolved at build time, so editing pt-lab and re-running the
- * generator without rebuilding runs the old bundle and produces images that
- * look completely reasonable. The symptom is "my change did nothing", which
- * costs a sweep to notice and can cost several to diagnose.
+ * TWO AUDIENCES, and they need different sentences. In a working copy the
+ * reader can run a build, and telling them which one is the whole job. In a
+ * packaged app they cannot: the bundle is either in the .asar or it is not,
+ * `npm run build:generate` is not a thing they can type, and a missing bundle
+ * is a defect in the release rather than anything they did.
  */
 function checkPrerequisites() {
+  const packaged = isPackaged();
+  const rebuild = packaged
+    ? `This is a defect in the release rather than anything you did — ` +
+      `please report it.`
+    : `Run: npm run build:generate`;
+
   if (!fs.existsSync(PAGE)) {
-    return `The generator is not built.\n  Expected a bundle at ${PAGE}\n` +
-      `Run: npm run build:generate`;
+    return packaged
+      ? `Image generation is missing from this build.\n` +
+        `  Expected it at ${PAGE}\n${rebuild}`
+      : `The generator is not built.\n  Expected a bundle at ${PAGE}\n${rebuild}`;
   }
   if (assetsDir() === null) {
-    return `pt-lab's assets are missing.\n` +
-      `  Not in the bundle: ${BUNDLED_ASSETS}\n` +
-      `  Nor in the checkout: ${PT_ASSETS}\n` +
-      `The build copies them into the bundle, so this usually means the sibling ` +
-      `pt-lab-workspace checkout was absent when it ran.\nRun: npm run build:generate`;
+    return packaged
+      ? `Image generation is missing its assets.\n` +
+        `  Expected them at ${BUNDLED_ASSETS}\n${rebuild}`
+      : `pt-lab's assets are missing.\n` +
+        `  Not in the bundle: ${BUNDLED_ASSETS}\n` +
+        `  Nor in the checkout: ${PT_ASSETS}\n` +
+        `The build copies them into the bundle, so this usually means the sibling ` +
+        `pt-lab-workspace checkout was absent when it ran.\n${rebuild}`;
   }
+
+  /*
+   * Staleness is a working-copy question and only a working-copy question. A
+   * packaged app has no sources to be older than, and the comparison would be
+   * against files that are not there -- so it is skipped explicitly rather
+   * than left to come out right by accident.
+   */
+  if (packaged) return null;
 
   // Compared against the NEWEST output rather than a named one: Vite rewrites
   // every output each build, so they share a timestamp, and taking the newest
@@ -175,6 +208,29 @@ function checkPrerequisites() {
       `Run: npm run build:generate`;
   }
   return null;
+}
+
+/**
+ * Where generated images should go, when the caller has no opinion.
+ *
+ * A RELATIVE path is resolved against the working directory, which is right
+ * for a CLI and wrong for an application: a packaged app launched from Finder
+ * or the Start menu inherits a working directory it never chose -- `/` on
+ * macOS -- so the pane's `generated` would have meant `/generated`, and a
+ * first run would have failed on a permission error with nothing to suggest
+ * why.
+ *
+ * So the app asks for this and gets somewhere a person can actually find, and
+ * the CLI keeps the relative-to-cwd behaviour that a CLI should have.
+ */
+function defaultOutputDir() {
+  if (!isPackaged()) return path.join(process.cwd(), 'generated');
+  try {
+    return path.join(app.getPath('pictures'), 'CV-Lab');
+  } catch {
+    // Some Linux setups have no XDG pictures directory.
+    return path.join(app.getPath('userData'), 'generated');
+  }
 }
 
 const DEFAULTS = {
@@ -517,5 +573,6 @@ async function generate(options = {}, onProgress = () => {}) {
 
 module.exports = {
   generate, plan, registerScheme, checkPrerequisites, buildInputs,
-  DEFAULTS, SCENES, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS, assetsDir,
+  DEFAULTS, SCENES, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS,
+  assetsDir, defaultOutputDir, isPackaged,
 };

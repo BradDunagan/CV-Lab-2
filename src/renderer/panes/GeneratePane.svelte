@@ -29,7 +29,10 @@
   let ready = $state(null);
 
   const options = $state({
-    out: 'generated',
+    // Replaced on mount by whatever the main process nominates. A relative
+    // path would resolve against a working directory a packaged app never
+    // chose, which on macOS is `/`.
+    out: '',
     scene: 'helmet',
     size: 384,
     samples: 48,
@@ -53,6 +56,7 @@
 
   onMount(() => {
     lab.generate.check().then((problem) => { unavailable = problem; });
+    lab.generate.defaults().then(({ out }) => { if (!options.out) options.out = out; });
     return lab.generate.onProgress((progress) => {
       if (progress.type === 'ready') {
         ready = progress;
@@ -105,7 +109,9 @@
     </div>
   {:else}
     <div class="controls">
-      <label>out <input bind:value={options.out} disabled={running} /></label>
+      <label title="where the images are written">
+        out <input bind:value={options.out} disabled={running} size="28" />
+      </label>
       <label>size <input type="number" min="64" max="2048" step="64"
                          bind:value={options.size} disabled={running} /></label>
       <label>samples <input type="number" min="4" max="1000" step="4"

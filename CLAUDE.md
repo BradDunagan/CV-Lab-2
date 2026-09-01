@@ -69,11 +69,15 @@ npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run dev:renderer    # the same, in watch mode
 npm run build:generate  # the generator bundle — rerun whenever pt-lab's source
                         # changes; a stale one is refused rather than run
+npm run package         # installers; builds the generator INTO the app
+npm run verify:package  # the artifact's layout
+npm run smoke:package   # launch it and check it actually works
 ```
 
 ## Constraints that are not negotiable without a reason
 
 - **Node-API, never NAN.** One binary works under both Node and Electron. Verified, not assumed.
+- **Image generation ships in the app.** It is not a developer tool: varying lighting and pose to test a pipeline against is the lab's core loop, so `npm run package` builds `dist-generate/` into the `app.asar`. That is why pt-lab is a *build* dependency only — the bundle carries the tracer, the model and the environment. Needs a GPU; adds ~17 MB.
 - **`sandbox: false` on the window**, with `contextIsolation` on and `nodeIntegration` off. It exists so the preload can `require()` a real `.node`. Conditional on this window only ever loading local, first-party content.
 - **Pixels never cross the contextBridge.** It deep-copies typed arrays — measured. The preload owns the buffers and renders into the canvas directly. Svelte owns the DOM and only the DOM: a pane hands the preload a canvas **id**, because a DOM node cannot cross the bridge either.
 - **The macOS menu-bar name is `CFBundleName` in the running bundle**, not `app.setName()`. A dev run says "Electron" because it runs Electron's own bundle; the packaged app is always right. `scripts/brand-dev-electron.js` patches the dev copy from `postinstall`.
@@ -87,6 +91,7 @@ npm run build:generate  # the generator bundle — rerun whenever pt-lab's sourc
 - **Measure before optimising, and before believing.** `merge` was 114× slower than necessary and nothing in the code looked wrong. The default `minMag` was tuned on synthetic images and missed a third of the real ones.
 - **Assert properties, not current output.** A test that records what the code produces cannot tell you the code is wrong.
 - **A check that runs in one place can pass for the wrong reason.** An implicit `posix_memalign` declaration warned on every Linux build for weeks and never once on macOS.
+- **Layout is not behaviour.** `verify:package` checked that the right files were in the artifact and passed on every release while the packaged app was dead on launch — the preload required `scripts/png.js`, which was never in `files:`, so `window.lab` never existed. `smoke:package` starts the real artifact and asks whether it works. Anything the preload or main process `require`s at runtime must be in `electron-builder.yml`.
 - **Read CI logs for warnings, not only errors.** That is how the above survived three green checkmarks.
 - **Cost is quadratic in segment count, not resolution.** A megapixel of pixel work is ~30 ms; a busy scene is what hurts.
 - **A scoring table reports a number whether or not it is right.** Both defects in the ground-truth machinery were invisible in the tally and obvious in one overlay image — as were the two fixtures before them that nobody had looked at. `npm run overlay` exists for that, and it is not a convenience.

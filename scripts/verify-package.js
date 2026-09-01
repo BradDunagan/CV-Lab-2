@@ -129,13 +129,62 @@ for (const asar of asars) {
     console.log(`  ok   ${where} carries the built renderer (${countFiles(built)} files)`);
   }
 
-  // The Svelte source cannot run; shipping it too would put two copies of the
-  // UI in the bundle, one of them dead.
-  const source = tree.files['src']?.files?.['renderer'];
-  if (source) {
+  /*
+   * The image generator, which ships like any other feature.
+   *
+   * Three things have to be true together and each fails differently: the
+   * page, the pt-lab bundle, and the assets it fetches at render time. The
+   * assets are the easiest to lose, because they arrive through a copy step in
+   * the Vite config rather than through an import -- so an otherwise perfect
+   * build can produce an app that dies on its first frame.
+   */
+  const generator = tree.files['dist-generate'];
+  if (!generator?.files) {
     problems.push(
-      `${where}: ships src/renderer/ Svelte source, which cannot run ` +
-        '-- the "!src/renderer/**/*" exclusion stopped matching'
+      `${where}: no dist-generate/ -- image generation would be missing from ` +
+        'this build. Run `npm run build:generate` before packaging.'
+    );
+  } else {
+    const missing = ['index.html', 'generate.js']
+      .filter((f) => !generator.files[f]);
+    const assets = generator.files['assets']?.files ?? {};
+    // The two init() fetches on every run, whatever the scene. The .tza
+    // denoiser weights are deliberately not required: they are read only with
+    // --denoise, so a build without them still generates images.
+    missing.push(...['damaged-helmet.glb', 'royal_esplanade_1k.hdr']
+      .filter((f) => !assets[f])
+      .map((f) => `assets/${f}`));
+    if (missing.length > 0) {
+      problems.push(
+        `${where}: dist-generate/ is missing ${missing.join(', ')} ` +
+          '-- the generator would fail at run time'
+      );
+    } else {
+      console.log(`  ok   ${where} carries the image generator (${countFiles(generator)} files)`);
+    }
+  }
+
+  // Source that only a bundler can read cannot run; shipping it too would put
+  // two copies of the same thing in the package, one of them dead.
+  for (const [label, node, exclusion] of [
+    ['src/renderer/', tree.files['src']?.files?.['renderer'], '"!src/renderer/**/*"'],
+    ['src/generate/main.js', tree.files['src']?.files?.['generate']?.files?.['main.js'],
+     '"!src/generate/main.js"'],
+  ]) {
+    if (node) {
+      problems.push(
+        `${where}: ships ${label}, which cannot run -- the ${exclusion} exclusion stopped matching`
+      );
+    }
+  }
+
+  // …but driver.js is main-process CommonJS, required at run time. Losing it
+  // to an over-broad exclusion would break generation with a module-not-found
+  // at startup.
+  if (!tree.files['src']?.files?.['generate']?.files?.['driver.js']) {
+    problems.push(
+      `${where}: src/generate/driver.js is missing -- it is required at run ` +
+        'time, not bundled, so an exclusion has gone too wide'
     );
   }
 }

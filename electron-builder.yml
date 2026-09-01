@@ -28,14 +28,39 @@ asarUnpack:
 # renderer into dist-renderer/ at build time. Nothing from node_modules is
 # needed at runtime.
 #
-# src/renderer/ is deliberately excluded: it is Svelte source that only Vite
-# can read, and shipping it would put two copies of the UI in the package, one
-# of which cannot run.
+# Source that only a bundler can read is excluded, for both bundles. Shipping
+# it would put two copies of the same thing in the package, one of which cannot
+# run: src/renderer/ is the app's Svelte source, and src/generate/main.js and
+# index.html are the generator page's -- both are already compiled, into
+# dist-renderer/ and dist-generate/ respectively. src/generate/driver.js STAYS:
+# it is main-process CommonJS, required at runtime, and is not bundled at all.
+#
+# dist-generate/ is the image generator: the pt-lab bundle plus the model, the
+# environment and the denoiser weights the build copies in beside it. About
+# 17 MB, and it is what makes generating fixtures a feature of the app rather
+# than something only a working copy can do. It needs no asarUnpack -- verified
+# rather than assumed: net.fetch on a file:// URL reads inside an .asar, and a
+# 3.7 MB glTF comes back byte-identical.
+# scripts/png.js is here because the PRELOAD requires it -- readPngColour is
+# what lets `load` confirm a PNG's declared encoding rather than assume it. It
+# is runtime code that happens to live in scripts/, and leaving it out made
+# every packaged build dead on launch: the preload threw
+# "Cannot find module '../scripts/png'", contextBridge never ran, and the
+# renderer came up to "window.lab is missing". Nothing caught it, because
+# verify-package checked the LAYOUT and never that the app runs -- it does now.
+#
+# Named file by file rather than scripts/**/*: the rest of that directory is
+# CLI entry points and build tooling, which would be dead weight for exactly
+# the reason the exclusions above exist.
 files:
   - package.json
   - src/**/*
   - "!src/renderer/**/*"
+  - "!src/generate/main.js"
+  - "!src/generate/index.html"
+  - scripts/png.js
   - dist-renderer/**/*
+  - dist-generate/**/*
   - native/**/*.js
   - build/Release/*.node
 

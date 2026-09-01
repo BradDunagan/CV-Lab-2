@@ -269,6 +269,7 @@ contextBridge.exposeInMainWorld('lab', {
   generate: {
     /** null if the generator can run, or a sentence saying what is missing. */
     check: () => ipcRenderer.invoke('generate:check'),
+    defaults: () => ipcRenderer.invoke('generate:defaults'),
     run: (options) => ipcRenderer.invoke('generate:run', options),
     onProgress: (callback) => {
       const listener = (_event, progress) => callback(progress);

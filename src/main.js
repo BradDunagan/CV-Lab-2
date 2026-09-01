@@ -121,6 +121,16 @@ function createWindow() {
   ipcMain.removeHandler('generate:check');
   ipcMain.handle('generate:check', () => generator.checkPrerequisites());
 
+  /*
+   * Where images go by default.
+   *
+   * The main process decides, not the pane, because a relative path resolves
+   * against a working directory a packaged app never chose -- `/` when
+   * launched from Finder -- and the pane has no way to know that.
+   */
+  ipcMain.removeHandler('generate:defaults');
+  ipcMain.handle('generate:defaults', () => ({ out: generator.defaultOutputDir() }));
+
   ipcMain.removeHandler('generate:run');
   ipcMain.handle('generate:run', async (_event, options) => {
     try {
