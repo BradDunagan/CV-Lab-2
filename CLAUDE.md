@@ -47,7 +47,7 @@ src/menu.js          the application menu — global commands live here, not in 
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
-test/                twelve suites; eleven run under plain node
+test/                fourteen suites; thirteen run under plain node
 pipelines/           .lab scripts for the batch runner
 ```
 
@@ -58,7 +58,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — twelve suites, ~334 tests
+npm test                # everything — fourteen suites, ~347 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -92,6 +92,7 @@ npm run smoke:package   # launch it and check it actually works
 - **Assert properties, not current output.** A test that records what the code produces cannot tell you the code is wrong.
 - **A check that runs in one place can pass for the wrong reason.** An implicit `posix_memalign` declaration warned on every Linux build for weeks and never once on macOS.
 - **A green build can ship a broken feature.** The generator page calls pt-lab from plain JS across a Vite alias, so a sibling checkout one commit behind builds, packages, launches and smoke-tests clean, then throws on use — two CI jobs did exactly that. `build:generate` now asserts every `lab.<method>()` the page calls is *defined* in the bundle, not merely called in it.
+- **Read what `git add -A` staged.** A renderer build once wrote itself to the project root — 92 files, 13 MB — and `git add -A` committed 83 of them under a stat line reading "105 files changed, 70315 insertions(+)". `/*.js` is ignored now and `test/repo.js` fails loudly if any reappear, because an ignored stray accumulates silently, which is worse.
 - **Layout is not behaviour.** `verify:package` checked that the right files were in the artifact and passed on every release while the packaged app was dead on launch — the preload required `scripts/png.js`, which was never in `files:`, so `window.lab` never existed. `smoke:package` starts the real artifact and asks whether it works. Anything the preload or main process `require`s at runtime must be in `electron-builder.yml`.
 - **Read CI logs for warnings, not only errors.** That is how the above survived three green checkmarks.
 - **Cost is quadratic in segment count, not resolution.** A megapixel of pixel work is ~30 ms; a busy scene is what hurts.

@@ -33,7 +33,7 @@
     "package": "npm run build:renderer && npm run build:generate && electron-builder --publish never",
     "verify:package": "node scripts/verify-package.js",
     "smoke:package": "node scripts/smoke-package.js",
-    "test:lab": "node test/registry.js && node test/session.js && node test/png.js && node test/corners.js && node test/groundtruth.js",
+    "test:lab": "node test/registry.js && node test/session.js && node test/png.js && node test/corners.js && node test/groundtruth.js && node test/repo.js",
     "test:determinism": "node test/determinism.js",
     "test:readme": "node test/readme.js",
     "test": "npm run test:native && npm run test:lab && npm run test:determinism && npm run test:readme && npm run test:renderer && npm run test:cli",

@@ -12,6 +12,19 @@ generated/
 results/
 overlays/
 
+# Build output that landed in the ROOT rather than in dist-renderer/.
+#
+# A renderer build once wrote itself here instead: renderer.js plus one chunk
+# per Monaco language, ninety-two files and 13 MB. dist-renderer/ is ignored
+# and the root was not, so `git add -A` committed 83 of them without anyone
+# noticing.
+#
+# Every root .js is build output by construction -- the configs are .mjs and
+# all source lives under src/, scripts/, test/ and native/. test/repo.js
+# asserts the root is clean, because ignoring a file makes it invisible to
+# `git status` and that is exactly how 13 MB accumulated unnoticed.
+/*.js
+
 # Personal reference notes live alongside the docs as .txt; the project's own
 # documentation is .md. Keeps `git add -A` from sweeping them in.
 docs/*.txt
