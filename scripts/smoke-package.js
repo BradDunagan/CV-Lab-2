@@ -36,16 +36,44 @@ const http = require('node:http');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
-const DIST = path.join(ROOT, 'dist');
+/*
+ * Overridable so the platform branches can be exercised against a fixture.
+ * This file has now picked the wrong binary once and failed to find it once,
+ * both on Linux, both discovered by a CI round trip -- which is a slow way to
+ * test a directory listing.
+ */
+const DIST = process.env.CV_SMOKE_DIST ?? path.join(ROOT, 'dist');
 const PORT = Number(process.env.CV_SMOKE_PORT ?? 9345);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** productName, reduced to letters and digits, for comparing file names. */
-function productKey() {
+/**
+ * Binaries that ship BESIDE the application and are not it.
+ *
+ * `chrome_crashpad_handler` is the one that bit: the first version of this
+ * launched it, watched it exit immediately, and reported "the app never opened
+ * a window" — blaming the application for a defect in this file.
+ */
+const ELECTRON_HELPERS = new Set(['chrome-sandbox', 'chrome_crashpad_handler']);
+
+/** A file name reduced to letters and digits, for comparing across platforms. */
+const key = (name) => name.toLowerCase().replace(/\.exe$/, '').replace(/[^a-z0-9]/g, '');
+
+/**
+ * The names electron-builder might have given the executable.
+ *
+ * BOTH, because it depends on the platform and the difference is not
+ * cosmetic. `platformPackager.js` uses `appInfo.productFilename` — productName,
+ * so `CV-Lab` — on macOS and Windows, and `linuxPackager.js` uses
+ * `appInfo.sanitizedName.toLowerCase()` — the package.json name, so
+ * `cv-lab-2` — on Linux. Matching only the first found the app on two
+ * platforms and not the third.
+ */
+function expectedNames() {
   const yml = fs.readFileSync(path.join(ROOT, 'electron-builder.yml'), 'utf8');
-  const name = /^productName:\s*(.+)$/m.exec(yml)?.[1]?.trim() ?? '';
-  return name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const product = /^productName:\s*(.+)$/m.exec(yml)?.[1]?.trim();
+  const pkg = require(path.join(ROOT, 'package.json')).name;
+  return new Set([product, pkg].filter(Boolean).map(key));
 }
 
 /**
@@ -55,48 +83,50 @@ function productKey() {
  * .exe would have to be mounted or run, which needs privileges CI does not
  * have and would be testing the installer rather than the app.
  *
- * IDENTIFIED BY NAME, not by shape. The first version of this took the first
- * extensionless executable file it found on Linux and launched
- * `chrome_crashpad_handler` -- Electron's crash reporter, which exits
- * immediately -- so the run failed with "the app never opened a window" and
- * blamed the app for a defect in this file. There are several executables in
- * linux-unpacked/ and only one of them is the application; the one that
- * matches productName is it.
+ * Anchored on the app's OWN LAYOUT rather than on a name: the directory that
+ * holds `resources/app.asar` is the one electron-builder produced, and within
+ * it the application is whatever executable is not a known Electron helper. A
+ * name match is used to choose when there are several, and the names are
+ * derived rather than guessed — but the check does not depend on getting them
+ * right, which it twice did not.
+ *
+ * Returns {exe} or {candidates} so a failure can say what it saw.
  */
 function findExecutable() {
-  if (!fs.existsSync(DIST)) return null;
-  const key = productKey();
-  const matches = (name) =>
-    name.toLowerCase().replace(/\.exe$/, '').replace(/[^a-z0-9]/g, '') === key;
+  if (!fs.existsSync(DIST)) return { candidates: [], searched: DIST };
+  const names = expectedNames();
+  const searched = [];
 
-  const dirs = fs.readdirSync(DIST, { withFileTypes: true })
+  const roots = fs.readdirSync(DIST, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => path.join(DIST, d.name));
 
-  for (const dir of dirs) {
-    if (process.platform === 'darwin') {
-      const app = fs.readdirSync(dir).find((n) => n.endsWith('.app'));
-      if (!app) continue;
-      const macos = path.join(dir, app, 'Contents', 'MacOS');
-      if (!fs.existsSync(macos)) continue;
-      const names = fs.readdirSync(macos);
-      // Inside a .app bundle there is exactly one executable, so a name match
-      // is a preference rather than a requirement.
-      const bin = names.find(matches) ?? names[0];
-      if (bin) return path.join(macos, bin);
-    } else if (process.platform === 'win32') {
-      const names = fs.readdirSync(dir).filter((n) => n.endsWith('.exe'));
-      const bin = names.find(matches) ?? names[0];
-      if (bin) return path.join(dir, bin);
-    } else {
-      const bin = fs.readdirSync(dir, { withFileTypes: true })
-        .filter((d) => d.isFile() && !path.extname(d.name))
-        .map((d) => d.name)
-        .find(matches);
-      if (bin) return path.join(dir, bin);
-    }
+  for (const root of roots) {
+    // macOS buries the app one level further down, inside the bundle.
+    const bundle = process.platform === 'darwin'
+      ? fs.readdirSync(root).find((n) => n.endsWith('.app'))
+      : null;
+    const appDir = bundle ? path.join(root, bundle, 'Contents') : root;
+    const binDir = bundle ? path.join(appDir, 'MacOS') : root;
+    const asar = bundle
+      ? path.join(appDir, 'Resources', 'app.asar')
+      : path.join(root, 'resources', 'app.asar');
+    if (!fs.existsSync(asar) || !fs.existsSync(binDir)) continue;
+    searched.push(path.relative(ROOT, binDir));
+
+    const candidates = fs.readdirSync(binDir, { withFileTypes: true })
+      .filter((d) => d.isFile() && !ELECTRON_HELPERS.has(d.name))
+      .map((d) => d.name)
+      .filter((n) => (process.platform === 'win32'
+        ? n.endsWith('.exe')
+        : !path.extname(n) && (fs.statSync(path.join(binDir, n)).mode & 0o111) !== 0));
+
+    const named = candidates.find((n) => names.has(key(n)));
+    if (named) return { exe: path.join(binDir, named) };
+    if (candidates.length === 1) return { exe: path.join(binDir, candidates[0]) };
+    if (candidates.length > 1) return { candidates, searched, dir: binDir };
   }
-  return null;
+  return { candidates: [], searched };
 }
 
 const getJSON = (url) => new Promise((resolve, reject) => {
@@ -223,15 +253,20 @@ function connect(url) {
 
 /* ------------------------------------------------------------------ */
 
-(async () => {
-  const exe = findExecutable();
-  if (!exe) {
+async function main() {
+  const found = findExecutable();
+  if (!found.exe) {
     console.error(
-      `FAIL: no packaged application in dist/ matching productName ` +
-      `"${productKey()}" — run \`npm run package\` first`
+      `FAIL: could not identify the packaged application.\n` +
+      `  looked in: ${[found.searched].flat().join(', ') || 'dist/'}\n` +
+      `  expected a name among: ${[...expectedNames()].join(', ')}\n` +
+      (found.candidates?.length
+        ? `  found instead: ${found.candidates.join(', ')}\n`
+        : `  found no application there — run \`npm run package\` first\n`)
     );
     process.exit(1);
   }
+  const exe = found.exe;
   console.log(`  launching ${path.relative(ROOT, exe)}`);
 
   /*
@@ -342,4 +377,13 @@ function connect(url) {
     process.exit(1);
   }
   console.log(`\nThe packaged app starts and works on ${process.platform}/${process.arch}.`);
-})();
+}
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(`FAIL: ${err.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = { findExecutable, expectedNames, ELECTRON_HELPERS };

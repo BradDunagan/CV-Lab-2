@@ -1,7 +1,8 @@
 'use strict';
 
 /**
- * Ground truth: reading it, and scoring against it.
+ * Ground truth — reading it and scoring against it — and the checks that guard
+ * the generator's build and packaging, which share the same subject.
  *
  * Pure JavaScript — no addon, no Electron, no renderer. Every fixture here is
  * built by hand so the expected answer is arithmetic rather than "whatever came
@@ -78,7 +79,7 @@ const corner = (id, x, y, extra = {}) => ({
 
 const doc = (edges, vertices, size = 256) => ({ size, edges, vertices });
 
-console.log('cv-lab-2 ground-truth tests');
+console.log('cv-lab-2 ground-truth and generator-packaging tests');
 
 /* --- the loader -------------------------------------------------------- */
 
@@ -492,6 +493,82 @@ test('the real bundle defines every pt-lab method the real page calls', () => {
   const called = methodsCalledOnLab(page);
   assert.ok(called.length > 5, `expected the page to call pt-lab, found ${called.length} methods`);
   assert.deepEqual(missingFrom(fs.readFileSync(bundle, 'utf8'), called), []);
+});
+
+test('the packaged application is found on every platform layout', () => {
+  /*
+   * This is here because a directory listing cost two CI round trips.
+   *
+   * The first version took the first extensionless executable in
+   * linux-unpacked/ and launched `chrome_crashpad_handler`, which exits at
+   * once -- reported as "the app never opened a window", blaming the app. The
+   * second matched productName and found nothing, because electron-builder
+   * names the binary differently per platform: `productFilename` (CV-Lab) on
+   * macOS and Windows, `sanitizedName.toLowerCase()` (cv-lab-2) on Linux.
+   *
+   * Both were only discoverable on a runner. They are discoverable here now.
+   */
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+
+  const layouts = {
+    linux: (root) => {
+      const d = path.join(root, 'linux-unpacked');
+      return { dir: d, expect: 'cv-lab-2',
+               files: ['cv-lab-2', 'chrome-sandbox', 'chrome_crashpad_handler'],
+               plain: ['libffmpeg.so'] };
+    },
+    win32: (root) => {
+      const d = path.join(root, 'win-unpacked');
+      return { dir: d, expect: 'CV-Lab.exe',
+               files: ['CV-Lab.exe', 'chrome_crashpad_handler.exe'], plain: [] };
+    },
+    darwin: (root) => {
+      const d = path.join(root, 'mac-arm64', 'CV-Lab.app', 'Contents', 'MacOS');
+      return { dir: d, expect: 'CV-Lab', files: ['CV-Lab'], plain: [],
+               asar: path.join(root, 'mac-arm64', 'CV-Lab.app', 'Contents', 'Resources', 'app.asar') };
+    },
+  };
+
+  for (const [platform, build] of Object.entries(layouts)) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), `cvlab-dist-${platform}-`));
+    const { dir, expect, files, plain, asar } = build(root);
+    fs.mkdirSync(dir, { recursive: true });
+    for (const f of files) {
+      fs.writeFileSync(path.join(dir, f), '');
+      fs.chmodSync(path.join(dir, f), 0o755);
+    }
+    for (const f of plain) fs.writeFileSync(path.join(dir, f), '');
+    const asarPath = asar ?? path.join(dir, 'resources', 'app.asar');
+    fs.mkdirSync(path.dirname(asarPath), { recursive: true });
+    fs.writeFileSync(asarPath, '');
+
+    /*
+     * A child process, because findExecutable branches on process.platform and
+     * reads the dist path when the module loads. Cheaper than restructuring
+     * the script around injection for a test.
+     */
+    const { execFileSync } = require('node:child_process');
+    const script = `
+      Object.defineProperty(process, 'platform', { value: ${JSON.stringify(platform)} });
+      process.env.CV_SMOKE_DIST = ${JSON.stringify(root)};
+      const { findExecutable } = require(${JSON.stringify(
+        path.join(__dirname, '..', 'scripts', 'smoke-package.js'))});
+      const r = findExecutable();
+      process.stdout.write(r.exe ? require('node:path').basename(r.exe) : 'NONE:' + JSON.stringify(r));
+    `;
+    const got = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    assert.equal(got, expect, `${platform}: expected to launch ${expect}, got ${got}`);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Electron helper binaries are never mistaken for the app', () => {
+  const { ELECTRON_HELPERS } = require('../scripts/smoke-package');
+  // The one that actually bit, and the one that would have bitten next.
+  assert.ok(ELECTRON_HELPERS.has('chrome_crashpad_handler'));
+  assert.ok(ELECTRON_HELPERS.has('chrome-sandbox'));
 });
 
 test('every prerequisite message leads with a headline the pane can show', () => {
