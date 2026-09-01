@@ -512,6 +512,22 @@ test('the packaged application is found on every platform layout', () => {
   const os = require('node:os');
   const path = require('node:path');
 
+  /*
+   * Can this filesystem represent a Unix execute bit?
+   *
+   * NTFS cannot, and Node's chmod is close to a no-op there, so on Windows
+   * every file in the fixture reads as non-executable and the two layouts
+   * whose branch filters on that bit find nothing. That is a property of the
+   * host, not a defect in the finder -- it was a green macOS run, a green
+   * Linux run and a red Windows one, which is exactly the shape of a portable
+   * test that is not.
+   */
+  const probe = path.join(os.tmpdir(), `cvlab-exec-probe-${process.pid}`);
+  fs.writeFileSync(probe, '');
+  fs.chmodSync(probe, 0o755);
+  const execBits = (fs.statSync(probe).mode & 0o111) !== 0;
+  fs.rmSync(probe, { force: true });
+
   const layouts = {
     linux: (root) => {
       const d = path.join(root, 'linux-unpacked');
@@ -531,7 +547,11 @@ test('the packaged application is found on every platform layout', () => {
     },
   };
 
+  const exercised = [];
   for (const [platform, build] of Object.entries(layouts)) {
+    // Only the win32 branch selects by extension; the others need the bit.
+    if (!execBits && platform !== 'win32') continue;
+    exercised.push(platform);
     const root = fs.mkdtempSync(path.join(os.tmpdir(), `cvlab-dist-${platform}-`));
     const { dir, expect, files, plain, asar } = build(root);
     fs.mkdirSync(dir, { recursive: true });
@@ -561,6 +581,17 @@ test('the packaged application is found on every platform layout', () => {
     const got = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
     assert.equal(got, expect, `${platform}: expected to launch ${expect}, got ${got}`);
     fs.rmSync(root, { recursive: true, force: true });
+  }
+
+  /*
+   * Say what was actually checked. A skip that looks like a pass is the
+   * failure mode this whole area of the project keeps running into, and the
+   * Windows run would otherwise report the same "ok" as a run that verified
+   * three times as much.
+   */
+  assert.ok(exercised.includes('win32'), 'the win32 layout is checkable anywhere');
+  if (exercised.length < Object.keys(layouts).length) {
+    console.log(`       (only ${exercised.join(', ')} — this filesystem has no execute bit)`);
   }
 });
 
