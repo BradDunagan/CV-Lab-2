@@ -41,15 +41,34 @@ const PORT = Number(process.env.CV_SMOKE_PORT ?? 9345);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** productName, reduced to letters and digits, for comparing file names. */
+function productKey() {
+  const yml = fs.readFileSync(path.join(ROOT, 'electron-builder.yml'), 'utf8');
+  const name = /^productName:\s*(.+)$/m.exec(yml)?.[1]?.trim() ?? '';
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 /**
  * The executable inside the packaged output, per platform.
  *
  * Deliberately the unpacked directory rather than an installer: a .dmg or an
  * .exe would have to be mounted or run, which needs privileges CI does not
  * have and would be testing the installer rather than the app.
+ *
+ * IDENTIFIED BY NAME, not by shape. The first version of this took the first
+ * extensionless executable file it found on Linux and launched
+ * `chrome_crashpad_handler` -- Electron's crash reporter, which exits
+ * immediately -- so the run failed with "the app never opened a window" and
+ * blamed the app for a defect in this file. There are several executables in
+ * linux-unpacked/ and only one of them is the application; the one that
+ * matches productName is it.
  */
 function findExecutable() {
   if (!fs.existsSync(DIST)) return null;
+  const key = productKey();
+  const matches = (name) =>
+    name.toLowerCase().replace(/\.exe$/, '').replace(/[^a-z0-9]/g, '') === key;
+
   const dirs = fs.readdirSync(DIST, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => path.join(DIST, d.name));
@@ -57,21 +76,24 @@ function findExecutable() {
   for (const dir of dirs) {
     if (process.platform === 'darwin') {
       const app = fs.readdirSync(dir).find((n) => n.endsWith('.app'));
-      if (app) {
-        const macos = path.join(dir, app, 'Contents', 'MacOS');
-        const bin = fs.existsSync(macos) && fs.readdirSync(macos)[0];
-        if (bin) return path.join(macos, bin);
-      }
+      if (!app) continue;
+      const macos = path.join(dir, app, 'Contents', 'MacOS');
+      if (!fs.existsSync(macos)) continue;
+      const names = fs.readdirSync(macos);
+      // Inside a .app bundle there is exactly one executable, so a name match
+      // is a preference rather than a requirement.
+      const bin = names.find(matches) ?? names[0];
+      if (bin) return path.join(macos, bin);
     } else if (process.platform === 'win32') {
-      const exe = fs.readdirSync(dir).find((n) => n.endsWith('.exe'));
-      if (exe) return path.join(dir, exe);
+      const names = fs.readdirSync(dir).filter((n) => n.endsWith('.exe'));
+      const bin = names.find(matches) ?? names[0];
+      if (bin) return path.join(dir, bin);
     } else {
-      // linux-unpacked/, where the binary is named for the product and has no
-      // extension. Skip chrome-sandbox and the .so files that sit beside it.
-      const bin = fs.readdirSync(dir, { withFileTypes: true }).find((d) =>
-        d.isFile() && !path.extname(d.name) && d.name !== 'chrome-sandbox' &&
-        (fs.statSync(path.join(dir, d.name)).mode & 0o111) !== 0);
-      if (bin) return path.join(dir, bin.name);
+      const bin = fs.readdirSync(dir, { withFileTypes: true })
+        .filter((d) => d.isFile() && !path.extname(d.name))
+        .map((d) => d.name)
+        .find(matches);
+      if (bin) return path.join(dir, bin);
     }
   }
   return null;
@@ -204,12 +226,41 @@ function connect(url) {
 (async () => {
   const exe = findExecutable();
   if (!exe) {
-    console.error('FAIL: no packaged application in dist/ — run `npm run package` first');
+    console.error(
+      `FAIL: no packaged application in dist/ matching productName ` +
+      `"${productKey()}" — run \`npm run package\` first`
+    );
     process.exit(1);
   }
   console.log(`  launching ${path.relative(ROOT, exe)}`);
 
-  const child = spawn(exe, [`--remote-debugging-port=${PORT}`], { stdio: 'ignore' });
+  /*
+   * --no-sandbox on Linux, and only on Linux.
+   *
+   * Chromium's setuid sandbox helper needs root to install its permission
+   * bits, which a CI runner unpacking a build artifact never does -- so the
+   * app refuses to start with a message about chrome-sandbox and this would
+   * report a defect in Chromium's packaging as a defect in the app. What is
+   * under test here is whether OUR code survived packaging.
+   */
+  const args = [`--remote-debugging-port=${PORT}`];
+  if (process.platform === 'linux') args.push('--no-sandbox');
+
+  /*
+   * Keep what the process says, rather than discarding it.
+   *
+   * "The app never opened a window" is a true statement and a useless one --
+   * it was this file's whole account of launching the wrong binary. When a
+   * launch fails, whatever the process printed is the only evidence there is,
+   * so it goes in the failure message.
+   */
+  const child = spawn(exe, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '';
+  const keep = (chunk) => { output = (output + chunk).slice(-2000); };
+  child.stdout.on('data', keep);
+  child.stderr.on('data', keep);
+  let exited = null;
+  child.on('exit', (code, signal) => { exited = signal ?? `exit code ${code}`; });
   const problems = [];
   let client = null;
 
@@ -222,7 +273,14 @@ function connect(url) {
         page = list.find((t) => t.type === 'page' && t.webSocketDebuggerUrl);
       } catch { /* the debugger is not listening yet */ }
     }
-    if (!page) throw new Error('the app never opened a window — it failed to start');
+    if (!page) {
+      const said = output.trim();
+      throw new Error(
+        `the app never opened a window — it failed to start` +
+        (exited ? ` (${exited})` : '') +
+        (said ? `\n    it said: ${said.split('\n').slice(-6).join('\n    ')}` : '')
+      );
+    }
     client = await connect(page.webSocketDebuggerUrl);
 
     /*
