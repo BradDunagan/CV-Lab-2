@@ -21,6 +21,8 @@
     setDefaultPaneContentProvider,
     setDefaultPaneMenuProvider,
   } from 'paneless';
+  import { controlStore, controlEvents } from 'paneless';
+  import { attachSlotControls, CONTROLS_WIDTH } from './panes/slot-controls.svelte.js';
   import 'paneless/styles/theme.css';
 
   import SlotPane from './panes/SlotPane.svelte';
@@ -94,7 +96,14 @@
    * reserved at the top any more: the command bar lives in the app header now,
    * not in a frame, which is what that space used to be held back for.
    */
-  const LOG_FRACTION = 0.36;
+  /*
+   * Trimmed from 0.36 when slot frames grew a controls column and a wider
+   * image. It is a FRACTION of a window that grew at the same time, so the log
+   * keeps about the pixel width it always had -- roughly 400 -- while the
+   * slots take the new room. Widening the window without this would have
+   * spent a third of every added pixel on a column that did not need it.
+   */
+  const LOG_FRACTION = 0.28;
 
   function logFrameRect() {
     const { width, height } = contentBox();
@@ -106,19 +115,75 @@
     };
   }
 
+  /** paneless's SPLITTER_WIDTH, which sits between the two panes of a frame. */
+  const SPLITTER_W = 6;
+
+  /**
+   * How many slot panes open by themselves. Declared here because the tiling
+   * reads it: the grid has to hold exactly this many without overlapping.
+   */
+  const AUTO_PANE_LIMIT = 4;
+
+  /**
+   * The image half of a slot frame, at its default size.
+   *
+   * A slot frame is a controls column plus an image, and only the image half
+   * is what a slot pane is FOR -- so the frame is sized from the image and the
+   * column is a fixed cost added beside it, rather than the image taking
+   * whatever a share of the frame happens to leave.
+   *
+   * This number only governed the COLUMN COUNT at first: the frame was then
+   * stretched to fill its cell, so a single-column layout gave an image of
+   * ~690px however small this said. It is a width now, and a frame that does
+   * not need the whole cell does not take it.
+   */
+  const SLOT_IMAGE_W = 345;
+
+  /** Below this a slot frame is a letterbox, not a view of an image. */
+  const SLOT_MIN_H = 320;
+
+  /**
+   * The grid of slot frames, from what actually fits.
+   *
+   * Not a fixed 2x2 any more. The frames are wider than they were, and on a
+   * display that cannot hold two of them side by side a fixed grid would put
+   * the right-hand column off the edge — which is the bug the tiling was
+   * introduced to fix in the first place.
+   *
+   * Both axes are sized from what a frame NEEDS rather than from how many
+   * there are. Deriving rows from AUTO_PANE_LIMIT instead gave four 189px
+   * rows on a 1470px display: all four visible, none of them usable. Fewer
+   * cells and a real image is the better trade, and the ones past the last
+   * cell wrap onto it — they are still there, still draggable, and the limit
+   * still stops them accumulating.
+   */
+  function slotGrid(areaW, areaH) {
+    const wantW = CONTROLS_WIDTH + SPLITTER_W + SLOT_IMAGE_W;
+    const cols = Math.max(1, Math.min(2, Math.floor((areaW + GAP) / (wantW + GAP))));
+    const rows = Math.max(1, Math.min(
+      Math.ceil(AUTO_PANE_LIMIT / cols),
+      Math.floor((areaH + GAP) / (SLOT_MIN_H + GAP))
+    ));
+    return { cols, rows };
+  }
+
   function slotFrameRect(index) {
     const { width, height } = contentBox();
     const left = Math.round(width * LOG_FRACTION) + GAP;
     const areaW = width - left - GAP;
     const areaH = height - GAP * 2;
-    const cols = 2, rows = 2;
-    const cellW = Math.floor((areaW - GAP) / cols);
-    const cellH = Math.floor((areaH - GAP) / rows);
+    const { cols, rows } = slotGrid(areaW, areaH);
+    const cellW = Math.floor((areaW - GAP * (cols - 1)) / cols);
+    const cellH = Math.floor((areaH - GAP * (rows - 1)) / rows);
     const col = index % cols, row = Math.floor(index / cols) % rows;
     return {
       x: left + col * (cellW + GAP),
       y: GAP + row * (cellH + GAP),
-      w: cellW,
+      // Cells are where frames GO, not how big they are. A frame takes the
+      // width it asked for and leaves the rest of its cell empty, because the
+      // alternative is an image stretched to whatever the window happened to
+      // leave over -- which is how a 345px image became a 690px one.
+      w: Math.min(cellW, CONTROLS_WIDTH + SPLITTER_W + SLOT_IMAGE_W),
       h: cellH,
     };
   }
@@ -157,17 +222,128 @@
   /* slot panes                                                          */
   /* ------------------------------------------------------------------ */
 
+  /**
+   * How much of a slot frame the controls column starts with.
+   *
+   * A fraction, because that is what paneless stores -- but derived from the
+   * column's own intrinsic width, because a fraction is the wrong unit for it:
+   * the controls do not get more useful when the frame is wide, they just need
+   * to fit. A guessed 0.42 clipped "linear" in a default-sized frame.
+   *
+   * Clamped so a very small frame still shows some image and a very large one
+   * does not leave the column swimming. Never exactly 0.5: paneless reads a
+   * stored ratio back only when it differs from 0.5, so a deliberate half
+   * would silently become its default half -- which happens to be the same
+   * number, and would stop being so the moment either side changed.
+   */
+  function controlsRatio(frameWidth) {
+    const wanted = CONTROLS_WIDTH / Math.max(1, frameWidth);
+    const ratio = Math.min(0.6, Math.max(0.22, wanted));
+    return ratio === 0.5 ? 0.499 : ratio;
+  }
+
+  /**
+   * Split a pane into left and right children, synchronously.
+   *
+   * paneless does this in Pane.svelte's own handler, and offers `pendingSplit`
+   * for triggering it from outside -- but that runs in an effect, one render
+   * later, and newSlotPane has to return the pane it made. So this does what
+   * handleSplitH does: a new container takes the original pane's place in the
+   * tree, the original becomes the left child, and a right child is added
+   * beside it. The tab branches of the original are not reproduced because a
+   * frame's root pane is never tabbed at the moment it is created.
+   *
+   * The original pane becoming the LEFT child is why the controls end up there
+   * and the image is the new pane, rather than the other way round.
+   */
+  function splitHorizontally(paneId, leftRatio) {
+    const pane = paneStore.getPane(paneId);
+    if (!pane) return null;
+    const containerId = paneStore.addChildPane(pane.frameId, pane.parentId, pane.position ?? 'left');
+    const rightId = paneStore.addChildPane(pane.frameId, containerId, 'right');
+    paneStore.updatePane(paneId, { parentId: containerId, position: 'left' });
+    paneStore.updatePane(containerId, {
+      isSplit: true,
+      leftChildId: paneId,
+      rightChildId: rightId,
+      leftRatio,
+      rightRatio: 1 - leftRatio,
+      headerVisible: false,
+    });
+    // Re-point the grandparent, for the case where the pane being split is
+    // already a child. A frame root has no parent and needs none of this.
+    if (pane.parentId && pane.position) {
+      paneStore.updatePane(pane.parentId, { [`${pane.position}ChildId`]: containerId });
+    }
+    return { containerId, leftId: paneId, rightId };
+  }
+
+  /** controls paneId -> dispose, so a closed frame does not leak its column. */
+  const slotControls = new Map();
+
   let paneData = $state({ byId: {} });
   $effect(() => paneStore.subscribe((data) => { paneData = data; }));
+
+  /*
+   * Drop a controls column when its pane goes.
+   *
+   * Keyed off the pane table rather than a 'paneRemoved' event, because a pane
+   * can leave in more than one way -- closing the frame, dragging the pane
+   * elsewhere, unsplitting -- and only one of those has to be true for the
+   * column's store entry and its subscriptions to be garbage. Absence covers
+   * all of them.
+   */
+  $effect(() => {
+    for (const [id, dispose] of slotControls) {
+      if (!paneData.byId[id]) {
+        dispose();
+        slotControls.delete(id);
+      }
+    }
+  });
 
   const slotPaneIds = () =>
     Object.keys(paneData.byId).filter((id) => contentRegistry.get(id) === SlotPane);
 
+  /**
+   * A slot frame is two panes: its controls, and the image they describe.
+   *
+   * The controls are paneless's own -- SVG controls in a pane whose
+   * contentType is 'controls', built by slot-controls.svelte.js -- so the
+   * splitter between them is a real splitter and the column can be widened
+   * when a colormap name does not fit.
+   *
+   * The IMAGE pane keeps the slot's identity: paneless's `name`, the title,
+   * and the entry in contentRegistry that makes it a slot pane. Everything
+   * that already asked "which panes show slots?" therefore still gets the
+   * answer it expects, and the column reads the name off its sibling.
+   */
   function newSlotPane(slotName) {
     const rect = slotFrameRect(slotPaneIds().length);
     const rootId = makeFrame('Slot', SlotPane, rect.x, rect.y, rect.w, rect.h);
-    if (rootId && slotName) bindSlotPane(rootId, slotName);
-    return rootId;
+    if (!rootId) return null;
+
+    const split = splitHorizontally(rootId, controlsRatio(rect.w));
+    if (!split) return rootId;
+
+    contentRegistry.delete(split.leftId);
+    paneStore.updatePane(split.leftId, {
+      contentType: 'controls',
+      title: 'Controls',
+      titleVisible: false,
+      headerVisible: false,
+    });
+
+    contentRegistry.set(split.rightId, SlotPane);
+    paneStore.updatePane(split.rightId, {
+      title: 'Slot',
+      titleVisible: true,
+      headerVisible: false,
+    });
+
+    slotControls.set(split.leftId, attachSlotControls(split.leftId, split.rightId));
+    if (slotName) bindSlotPane(split.rightId, slotName);
+    return split.rightId;
   }
 
   function bindSlotPane(paneId, slotName) {
@@ -181,10 +357,9 @@
    * The old UI rebuilt a grid of every slot after every command, which is what
    * made "type a command, see the result" true. Panes are user-arranged, so
    * that reflex has to be deliberate: fill an empty slot pane if there is one,
-   * otherwise open a pane — up to a limit, past which new slots wait to be
-   * picked rather than burying the layout under frames nobody asked for.
+   * otherwise open a pane — up to AUTO_PANE_LIMIT, past which new slots wait
+   * to be picked rather than burying the layout under frames nobody asked for.
    */
-  const AUTO_PANE_LIMIT = 4;
   let seen = new Set();
 
   function showNewSlots() {
@@ -295,6 +470,12 @@
     globalThis.__cvlab = {
       paneStore,
       frames,
+      // The controls in a slot pane are paneless controls, so they are store
+      // entries rather than DOM elements. A test needs the store to find one
+      // by name, and the event bus to change one: driving the rendered SVG
+      // would be testing paneless's hit-testing, not this app's wiring.
+      controlStore,
+      controlEvents,
       newSlotPane,
       bindSlotPane,
       slotPaneIds,

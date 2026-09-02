@@ -50,7 +50,15 @@ function installMenu(win) {
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1320,
+    /*
+     * Wide enough for two slot frames side by side now that each one is a
+     * controls column plus an image, rather than an image alone: two of them
+     * want about 1010px of the slot area, which this leaves after the log.
+     * Below that the tiling drops to a single column by itself -- see
+     * slotGrid() in App.svelte -- so a smaller window degrades rather than
+     * pushing frames off the edge.
+     */
+    width: 1680,
     height: 900,
     minWidth: 720,
     minHeight: 520,

@@ -308,7 +308,12 @@
 
   /* --- the slot picker ----------------------------------------------- */
 
-  let picking = $state(false);
+  /*
+   * Only the UNBOUND states offer these buttons now. Choosing a different slot
+   * for a bound pane is the `slot` dropdown in the controls pane next door --
+   * but a pane showing nothing has no controls worth reading yet, and a first
+   * slot has to be reachable without one.
+   */
   let available = $derived(bufferSlots());
 </script>
 
@@ -338,44 +343,6 @@
       </div>
     </div>
   {:else}
-    <div class="controls">
-      <button class="slot-name" onclick={() => (picking = !picking)} title="Show a different slot">
-        {slot.name}#{slot.version} ▾
-      </button>
-      <span class="meta">{slot.width}×{slot.height}×{slot.channels} {slot.dtype} {slot.space}</span>
-      <span class="grow"></span>
-      <select bind:value={view.type} title="view">
-        <option value="image">image</option>
-        <option value="histogram">histogram</option>
-      </select>
-      <select bind:value={view.colormap} title="colormap">
-        {#each ['gray', 'viridis', 'turbo', 'diverging', 'categorical', 'cyclic'] as m}
-          <option value={m}>{m}</option>
-        {/each}
-      </select>
-      <select bind:value={view.range} title="range">
-        {#each ['auto', 'percentile', 'symmetric'] as r}<option value={r}>{r}</option>{/each}
-      </select>
-      <select bind:value={view.curve} title="curve">
-        {#each ['linear', 'log', 'abs', 'sqrt'] as c}<option value={c}>{c}</option>{/each}
-      </select>
-      <select bind:value={view.channel} title="channel">
-        <option value={-1}>all</option>
-        {#each Array.from({ length: slot.channels }, (_, i) => i) as i}
-          <option value={i}>ch{i}</option>
-        {/each}
-      </select>
-    </div>
-
-    {#if picking}
-      <div class="picker inline">
-        {#each available as s (s.name)}
-          <button class:current={s.name === boundName}
-                  onclick={() => { bindSlot(s.name); picking = false; }}>{s.name}</button>
-        {/each}
-      </div>
-    {/if}
-
     <div class="stage">
       <canvas
         bind:this={canvas}
@@ -409,41 +376,6 @@
     color: var(--cv-text, #333333);
     font: 12px ui-monospace, Menlo, Consolas, monospace;
   }
-
-  .controls {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 5px;
-    background: var(--cv-chrome, #f0f0f0);
-    border-bottom: 1px solid var(--cv-border, #cccccc);
-    flex: 0 0 auto;
-    flex-wrap: wrap;
-  }
-
-  .controls select {
-    background: var(--cv-input, #ffffff);
-    color: inherit;
-    border: 1px solid var(--cv-border, #cccccc);
-    border-radius: 3px;
-    font: inherit;
-    padding: 1px 2px;
-  }
-
-  .slot-name {
-    background: none;
-    border: 1px solid transparent;
-    color: var(--cv-accent, #2a7edf);
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
-  .slot-name:hover { border-color: var(--cv-border, #cccccc); }
-
-  .meta { color: var(--cv-dim, #666666); }
-  .grow { flex: 1; }
 
   .stage {
     flex: 1;
@@ -492,11 +424,6 @@
     gap: 4px;
     justify-content: center;
   }
-  .picker.inline {
-    padding: 4px 6px;
-    border-bottom: 1px solid var(--cv-border, #cccccc);
-    justify-content: flex-start;
-  }
   .picker button {
     background: var(--cv-input, #ffffff);
     border: 1px solid var(--cv-border, #cccccc);
@@ -507,5 +434,4 @@
     cursor: pointer;
   }
   .picker button:hover { border-color: var(--cv-accent, #2a7edf); }
-  .picker button.current { color: var(--cv-accent, #2a7edf); border-color: var(--cv-accent, #2a7edf); }
 </style>
