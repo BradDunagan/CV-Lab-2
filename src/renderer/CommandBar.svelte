@@ -81,7 +81,11 @@
     title="Insert a command template"
     onchange={(e) => { insertTemplate(e.currentTarget.value); e.currentTarget.value = ''; }}
   >
-    <option value="">op…</option>
+    <!-- Spelt out. "op…" was two letters and an ellipsis, which is exactly
+         what clipped text looks like -- the label read as a rendering bug. The
+         select is sized by its widest option ("groundTruth (no kernel)"), so a
+         longer placeholder costs no width. -->
+    <option value="">operation…</option>
     {#each ops as op (op.name)}
       <option value={op.name} disabled={!op.implemented} title={op.help}>
         {op.implemented ? op.name : `${op.name} (no kernel)`}
