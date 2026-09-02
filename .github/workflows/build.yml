@@ -35,7 +35,7 @@ jobs:
           - ubuntu-22.04 # x64, older glibc for wider compatibility
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: cv-lab-2
 
@@ -125,7 +125,7 @@ jobs:
               ;;
           esac
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: BradDunagan/paneless-workspace
           token: ${{ secrets.PANELESS_TOKEN }}
@@ -139,7 +139,7 @@ jobs:
       # No token: unlike paneless-workspace this repository is public. The
       # directory name differs from the repository name on purpose -- every
       # path in cv-lab-2 expects a `pt-lab-workspace` sibling.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: BradDunagan/pt-lab
           path: pt-lab-workspace
@@ -147,7 +147,7 @@ jobs:
       # Must be >= 22.12. Electron 43, @electron/rebuild 4 and node-gyp 13 all
       # declare it, and node-gyp 13's bundled undici genuinely breaks on Node 20
       # with "webidl.util.markAsUncloneable is not a function" during configure.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -256,7 +256,7 @@ jobs:
         run: xvfb-run --auto-servernum npm run test:cli
 
       - name: Upload addon
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cvlab-addon-${{ matrix.os }}
           path: cv-lab-2/build/Release/*.node
@@ -292,7 +292,7 @@ jobs:
         run: xvfb-run --auto-servernum npm run smoke:package
 
       - name: Upload installers
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cvlab-installers-${{ matrix.os }}
           path: |
