@@ -637,9 +637,25 @@ app.whenReady().then(async () => {
     },
   });
 
+  /*
+   * The event-object signature, not the positional one.
+   *
+   * Electron deprecated the positional arguments, and lab-cli.js and the
+   * generator driver moved off them already -- this was the last caller, and
+   * the only reason CI still printed the deprecation notice.
+   *
+   * It also removes the trap those two files document: positionally, `level`
+   * is a NUMBER where 2 is a warning and 3 an error, so the obvious `level >= 2`
+   * silently treats every warning as an error. That is what this was doing.
+   * The strictness is kept deliberately -- a warning out of the page is worth
+   * failing on, and CLAUDE.md says as much -- but it is now stated rather than
+   * arrived at by an off-by-one, and a failure names which kind it was.
+   */
   const consoleErrors = [];
-  win.webContents.on('console-message', (_e, level, message) => {
-    if (level >= 2) consoleErrors.push(message);
+  win.webContents.on('console-message', (event) => {
+    if (event.level === 'warning' || event.level === 'error') {
+      consoleErrors.push(`${event.level}: ${event.message}`);
+    }
   });
   win.webContents.on('preload-error', (_e, file, err) => {
     consoleErrors.push(`preload ${file}: ${err.message}`);
@@ -930,7 +946,12 @@ app.whenReady().then(async () => {
     // One or the other, never neither: a pane offering nothing and explaining
     // nothing is the failure worth catching.
     const offersControls = r.generate.usable;
-    const saysWhyNot = /not built|missing|checkout/i.test(r.generate.explains);
+    // "older than its sources" belongs here too. checkPrerequisites reports
+    // three distinct problems and this listed two, so a STALE bundle -- the
+    // pane explaining itself perfectly well -- was read as explaining nothing
+    // and failed the run. The contract is "offers controls or says why not";
+    // whether the bundle is fresh is build:generate's guard, not this one.
+    const saysWhyNot = /not built|missing|checkout|older than/i.test(r.generate.explains);
     assert.ok(offersControls || saysWhyNot,
       `the frame neither offered controls nor explained why: ${JSON.stringify(r.generate)}`);
     // The controls go left and the render goes right. Reversed, the main
