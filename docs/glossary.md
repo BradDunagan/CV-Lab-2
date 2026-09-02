@@ -133,6 +133,61 @@ turned off. Similar in spirit to Java's `.jar` and Python's `.whl`.
 
 ---
 
+## CDP — Chrome DevTools Protocol
+
+**The wire protocol Chrome DevTools itself speaks to a browser: a JSON-RPC
+conversation over a WebSocket, one connection per *web contents*.**
+
+Opening DevTools does not give the browser a special debugging mode. DevTools is
+an ordinary web page that connects over this protocol and issues commands. Once
+the port is open, anything that can speak WebSocket can issue the same commands
+— which is what makes an Electron app scriptable from the outside without
+building a test hook into the app.
+
+**Getting a connection.** Launch with `--remote-debugging-port=9222`, then
+`GET http://127.0.0.1:9222/json/list` returns one entry per debuggable target,
+each with a `webSocketDebuggerUrl`. An Electron app has more than one: the
+renderer, plus any `WebContentsView` — the generator's `gen://lab/index.html`
+appears there only while a sweep is running.
+
+**The commands that do most of the work:**
+
+| | |
+|---|---|
+| `Runtime.evaluate` | run an expression in the page and get the result back |
+| `Page.captureScreenshot` | a PNG of that target |
+| `Input.dispatchMouseEvent` | a mouse event entering at the top, like a real one |
+| `Input.dispatchKeyEvent`, `Input.insertText` | typing |
+
+**Why it matters here.** `scripts/smoke-package.js` uses it for the job nothing
+else could do: launch the *packaged artifact* and ask whether it actually works
+— see `electron-guide.md`, and the note that layout is not behaviour. It frames
+its own WebSocket rather than adding a dependency for one test.
+
+**A CDP input event is not a synthetic DOM event, and the difference is the
+point.** `element.click()` runs the handler directly; a dispatched mouse event
+goes through real hit-testing, so it can land on something the element did not
+expect to be under the pointer. That is how the paneless hover-overlay defect
+was found — a control that looked present and was unreachable, because a
+transparent header overlay took the click. A synthetic click would have
+reported success.
+
+**Two limits worth knowing before trusting a result:**
+
+- **`Page.captureScreenshot` captures one web contents, not the composited
+  window.** A child `WebContentsView` does not appear in it — the pane it
+  occupies photographs blank. Connect to that view's own target instead.
+- **It reaches renderers, not the main process.** Main is plain Node, debugged
+  through `--inspect` on a separate port, which is a different protocol that
+  happens to look similar. Menu accelerators are handled in main, so injected
+  key events do not fire them.
+
+**Elsewhere**: Puppeteer and Playwright are CDP clients with an ergonomic API
+over the top; `chrome://inspect` is a CDP client; the WebDriver BiDi standard is
+an attempt to give every browser an equivalent.
+
+---
+
 ## Color handling — linear vs sRGB
 
 Background reading: [sRGB on Wikipedia](https://en.wikipedia.org/wiki/SRGB).
