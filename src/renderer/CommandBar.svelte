@@ -117,24 +117,24 @@
   input[type='text'] {
     flex: 1;
     min-width: 0;
-    background: var(--cv-input, #0e0e12);
-    border: 1px solid var(--cv-border, #2a2a33);
+    background: var(--cv-input, #ffffff);
+    border: 1px solid var(--cv-border, #cccccc);
     border-radius: 3px;
-    color: var(--cv-text, #d8d8e0);
+    color: var(--cv-text, #333333);
     font: inherit;
     padding: 3px 7px;
   }
-  input[type='text']:focus { outline: none; border-color: var(--cv-accent, #6ea8fe); }
+  input[type='text']:focus { outline: none; border-color: var(--cv-accent, #2a7edf); }
 
   button, select {
-    background: var(--cv-input, #0e0e12);
-    border: 1px solid var(--cv-border, #2a2a33);
+    background: var(--cv-input, #ffffff);
+    border: 1px solid var(--cv-border, #cccccc);
     border-radius: 3px;
-    color: var(--cv-text, #d8d8e0);
+    color: var(--cv-text, #333333);
     font: inherit;
     padding: 2px 8px;
     cursor: pointer;
   }
-  button:hover:not(:disabled), select:hover { border-color: var(--cv-accent, #6ea8fe); }
+  button:hover:not(:disabled), select:hover { border-color: var(--cv-accent, #2a7edf); }
   button:disabled { opacity: 0.5; cursor: default; }
 </style>

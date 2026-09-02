@@ -513,27 +513,30 @@
     align-items: center;
     gap: 10px;
     padding: 3px 8px;
-    background: var(--cv-chrome, #17171d);
-    border-top: 1px solid var(--cv-border, #2a2a33);
-    color: var(--cv-text, #d8d8e0);
+    background: var(--cv-chrome, #f0f0f0);
+    border-top: 1px solid var(--cv-border, #cccccc);
+    color: var(--cv-text, #333333);
     font: 11px ui-monospace, Menlo, Consolas, monospace;
   }
   .statusbar .grow { flex: 1; }
-  .statusbar .versions { color: var(--cv-dim, #7c7c8a); }
-  .statusbar .ok { color: #7ee787; }
-  .statusbar .error { color: #ff7b81; }
+  .statusbar .versions { color: var(--cv-dim, #666666); }
+  .statusbar .ok { color: #1a7f37; }
+  .statusbar .error { color: #c0362c; }
 
   .probe {
     position: fixed;
     z-index: 9999;
     pointer-events: none;
-    background: rgba(10, 10, 14, 0.94);
-    border: 1px solid var(--cv-border, #2a2a33);
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid var(--cv-border, #cccccc);
+    /* It floats over the image, and a pale box on a pale photograph needs an
+       edge of its own to stay legible. */
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
     border-radius: 4px;
     padding: 6px 8px;
-    color: var(--cv-text, #d8d8e0);
+    color: var(--cv-text, #333333);
     font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
     white-space: pre;
   }
-  .probe .pk { color: var(--cv-accent, #6ea8fe); }
+  .probe .pk { color: var(--cv-accent, #2a7edf); }
 </style>

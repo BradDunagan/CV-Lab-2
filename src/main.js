@@ -54,7 +54,9 @@ function createWindow() {
     height: 900,
     minWidth: 720,
     minHeight: 520,
-    backgroundColor: '#16161a',
+    // Matches app.css's body background, so the first paint before the
+    // renderer loads is not a flash of a different colour.
+    backgroundColor: '#e0e0e0',
     title: 'CV-Lab',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

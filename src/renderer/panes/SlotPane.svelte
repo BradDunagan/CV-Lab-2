@@ -232,18 +232,21 @@
       bins: 128, curve: v.curve, range: v.range, channel: v.channel,
     });
     const ctx = c.getContext('2d');
-    ctx.fillStyle = '#0d0d10';
+    // Painted, not left transparent: the canvas is its own surface, and the
+    // pane behind it is not guaranteed to be the colour the bars were picked
+    // to read against.
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, c.width, c.height);
 
     const peak = Math.max(...counts, 1);
     const barWidth = c.width / counts.length;
-    ctx.fillStyle = '#6ea8fe';
+    ctx.fillStyle = '#2a7edf';
     counts.forEach((count, i) => {
       const height = (count / peak) * (c.height - 18);
       ctx.fillRect(i * barWidth, c.height - height - 14, Math.max(1, barWidth - 1), height);
     });
 
-    ctx.fillStyle = '#8b8b97';
+    ctx.fillStyle = '#666666';
     ctx.font = '11px ui-monospace, Menlo, monospace';
     ctx.fillText(fmt(lo), 4, c.height - 3);
     const right = fmt(hi);
@@ -402,8 +405,8 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--cv-tile-bg, #101014);
-    color: var(--cv-text, #d8d8e0);
+    background: var(--cv-tile-bg, #ffffff);
+    color: var(--cv-text, #333333);
     font: 12px ui-monospace, Menlo, Consolas, monospace;
   }
 
@@ -412,16 +415,16 @@
     align-items: center;
     gap: 4px;
     padding: 3px 5px;
-    background: var(--cv-chrome, #17171d);
-    border-bottom: 1px solid var(--cv-border, #2a2a33);
+    background: var(--cv-chrome, #f0f0f0);
+    border-bottom: 1px solid var(--cv-border, #cccccc);
     flex: 0 0 auto;
     flex-wrap: wrap;
   }
 
   .controls select {
-    background: var(--cv-input, #0e0e12);
+    background: var(--cv-input, #ffffff);
     color: inherit;
-    border: 1px solid var(--cv-border, #2a2a33);
+    border: 1px solid var(--cv-border, #cccccc);
     border-radius: 3px;
     font: inherit;
     padding: 1px 2px;
@@ -430,16 +433,16 @@
   .slot-name {
     background: none;
     border: 1px solid transparent;
-    color: var(--cv-accent, #6ea8fe);
+    color: var(--cv-accent, #2a7edf);
     font: inherit;
     font-weight: 600;
     cursor: pointer;
     padding: 1px 4px;
     border-radius: 3px;
   }
-  .slot-name:hover { border-color: var(--cv-border, #2a2a33); }
+  .slot-name:hover { border-color: var(--cv-border, #cccccc); }
 
-  .meta { color: var(--cv-dim, #7c7c8a); }
+  .meta { color: var(--cv-dim, #666666); }
   .grow { flex: 1; }
 
   .stage {
@@ -462,8 +465,8 @@
     display: flex;
     justify-content: space-between;
     padding: 2px 6px;
-    color: var(--cv-dim, #7c7c8a);
-    border-top: 1px solid var(--cv-border, #2a2a33);
+    color: var(--cv-dim, #666666);
+    border-top: 1px solid var(--cv-border, #cccccc);
     flex: 0 0 auto;
   }
 
@@ -476,11 +479,11 @@
     gap: 8px;
     padding: 12px;
     text-align: center;
-    color: var(--cv-dim, #7c7c8a);
+    color: var(--cv-dim, #666666);
   }
 
   .hint code {
-    color: var(--cv-accent, #6ea8fe);
+    color: var(--cv-accent, #2a7edf);
   }
 
   .picker {
@@ -491,18 +494,18 @@
   }
   .picker.inline {
     padding: 4px 6px;
-    border-bottom: 1px solid var(--cv-border, #2a2a33);
+    border-bottom: 1px solid var(--cv-border, #cccccc);
     justify-content: flex-start;
   }
   .picker button {
-    background: var(--cv-input, #0e0e12);
-    border: 1px solid var(--cv-border, #2a2a33);
+    background: var(--cv-input, #ffffff);
+    border: 1px solid var(--cv-border, #cccccc);
     color: inherit;
     font: inherit;
     padding: 2px 8px;
     border-radius: 3px;
     cursor: pointer;
   }
-  .picker button:hover { border-color: var(--cv-accent, #6ea8fe); }
-  .picker button.current { color: var(--cv-accent, #6ea8fe); border-color: var(--cv-accent, #6ea8fe); }
+  .picker button:hover { border-color: var(--cv-accent, #2a7edf); }
+  .picker button.current { color: var(--cv-accent, #2a7edf); border-color: var(--cv-accent, #2a7edf); }
 </style>

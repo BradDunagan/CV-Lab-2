@@ -1,40 +1,49 @@
 /*
  * The host page.
  *
- * paneless styles itself for a light theme with hardcoded colours; the lab has
- * always been dark, because a display transform is easier to judge against a
- * dark surround. Rather than fight paneless's internals, the app's own chrome
- * uses these variables and paneless keeps its own look for the frame and pane
- * furniture. Where paneless later moves to CSS variables (its
- * docs/cv-lab-compatibility.md proposes exactly that), these are what they
- * would map onto.
+ * The app's own chrome is themed entirely from the --cv-* variables below;
+ * paneless is themed from the --paneless-* ones, which its styles/theme.css
+ * declares with light defaults and its components read. Setting both here is
+ * the whole of the theming — no fork, no build flag.
+ *
+ * The lab was dark for a long time, on the argument that a display transform is
+ * easier to judge against a dark surround. It is light now; the surround is a
+ * neutral grey rather than white so that a bright tile still reads as brighter
+ * than the chrome around it.
+ *
+ * The values below are paneless's own light defaults from its styles/theme.css,
+ * which App.svelte imports — same greys, same accent. That is deliberate: the
+ * splitters, tabs and collapsed panes are drawn by paneless from those
+ * defaults, and a palette of our own invention would have the frame and the
+ * pane contents disagreeing by a few points of grey everywhere they meet.
  */
 :root {
-  color-scheme: dark;
-  --cv-tile-bg: #101014;
-  --cv-chrome: #17171d;
-  --cv-input: #0e0e12;
-  --cv-border: #2a2a33;
-  --cv-text: #d8d8e0;
-  --cv-dim: #7c7c8a;
-  --cv-accent: #6ea8fe;
+  color-scheme: light;
+  --cv-tile-bg: #ffffff;
+  --cv-chrome: #f0f0f0;
+  --cv-input: #ffffff;
+  --cv-border: #cccccc;
+  --cv-text: #333333;
+  --cv-dim: #666666;
+  --cv-accent: #2a7edf;
 
   /*
    * Paneless's own chrome, mapped onto the palette above.
    *
-   * These are the properties paneless reads with its original light-theme
-   * literals as fallbacks, so setting them here is the whole of the theming —
-   * no fork, no build flag. The header is sized for a text input rather than
-   * the default 28px badge strip, and its right-hand region is told to take
-   * the spare width, because that is where the command bar lives.
+   * Only the layout properties here are actually changes: the colours restate
+   * theme.css's defaults, and are written out so that a later edit to the
+   * palette above cannot leave the header behind. The header is sized for a
+   * text input rather than the default 28px badge strip, and its right-hand
+   * region is told to take the spare width, because that is where the command
+   * bar lives.
    */
   --paneless-header-height: 34px;
-  --paneless-header-bg: #17171d;
-  --paneless-header-text: #d8d8e0;
-  --paneless-header-border: #2a2a33;
+  --paneless-header-bg: #f0f0f0;
+  --paneless-header-text: #333333;
+  --paneless-header-border: #cccccc;
   --paneless-header-padding: 0 8px;
   --paneless-header-right-grow: 1;
-  --paneless-header-item-hover: rgba(255, 255, 255, 0.08);
+  --paneless-header-item-hover: rgba(0, 0, 0, 0.07);
 
   /*
    * Items in the flex row rather than absolutely centred across the header.
@@ -45,16 +54,16 @@
   --paneless-header-items-justify: flex-start;
   --paneless-header-items-gap: 8px;
 
-  --paneless-footer-bg: #17171d;
-  --paneless-footer-text: #d8d8e0;
-  --paneless-footer-border: #2a2a33;
+  --paneless-footer-bg: #f0f0f0;
+  --paneless-footer-text: #333333;
+  --paneless-footer-border: #cccccc;
 }
 
 html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #0b0b0e;
+  background: #e0e0e0;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
 }
 
