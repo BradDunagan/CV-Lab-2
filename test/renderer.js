@@ -460,6 +460,58 @@ async function collect(win, swatch, linearPng) {
       })(),
     };
 
+    /*
+     * No control paints text outside itself.
+     *
+     * SVG does not clip to a group, so a caption longer than its control is
+     * drawn straight over whatever is beside it -- paneless clipped its label
+     * and nothing else, and an output path in an editbox ran through its own
+     * border, under a dropdown's arrow, and out the far side.
+     *
+     * Asserted by forcing the failure rather than hoping some string is long
+     * enough: every control is handed something too wide for it, measured,
+     * and put back. cv-lab is where this shows and where it hurts, so the
+     * check lives here even though the clipping is paneless's to implement.
+     *
+     * getBBox reports GEOMETRY and ignores clipping, so overflow alone proves
+     * nothing -- a correctly clipped label overflows by that measure too. The
+     * property is: text wider than its control must have a clip in effect.
+     */
+    r.unclippedControls = (() => {
+      const cs = lab2().controlStore;
+      const LONG = 'OVERFLOW'.repeat(6);
+      const bad = [];
+      for (const paneId of cs.getPaneIds()) {
+        const data = cs.getPaneData(paneId);
+        if (!data) continue;
+        for (const control of Object.values(data.byId)) {
+          if (control.type === 'panel') continue;
+
+          const before = {};
+          for (const key of ['text', 'value', 'items', 'selectedId']) {
+            if (control[key] !== undefined) before[key] = control[key];
+          }
+          if (control.type === 'editbox') cs.updateControl(paneId, control.id, { value: LONG });
+          else if (control.type === 'dropdown') {
+            cs.updateControl(paneId, control.id, { items: [{ id: 'x', label: LONG }], selectedId: 'x' });
+          } else cs.updateControl(paneId, control.id, { text: LONG });
+
+          const g = document.querySelector('[data-control-id="' + control.id + '"]');
+          for (const t of g ? g.querySelectorAll('text') : []) {
+            const box = t.getBBox();
+            if (box.x + box.width - control.width <= 1) continue;
+            let clipped = false;
+            for (let el = t; el && el !== g.parentNode; el = el.parentNode) {
+              if (el.getAttribute && el.getAttribute('clip-path')) { clipped = true; break; }
+            }
+            if (!clipped) bad.push((control.name || '(unnamed)') + ':' + control.type);
+          }
+          if (Object.keys(before).length > 0) cs.updateControl(paneId, control.id, before);
+        }
+      }
+      return bad;
+    })();
+
     // --- the features output kind ---
     await ui('PB = gaussian(P, sigma=1.2)');
     await ui('PGx = sobel(PB, axis=x)');
@@ -885,6 +937,15 @@ app.whenReady().then(async () => {
     // process would lay pt-lab's webContents over the controls.
     assert.equal(r.generate.isRightChild, true,
       'the render pane is not the right-hand child of the split');
+  });
+
+  test('no control paints its text outside itself', () => {
+    // Every control kind, handed something too wide for it. paneless clipped
+    // its label and nothing else: an editbox value ran through its own border,
+    // a dropdown's text passed under the arrow and reappeared beyond it, and a
+    // button's centred caption came out of both sides.
+    assert.deepEqual(r.unclippedControls, [],
+      'these controls paint text outside their own box: ' + JSON.stringify(r.unclippedControls));
   });
 
   test('the render pane reports where it is', () => {
