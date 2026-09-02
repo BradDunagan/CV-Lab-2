@@ -2,23 +2,34 @@
   /**
    * Generate images with pt-lab, and watch it happen.
    *
-   * This pane does NOT host the path tracer. pt-lab is three.js plus an OIDN
-   * WASM blob behind a GPU renderer, and bundling it here would cost the app a
-   * few megabytes and CI a whole extra checkout for something the interface
-   * does not otherwise need. The main process runs it in its own window and
-   * sends progress back; this shows the progress.
+   * This pane still does NOT host the path tracer. pt-lab is three.js plus an
+   * OIDN WASM blob behind a GPU renderer, and putting it in the renderer would
+   * cost the app a few megabytes and CI a whole extra checkout for something
+   * the interface does not otherwise need. It gets its own webContents, loaded
+   * from dist-generate/, and progress comes back over IPC.
    *
-   * That also makes "watch it converge" literal rather than metaphorical: tick
-   * `show the render window` and pt-lab's own window appears, path tracing in
-   * front of you, while this pane tracks the sweep.
+   * What this pane now does is say WHERE that webContents goes. The main
+   * process lays a WebContentsView over this pane's rectangle, so "watch it
+   * converge" is literal and is the default: the tracer runs in front of you
+   * while the sweep proceeds. It used to be a separate window behind a
+   * checkbox, which meant that most of the time nobody saw it at all.
    *
-   * Every control here is one field in the options object and one key the
-   * driver already understands, which is what makes growing it cheap — nothing
-   * about the boundary changes when a control is added. `scene` and `truth`
-   * arrived exactly that way.
+   * paneless moves and resizes this pane and the main process cannot see any
+   * of it, so the geometry is reported from here. The pane is the authority on
+   * where it is; main is the authority on what goes there.
+   *
+   * The controls are a paneless control column in the pane next door, built by
+   * generate-controls.svelte.js. Every control is still one field in the
+   * options object and one key the driver already understands, which is what
+   * made growing the old pane cheap -- nothing about that boundary changed
+   * when the controls stopped being DOM.
    */
   import { onMount } from 'svelte';
+  import { paneStore } from 'paneless';
+  import { attachGenerateControls } from './generate-controls.svelte.js';
   import { lab, setStatus } from '../lab.svelte.js';
+
+  let { paneId } = $props();
 
   let unavailable = $state(null);
   let running = $state(false);
@@ -28,7 +39,10 @@
   let shots = $state([]);
   let ready = $state(null);
 
-  const options = $state({
+  /** @type {HTMLElement|undefined} */
+  let box = $state();
+
+  const DEFAULTS = {
     // Replaced on mount by whatever the main process nominates. A relative
     // path would resolve against a working directory a packaged app never
     // chose, which on macOS is `/`.
@@ -45,33 +59,143 @@
     truth: false,
     aovs: false,
     denoise: false,
-    show: false,
+  };
+
+  /** Whatever the controls currently say. The column owns the fields; this is
+   *  the copy everything else reads. */
+  let current = $state({ ...DEFAULTS });
+
+  let total = $derived(current.positions * current.lighting);
+  let estimate = $derived(total * Math.max(6, Math.round(current.samples * 0.42)));
+
+  /**
+   * The controls pane is this pane's sibling.
+   *
+   * Found through paneless rather than passed in, for the same reason the slot
+   * column reads its slot off its sibling: the pane tree is what survives a
+   * layout change, and a prop threaded from App.svelte would not.
+   */
+  const controlsPaneId = () => {
+    const parent = paneStore.getPane(paneId)?.parentId;
+    return parent ? paneStore.getPane(parent)?.leftChildId ?? null : null;
+  };
+
+  /** @type {ReturnType<typeof attachGenerateControls>|null} */
+  let controls = null;
+
+  /**
+   * The prose under the controls: what is about to happen, or what is.
+   *
+   * One string rather than markup, because it is drawn as a paneless label --
+   * one tspan per newline, and no wrapping of its own -- so the column wraps
+   * it and this only decides the words.
+   */
+  const hintText = () => {
+    if (running && ready) {
+      const recent = shots.slice(-6).map(
+        (s) => `${s.index + 1}/${s.total} ${s.name} ${(s.elapsedMs / 1000).toFixed(1)}s` +
+          (s.truth ? ` gt ${s.truth.visibleEdges}/${s.truth.edges} edges` : '')
+      );
+      return [`${shots.length} of ${ready.total} done`, '', ...recent].join('\n');
+    }
+    if (running) return 'Loading the model and building its BVH...';
+
+    const lines = [];
+    if (done && !done.ok) {
+      lines.push(`Failed: ${done.error}`, '');
+    } else if (done) {
+      lines.push(`${done.files.length} image(s) written. Run them with:`, '',
+        'npm run lab -- --script pipelines/geometry.lab --as linear' +
+          `${current.truth ? ` --truth ${current.out}` : ''} --out results/ ${current.out}/*.png`,
+        ...(current.truth ? ['', 'then  npm run score -- results/'] : []), '');
+    }
+    lines.push(`Roughly ${estimate}s for ${total} image${total === 1 ? '' : 's'}.`);
+    lines.push(current.scene === 'cube'
+      ? 'A cube has twelve edges and eight vertices in known places, nine and ' +
+        'seven of them visible from a general viewpoint, which is what makes ' +
+        '"is this corner real" a question with an answer.'
+      : 'A room isolates the subject; "none" uses pt-lab\'s HDR environment, ' +
+        'whose blurred background dominates the edge count.');
+    return lines.join('\n');
+  };
+
+  function refreshControls() {
+    controls?.update({
+      running,
+      hint: hintText(),
+      runLabel: running ? 'Generating...' : `Generate ${total}`,
+    });
+  }
+
+  /*
+   * Redraw the column whenever anything it displays changes. Cheap: the column
+   * writes only the properties that actually differ.
+   */
+  $effect(() => {
+    void running; void done; void shots; void ready; void current;
+    void total; void estimate;
+    refreshControls();
   });
 
-  const SCENES = ['helmet', 'cube'];
-  const ROOMS = ['default', 'room', 'room-emissive', 'room-arealight', 'none'];
-
-  let total = $derived(options.positions * options.lighting);
-  let estimate = $derived(total * Math.max(6, Math.round(options.samples * 0.42)));
+  /**
+   * Tell the main process where the render goes.
+   *
+   * Reported on resize AND on any pane-store change, because a pane can move
+   * without changing size -- dragging the frame does exactly that, and a view
+   * left at the old rectangle sits over the wrong part of the window.
+   */
+  function reportBounds() {
+    if (!box) return;
+    const r = box.getBoundingClientRect();
+    lab.generate.setViewBounds({ x: r.x, y: r.y, width: r.width, height: r.height });
+  }
 
   onMount(() => {
-    lab.generate.check().then((problem) => { unavailable = problem; });
-    lab.generate.defaults().then(({ out }) => { if (!options.out) options.out = out; });
-    return lab.generate.onProgress((progress) => {
-      if (progress.type === 'ready') {
-        ready = progress;
-      } else if (progress.type === 'shot') {
-        shots = [...shots, progress];
-      }
+    lab.generate.check().then((problem) => {
+      unavailable = problem;
+      if (problem) return;
+      const target = controlsPaneId();
+      if (!target) return;
+      controls = attachGenerateControls(target, current, {
+        onRun: (opts) => { current = opts; start(opts); },
+        onChange: (opts) => { current = opts; },
+      });
+      refreshControls();
     });
+
+    lab.generate.defaults().then(({ out }) => {
+      if (current.out) return;
+      current = { ...current, out };
+      controls?.setField('out', out);
+    });
+
+    const observer = new ResizeObserver(reportBounds);
+    if (box) observer.observe(box);
+    const onWindowResize = () => reportBounds();
+    window.addEventListener('resize', onWindowResize);
+    const unsubscribePanes = paneStore.subscribe(() => queueMicrotask(reportBounds));
+
+    const offProgress = lab.generate.onProgress((progress) => {
+      if (progress.type === 'ready') ready = progress;
+      else if (progress.type === 'shot') shots = [...shots, progress];
+    });
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', onWindowResize);
+      unsubscribePanes();
+      offProgress();
+      controls?.dispose();
+      controls = null;
+    };
   });
 
-  async function start() {
+  async function start(opts) {
     running = true;
     done = null;
     shots = [];
     ready = null;
-    setStatus(`Generating ${total} image(s)…`);
+    setStatus(`Generating ${opts.positions * opts.lighting} image(s)...`);
 
     /*
      * Three states, and they are all different. `default` leaves the key off
@@ -79,7 +203,7 @@
      * default HDR-environment scene, which is not one of its room kinds; a
      * name is a room kind.
      */
-    const { room, ...rest } = options;
+    const { room, ...rest } = opts;
     const result = await lab.generate.run({
       ...rest,
       ...(room === 'default' ? {} : { room: room === 'none' ? null : room }),
@@ -89,14 +213,14 @@
     done = result;
     setStatus(
       result.ok
-        ? `Generated ${result.files.length} image(s) in ${options.out}`
+        ? `Generated ${result.files.length} image(s) in ${opts.out}`
         : `Generation failed: ${result.error}`,
       result.ok ? 'ok' : 'error'
     );
   }
 </script>
 
-<div class="generate-pane">
+<div class="generate-pane" bind:this={box} data-pane={paneId} data-running={running}>
   {#if unavailable}
     <!--
       The first line of the message is the headline and the rest is detail.
@@ -107,96 +231,21 @@
       <p><b>{unavailable.split('\n')[0]}</b></p>
       <pre>{unavailable.split('\n').slice(1).join('\n')}</pre>
     </div>
-  {:else}
-    <div class="controls">
-      <label title="where the images are written">
-        out <input bind:value={options.out} disabled={running} size="28" />
-      </label>
-      <label>size <input type="number" min="64" max="2048" step="64"
-                         bind:value={options.size} disabled={running} /></label>
-      <label>samples <input type="number" min="4" max="1000" step="4"
-                            bind:value={options.samples} disabled={running} /></label>
-      <label>positions <input type="number" min="1" max="24"
-                              bind:value={options.positions} disabled={running} /></label>
-      <label>lighting <input type="number" min="1" max="8"
-                             bind:value={options.lighting} disabled={running} /></label>
-      <label title="cube has twelve edges and eight vertices in known places">
-        scene
-        <select bind:value={options.scene} disabled={running}>
-          {#each SCENES as name}<option value={name}>{name}</option>{/each}
-        </select>
-      </label>
-      <label>room
-        <select bind:value={options.room} disabled={running}>
-          {#each ROOMS as kind}<option value={kind}>{kind}</option>{/each}
-        </select>
-      </label>
-      <label class="check" title="one <name>.gt.json per image: where the edges really are">
-        <input type="checkbox" bind:checked={options.truth} disabled={running} />
-        ground truth
-      </label>
-      <label class="check" title="depth, normal and albedo passes, into <out>/aov/">
-        <input type="checkbox" bind:checked={options.aovs} disabled={running} />
-        AOV passes
-      </label>
-      <label class="check" title="off in pt-lab by default: every image so far carried the raw noise floor">
-        <input type="checkbox" bind:checked={options.denoise} disabled={running} />
-        denoise
-      </label>
-      <label class="check" title="pt-lab's own window, path tracing in front of you">
-        <input type="checkbox" bind:checked={options.show} disabled={running} />
-        show the render window
-      </label>
-      <span class="grow"></span>
-      <button onclick={start} disabled={running}>
-        {running ? 'Generating…' : `Generate ${total}`}
-      </button>
-    </div>
-
-    <p class="hint">
-      {#if running && ready}
-        {shots.length} of {ready.total} done
-      {:else if running}
-        Loading the model and building its BVH…
+  {:else if !running}
+    <!--
+      Only ever visible between runs. While a sweep is in flight the main
+      process lays pt-lab's own webContents over this whole pane.
+    -->
+    <p class="placeholder">
+      {#if done && done.ok}
+        {done.files.length} image(s) written to <code>{current.out}</code>.
+        Press <b>Generate</b> to render another sweep here.
+      {:else if done}
+        <span class="err">{done.error}</span>
       {:else}
-        Roughly {estimate}s for {total} image{total === 1 ? '' : 's'}.
-        {#if options.scene === 'cube'}
-          A cube has twelve edges and eight vertices in known places, nine and
-          seven of them visible from a general viewpoint — which is what makes
-          <em>is this corner real</em> a question with an answer.
-        {:else}
-          A room isolates the subject; <code>none</code> uses pt-lab's HDR
-          environment, whose blurred background dominates the edge count.
-        {/if}
+        pt-lab renders here, live, while a sweep runs.
       {/if}
     </p>
-
-    <div class="log">
-      {#each shots as shot (shot.name)}
-        <div class="line">
-          <span class="n">{shot.index + 1}/{shot.total}</span>
-          <span class="name">{shot.name}</span>
-          yaw={shot.yaw.toFixed(2)} intensity={shot.intensity}
-          {#if shot.truth}
-            <span class="gt">gt {shot.truth.visibleEdges}/{shot.truth.edges} edges,
-              {shot.truth.visibleVertices}/{shot.truth.vertices} vertices</span>
-          {/if}
-          <span class="ms">{(shot.elapsedMs / 1000).toFixed(1)}s</span>
-        </div>
-      {/each}
-      {#if done && !done.ok}
-        <div class="line err">{done.error}</div>
-      {:else if done}
-        <div class="line ok">
-          {done.files.length} image(s) written. Run them with:
-          <code>npm run lab -- --script pipelines/geometry.lab --as linear{
-            options.truth ? ` --truth ${options.out}` : ''} --out results/ {options.out}/*.png</code>
-          {#if options.truth}
-            then <code>npm run score -- results/</code>
-          {/if}
-        </div>
-      {/if}
-    </div>
   {/if}
 </div>
 
@@ -209,29 +258,8 @@
     color: var(--cv-text, #333333);
     font: 12px ui-monospace, Menlo, Consolas, monospace;
   }
-  .controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  .controls label { display: flex; align-items: center; gap: 4px; color: var(--cv-dim, #666666); }
-  .controls .grow { flex: 1; }
-  input, select, button {
-    background: var(--cv-input, #ffffff);
-    border: 1px solid var(--cv-border, #cccccc);
-    border-radius: 3px; color: var(--cv-text, #333333);
-    font: inherit; padding: 3px 6px;
-  }
-  input[type='number'] { width: 5.5em; }
-  input[type='checkbox'] { accent-color: var(--cv-accent, #2a7edf); padding: 0; }
-  button { cursor: pointer; padding: 4px 10px; }
-  button:hover:not(:disabled) { border-color: var(--cv-accent, #2a7edf); }
-  button:disabled, input:disabled, select:disabled { opacity: 0.5; }
-  .hint { margin: 0; color: var(--cv-dim, #666666); }
-  .hint code, .line code { color: var(--cv-accent, #2a7edf); }
-  .log { flex: 1; min-height: 0; overflow: auto; }
-  .line { padding: 1px 0; }
-  .n { color: var(--cv-dim, #666666); }
-  .name { color: var(--cv-accent, #2a7edf); }
-  .ms { color: var(--cv-dim, #666666); }
-  .gt { color: #1a7f37; }
-  .ok { color: #1a7f37; }
+  .placeholder { margin: auto; text-align: center; color: var(--cv-dim, #666666); }
+  .placeholder code { color: var(--cv-accent, #2a7edf); }
   .err { color: #c0362c; }
   .unavailable { color: var(--cv-dim, #666666); }
   .unavailable pre { white-space: pre-wrap; color: #c0362c; }

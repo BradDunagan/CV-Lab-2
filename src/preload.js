@@ -271,6 +271,14 @@ contextBridge.exposeInMainWorld('lab', {
     check: () => ipcRenderer.invoke('generate:check'),
     defaults: () => ipcRenderer.invoke('generate:defaults'),
     run: (options) => ipcRenderer.invoke('generate:run', options),
+    /*
+     * Where to put the embedded render.
+     *
+     * The main process owns the WebContentsView but cannot see the pane it
+     * belongs over -- paneless lays that out in the renderer -- so the pane
+     * reports its own rectangle in window coordinates and main matches it.
+     */
+    setViewBounds: (bounds) => ipcRenderer.invoke('generate:view-bounds', bounds),
     onProgress: (callback) => {
       const listener = (_event, progress) => callback(progress);
       ipcRenderer.on('generate:progress', listener);

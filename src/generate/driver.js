@@ -380,13 +380,36 @@ function plan(options) {
 }
 
 /**
+ * A hidden window of pt-lab's own: the default place to render.
+ *
+ * The three things a host has to provide are the three the sweep touches --
+ * a webContents to talk to, a way to load the page, and a way to go away.
+ * A WebContentsView satisfies all three, which is what lets the app embed the
+ * render in a pane without the driver knowing anything about panes.
+ */
+function windowHost(opts) {
+  const win = new BrowserWindow({
+    show: opts.show,
+    width: opts.size,
+    height: opts.size,
+    title: 'CV-Lab — generating',
+  });
+  return {
+    webContents: win.webContents,
+    loadURL: (url) => win.loadURL(url),
+    destroy: () => { if (!win.isDestroyed()) win.destroy(); },
+  };
+}
+
+/**
  * Render a sweep of images, and optionally what is really in them.
  *
  * @param {object} options            merged over DEFAULTS
  * @param {(event: object) => void} [onProgress]  'ready' | 'shot' | 'done'
+ * @param {(opts: object) => object} [createHost]  where to render; see windowHost
  * @returns {Promise<{files: string[], truth: string[], errors: string[]}>}
  */
-async function generate(options = {}, onProgress = () => {}) {
+async function generate(options = {}, onProgress = () => {}, createHost = windowHost) {
   const opts = { ...DEFAULTS, ...options };
   const scene = SCENES[opts.scene];
   if (!scene) {
@@ -419,19 +442,21 @@ async function generate(options = {}, onProgress = () => {}) {
   }
 
   /*
-   * Hidden by default because a batch takes minutes and a window that steals
-   * focus for that long is a nuisance. Nothing about the OUTPUT changes when
-   * it is shown: exportPNG renders offscreen at the requested size either way.
+   * Where pt-lab actually runs.
+   *
+   * A window of its own by default, hidden, because a batch takes minutes and
+   * a window that steals focus for that long is a nuisance -- and because the
+   * CLI has no app window to put it in. The app passes a factory that embeds
+   * it in a pane instead, so the render is simply visible while it runs
+   * rather than hidden behind a checkbox nobody remembered to tick.
+   *
+   * Nothing about the OUTPUT depends on either choice: exportPNG renders
+   * offscreen at the requested size no matter what is on screen.
    */
-  const win = new BrowserWindow({
-    show: opts.show,
-    width: opts.size,
-    height: opts.size,
-    title: 'CV-Lab — generating',
-  });
+  const host = createHost(opts);
 
   const errors = [];
-  win.webContents.on('console-message', (event) => {
+  host.webContents.on('console-message', (event) => {
     // Errors only. The positional signature's `level` is a NUMBER where 2 is a
     // warning, so `level >= 2` quietly promotes every warning to an error.
     if (event.level === 'error' && event.message.trim()) {
@@ -482,8 +507,8 @@ async function generate(options = {}, onProgress = () => {}) {
   const truthFiles = [];
   const started = Date.now();
   try {
-    const call = (expr) => win.webContents.executeJavaScript(`__gen.${expr}`);
-    await win.loadURL(`${SCHEME}://lab/index.html`);
+    const call = (expr) => host.webContents.executeJavaScript(`__gen.${expr}`);
+    await host.loadURL(`${SCHEME}://lab/index.html`);
 
     /*
      * A scene with named objects is applied AFTER init rather than instead of
@@ -564,7 +589,7 @@ async function generate(options = {}, onProgress = () => {}) {
   } finally {
     saveDir = opts.out;
     session.defaultSession.removeListener('will-download', onWillDownload);
-    if (!win.isDestroyed()) win.destroy();
+    host.destroy();
   }
 
   onProgress({ type: 'done', files, truth: truthFiles, errors, elapsedMs: Date.now() - started });
@@ -572,7 +597,7 @@ async function generate(options = {}, onProgress = () => {}) {
 }
 
 module.exports = {
-  generate, plan, registerScheme, checkPrerequisites, buildInputs,
+  generate, windowHost, plan, registerScheme, checkPrerequisites, buildInputs,
   DEFAULTS, SCENES, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS,
   assetsDir, defaultOutputDir, isPackaged,
 };

@@ -23,6 +23,7 @@
   } from 'paneless';
   import { controlStore, controlEvents } from 'paneless';
   import { attachSlotControls, CONTROLS_WIDTH } from './panes/slot-controls.svelte.js';
+  import { CONTROLS_WIDTH as GENERATE_CONTROLS_WIDTH } from './panes/generate-controls.svelte.js';
   import 'paneless/styles/theme.css';
 
   import SlotPane from './panes/SlotPane.svelte';
@@ -49,7 +50,9 @@
    * file never created. rr solves it the same way: fall back to the title, and
    * re-register what the fallback resolved so the lookup is cheap next time.
    */
-  const byTitle = { Log: LogPane, Generate: GeneratePane };
+  // 'Render' is the Generate frame's right-hand pane, which is the one that
+  // carries the component; 'Generate' is kept for a frame made before it split.
+  const byTitle = { Log: LogPane, Generate: GeneratePane, Render: GeneratePane };
   const isSlotTitle = (t) => typeof t === 'string' && (t === 'Slot' || t.startsWith('Slot '));
 
   function paneContentProvider(paneId, meta) {
@@ -236,8 +239,8 @@
    * would silently become its default half -- which happens to be the same
    * number, and would stop being so the moment either side changed.
    */
-  function controlsRatio(frameWidth) {
-    const wanted = CONTROLS_WIDTH / Math.max(1, frameWidth);
+  function controlsRatio(frameWidth, columnWidth = CONTROLS_WIDTH) {
+    const wanted = columnWidth / Math.max(1, frameWidth);
     const ratio = Math.min(0.6, Math.max(0.22, wanted));
     return ratio === 0.5 ? 0.499 : ratio;
   }
@@ -389,6 +392,51 @@
         );
       }
     }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* the generate frame                                                  */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Split like a slot frame, and for the same reason: the controls belong
+   * beside the thing they act on, not stacked above it.
+   *
+   * The right pane is where pt-lab renders. GeneratePane does not draw the
+   * render itself -- it reports its rectangle and the main process lays a
+   * WebContentsView over it -- so this only has to make sure there IS a pane
+   * of a sensible size for it to report.
+   *
+   * Unlike a slot frame, the controls column here does not attach from this
+   * file. GeneratePane owns the run state the column displays, so it attaches
+   * to its own sibling; see its comment.
+   */
+  function newGenerateFrame() {
+    const box = contentBox();
+    const w = Math.min(box.width - GAP * 2, GENERATE_CONTROLS_WIDTH + SPLITTER_W + 520);
+    const rootId = makeFrame('Generate', GeneratePane,
+      Math.round((box.width - w) / 2), Math.round(box.height * 0.12),
+      w, Math.round(box.height * 0.68));
+    if (!rootId) return null;
+
+    const split = splitHorizontally(rootId, controlsRatio(w, GENERATE_CONTROLS_WIDTH));
+    if (!split) return rootId;
+
+    contentRegistry.delete(split.leftId);
+    paneStore.updatePane(split.leftId, {
+      contentType: 'controls',
+      title: 'Controls',
+      titleVisible: false,
+      headerVisible: false,
+    });
+
+    contentRegistry.set(split.rightId, GeneratePane);
+    paneStore.updatePane(split.rightId, {
+      title: 'Render',
+      titleVisible: true,
+      headerVisible: false,
+    });
+    return split.rightId;
   }
 
   /* ------------------------------------------------------------------ */
@@ -572,10 +620,7 @@
         const open = Object.entries(paneData.byId)
           .find(([id]) => contentRegistry.get(id) === GeneratePane);
         if (open) { setStatus('The Generate frame is already open.'); break; }
-        const box = contentBox();
-        makeFrame('Generate', GeneratePane,
-          Math.round(box.width * 0.18), Math.round(box.height * 0.14),
-          Math.round(box.width * 0.64), Math.round(box.height * 0.6));
+        newGenerateFrame();
         break;
       }
       case 'new-log-pane': {
