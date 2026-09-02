@@ -350,15 +350,71 @@ async function collect(win, swatch, linearPng) {
     await setScaling('smooth');
 
     // --- histogram view, through the pane's own control ---
+    /*
+     * The controls are paneless controls now: SVG driven by controlStore, in a
+     * pane of their own beside the image. So this drives the control the way
+     * paneless's Dropdown does -- by emitting the event it emits -- rather
+     * than clicking the rendered SVG, which would be testing paneless's
+     * hit-testing rather than the wiring this app owns.
+     */
+    const controlsPaneFor = (name) => {
+      const imageId = lab2().slotPaneIds()
+        .find((id) => lab2().paneStore.getPane(id)?.name === name);
+      const parent = lab2().paneStore.getPane(imageId)?.parentId;
+      return lab2().paneStore.getPane(parent)?.leftChildId ?? null;
+    };
+    const controlNamed = (paneId, controlName) => {
+      const data = lab2().controlStore.getPaneData(paneId);
+      return Object.values(data?.byId ?? {}).find((c) => c.name === controlName) ?? null;
+    };
+    const setControl = async (name, controlName, itemId) => {
+      const paneId = controlsPaneFor(name);
+      const control = controlNamed(paneId, controlName);
+      const item = control.items.find((i) => i.id === itemId);
+      lab2().controlStore.updateControl(paneId, control.id, { selectedId: itemId });
+      lab2().controlEvents.emit({
+        type: 'controlValueChanged',
+        paneId,
+        controlId: control.id,
+        value: { oldId: control.selectedId, newId: itemId, newValue: item?.label, item },
+      });
+      await sleep(90);
+    };
+
     await showSlot('P');
-    const typeSelect = paneFor('P').querySelector('select[title="view"]');
-    typeSelect.value = 'histogram';
-    typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-    await sleep(80);
+    await setControl('P', 'type', 'histogram');
     r.histogram = readoutFor('P');
-    typeSelect.value = 'image';
-    typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
-    await sleep(60);
+    await setControl('P', 'type', 'image');
+
+    /*
+     * Every control has to be reachable, which is not the same as present.
+     * paneless reveals a hidden frame header on hover with a transparent
+     * overlay across the top of the frame; a control drawn under it looks
+     * clickable and is not, because the overlay takes the click. The slot
+     * dropdown was the first row and was exactly there -- so it could not be
+     * used at all, and nothing that only checked the control EXISTS would have
+     * noticed. Asserted as a property: no control starts inside the band.
+     */
+    const HOVER_BAND = 22;   // Frame.svelte's .transient-header-overlay
+    r.controlsUnderHoverBand = (() => {
+      const paneId = controlsPaneFor('P');
+      const data = lab2().controlStore.getPaneData(paneId);
+      const root = data.rootPanelId;
+      return Object.values(data.byId)
+        .filter((c) => c.id !== root && c.y < HOVER_BAND)
+        .map((c) => (c.name || c.type) + '@y=' + c.y);
+    })();
+
+    // The column reports the slot its sibling image pane is bound to, and
+    // offers a channel per channel that slot actually has.
+    r.controlsTrackTheSlot = (() => {
+      const paneId = controlsPaneFor('P');
+      return {
+        slot: controlNamed(paneId, 'slot')?.selectedId,
+        channels: controlNamed(paneId, 'channel')?.items.map((i) => i.label),
+        colormap: controlNamed(paneId, 'colormap')?.selectedId,
+      };
+    })();
 
     // --- the Generate frame ---
     /*
@@ -746,6 +802,22 @@ app.whenReady().then(async () => {
 
   test('the histogram view renders', () => {
     assert.equal(r.histogram, 'histogram');
+  });
+
+  test('every slot control is clear of the frame\'s hover overlay', () => {
+    // Not "does the control exist" -- does a click reach it. See the note at
+    // the measurement: the overlay is transparent, so this fails invisibly.
+    assert.deepEqual(r.controlsUnderHoverBand, [],
+      `these controls are under the hover overlay and cannot be clicked: ${r.controlsUnderHoverBand}`);
+  });
+
+  test('the controls column tracks the slot its image pane shows', () => {
+    const c = r.controlsTrackTheSlot;
+    assert.equal(c.slot, 'P', 'the slot dropdown does not name the bound slot');
+    assert.equal(c.colormap, 'gray', 'colormap does not reflect the view');
+    // P is single-channel, so "all" and ch0 and nothing else.
+    assert.deepEqual(c.channels, ['all', 'ch0'],
+      `channel offered ${JSON.stringify(c.channels)} for a 1-channel slot`);
   });
 
   test('a bad command reports an error without throwing into the page', () => {
