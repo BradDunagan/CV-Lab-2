@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, ipcMain, dialog } = require('electron');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
@@ -121,13 +121,71 @@ function createWindow() {
   /*
    * Image generation, driven from the Generate frame.
    *
-   * The generator runs in its OWN window loading dist-generate/, not in the
-   * app's renderer — pt-lab is a GPU path tracer with three.js and an OIDN
-   * WASM blob behind it, and bundling that into the app would cost CI a
-   * checkout and the app a few megabytes for a feature the interface does not
-   * otherwise have. So progress comes back over IPC instead, and the app shows
-   * it rather than hosting it.
+   * The generator does not run in the app's renderer — pt-lab is a GPU path
+   * tracer with three.js and an OIDN WASM blob behind it, and bundling that
+   * into the renderer would cost CI a checkout and the app a few megabytes
+   * for a feature the interface does not otherwise have. It gets its own
+   * webContents loading dist-generate/, and progress comes back over IPC.
+   *
+   * What changed is WHERE that webContents lives. It used to be a separate
+   * window, hidden unless a checkbox was ticked; it is now a WebContentsView
+   * laid over the Generate frame's right-hand pane, so watching it converge is
+   * the default rather than an option. The renderer owns the geometry --
+   * paneless moves and resizes that pane and the main process cannot see it --
+   * so it reports the rectangle and this positions the view to match.
    */
+
+  /**
+   * The pane rectangle the render view should occupy, in window coordinates.
+   *
+   * Kept even when no view exists: a run can start before the pane has
+   * reported, and reporting continues while the pane is dragged mid-run.
+   */
+  let renderBounds = null;
+  let renderView = null;
+
+  const applyRenderBounds = () => {
+    if (!renderView || !renderBounds) return;
+    const { x, y, width, height } = renderBounds;
+    // A zero-sized view is not an error -- a collapsed or hidden pane reports
+    // one -- but Electron treats it as garbage, so floor it at a pixel.
+    renderView.setBounds({
+      x: Math.round(x), y: Math.round(y),
+      width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)),
+    });
+  };
+
+  ipcMain.removeHandler('generate:view-bounds');
+  ipcMain.handle('generate:view-bounds', (_event, bounds) => {
+    renderBounds = bounds;
+    applyRenderBounds();
+  });
+
+  /**
+   * Render into the app window instead of a window of pt-lab's own.
+   *
+   * Matches the shape driver.js's windowHost returns. The view is added on top
+   * of the renderer's own contents, so it covers whatever the pane was showing
+   * for as long as the sweep runs and is removed when it ends.
+   */
+  const paneHost = () => {
+    const view = new WebContentsView({
+      webPreferences: { contextIsolation: true, nodeIntegration: false },
+    });
+    renderView = view;
+    win.contentView.addChildView(view);
+    applyRenderBounds();
+    return {
+      webContents: view.webContents,
+      loadURL: (url) => view.webContents.loadURL(url),
+      destroy: () => {
+        renderView = null;
+        if (win.isDestroyed()) return;
+        win.contentView.removeChildView(view);
+        view.webContents.close();
+      },
+    };
+  };
   ipcMain.removeHandler('generate:check');
   ipcMain.handle('generate:check', () => generator.checkPrerequisites());
 
@@ -146,7 +204,7 @@ function createWindow() {
     try {
       const { files, truth, errors } = await generator.generate(options, (progress) => {
         if (!win.isDestroyed()) win.webContents.send('generate:progress', progress);
-      });
+      }, paneHost);
       return { ok: true, files, truth, errors };
     } catch (err) {
       return { ok: false, error: err.message };

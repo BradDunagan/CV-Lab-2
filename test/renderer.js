@@ -425,14 +425,39 @@ async function collect(win, swatch, linearPng) {
      */
     menu('generate');
     await sleep(300);
+    /*
+     * The controls are a paneless control column in the pane next door now, so
+     * "does it offer controls" is a question about the control store rather
+     * than about this pane's DOM. The pane itself is the render host: it
+     * reports its rectangle and the main process lays pt-lab's webContents
+     * over it, which is not something this process can see.
+     */
+    const generatePane = () => document.querySelector('.generate-pane');
+    const generateControlsPane = () => {
+      const paneId = generatePane()?.dataset.pane;
+      const parent = paneId ? lab2().paneStore.getPane(paneId)?.parentId : null;
+      return parent ? lab2().paneStore.getPane(parent)?.leftChildId ?? null : null;
+    };
     r.generate = {
-      opened: !!document.querySelector('.generate-pane'),
+      opened: !!generatePane(),
       // A second command must not open a second frame: two would race each
       // other over one output directory and one GPU.
       single: (menu('generate'), await sleep(200), document.querySelectorAll('.generate-pane').length),
       // Either it offers the controls, or it says why it cannot.
-      usable: !!document.querySelector('.generate-pane .controls'),
-      explains: (document.querySelector('.generate-pane .unavailable')?.textContent ?? '').trim(),
+      usable: (() => {
+        const paneId = generateControlsPane();
+        if (!paneId) return false;
+        const data = lab2().controlStore.getPaneData(paneId);
+        return Object.values(data?.byId ?? {}).some((c) => c.name === 'run');
+      })(),
+      explains: (generatePane()?.querySelector('.unavailable')?.textContent ?? '').trim(),
+      // The render pane is the one paneless will hand to the main process, so
+      // it has to be the RIGHT child of the split, not the whole frame.
+      isRightChild: (() => {
+        const paneId = generatePane()?.dataset.pane;
+        const parent = paneId ? lab2().paneStore.getPane(paneId)?.parentId : null;
+        return !!parent && lab2().paneStore.getPane(parent)?.rightChildId === paneId;
+      })(),
     };
 
     // --- the features output kind ---
@@ -538,6 +563,15 @@ app.whenReady().then(async () => {
   const { checkPrerequisites, defaultOutputDir } = require('../src/generate/driver');
   ipcMain.handle('generate:check', () => checkPrerequisites());
   ipcMain.handle('generate:defaults', () => ({ out: defaultOutputDir() }));
+
+  /*
+   * Where the render goes. The app's main process lays pt-lab's webContents
+   * over this rectangle; here it is only recorded, because there is no
+   * WebContentsView in the test window and the geometry is the part this
+   * process can actually check.
+   */
+  const viewBounds = [];
+  ipcMain.handle('generate:view-bounds', (_event, bounds) => { viewBounds.push(bounds); });
 
   const win = new BrowserWindow({
     show: false,
@@ -847,6 +881,23 @@ app.whenReady().then(async () => {
     const saysWhyNot = /not built|missing|checkout/i.test(r.generate.explains);
     assert.ok(offersControls || saysWhyNot,
       `the frame neither offered controls nor explained why: ${JSON.stringify(r.generate)}`);
+    // The controls go left and the render goes right. Reversed, the main
+    // process would lay pt-lab's webContents over the controls.
+    assert.equal(r.generate.isRightChild, true,
+      'the render pane is not the right-hand child of the split');
+  });
+
+  test('the render pane reports where it is', () => {
+    // The main process cannot see this rectangle -- paneless lays it out in
+    // the renderer -- so a pane that never reports, or reports a degenerate
+    // box, puts the render somewhere nobody can see. It looks exactly like a
+    // generator that did not start.
+    assert.ok(viewBounds.length > 0, 'the render pane never reported its bounds');
+    const last = viewBounds[viewBounds.length - 1];
+    assert.ok(last.width > 50 && last.height > 50,
+      `reported a degenerate rectangle: ${JSON.stringify(last)}`);
+    assert.ok(last.x >= 0 && last.y >= 0,
+      `reported a rectangle outside the window: ${JSON.stringify(last)}`);
   });
 
   test('a features slot binds, hashes and reports a count', () => {

@@ -15,8 +15,22 @@
     />
     <title>CV-Lab image generator</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
-      canvas { display: block; }
+      /*
+       * The canvas is `size` x `size` because that is the image being made,
+       * and that has nothing to do with how much room there is to show it in.
+       * Since the app embeds this page in a pane, the two are rarely equal:
+       * centred and scaled to fit keeps the render where the eye expects it
+       * instead of pinned to a corner with a black field beside it.
+       *
+       * Presentation only. max-width/max-height scale what is DRAWN and leave
+       * the backing store alone, so the exported PNG is unaffected either way.
+       */
+      html, body {
+        margin: 0; height: 100%; overflow: hidden;
+        background: #1c1c1c;
+        display: flex; align-items: center; justify-content: center;
+      }
+      #stage { display: block; max-width: 100%; max-height: 100%; }
     </style>
   </head>
   <body>
