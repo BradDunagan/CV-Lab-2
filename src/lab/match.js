@@ -124,10 +124,24 @@ function sampleCount(length) {
  * @returns {Array} one `edge-match` record per detection and per missed
  *                  ground-truth feature
  */
+/**
+ * How much of an edge has to be showing before anything is held responsible
+ * for finding it.
+ *
+ * Exported because it is not only the matcher's business. `visible` is a
+ * FRACTION, and anything that reports how many edges are in a view is making
+ * the same judgement -- so the generator's progress line and the overlay's
+ * visible/hidden colouring read this rather than each choosing a number.
+ * They did not agree before: the generator counted `visible > 0`, which
+ * called a 1.7%-visible edge findable and reported twelve where the score
+ * worked from nine.
+ */
+const MIN_VISIBLE = 0.5;
+
 function matchFeatures(detected, truth, opts = {}) {
   const maxDistance = opts.maxDistance ?? 3;
   const maxAngle = opts.maxAngle ?? 20;
-  const minVisible = opts.minVisible ?? 0.5;
+  const minVisible = opts.minVisible ?? MIN_VISIBLE;
   const minAngle = opts.minAngle ?? 30;
 
   const kinds = new Set(detected.map((f) => f.type));
@@ -349,6 +363,6 @@ function summarise(records) {
 }
 
 module.exports = {
-  matchFeatures, summarise,
+  matchFeatures, summarise, MIN_VISIBLE,
   lineAngleDifference, pointToSegment, nearestAlong, sampleCount, median,
 };

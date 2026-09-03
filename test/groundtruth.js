@@ -602,6 +602,56 @@ test('Electron helper binaries are never mistaken for the app', () => {
   assert.ok(ELECTRON_HELPERS.has('chrome-sandbox'));
 });
 
+test('a saved scene orbits the camera it was saved with', () => {
+  /*
+   * A scene composed in pt-lab's editor carries ONE camera; every built-in
+   * scene here carries a sweep. The bridge between them is that the saved
+   * camera becomes shot 0 and the orbit is derived from it -- so asking for a
+   * single position has to give back the view that was composed, exactly.
+   * Anything else silently renders something the user did not choose.
+   *
+   * Arithmetic rather than a recorded output: a camera 3 across and 4 up from
+   * its target is 5 away, and 3-4-5 is a right triangle whatever the code does.
+   */
+  const { sceneFromData } = require('../src/generate/driver');
+  const data = {
+    version: 1,
+    room: 'room-arealight',
+    camera: { position: [3, 4, 0], target: [0, 0, 0] },
+    objects: [
+      { key: 'Cube', included: true, transform: { position: [1, 2, 3] } },
+      { key: 'Ball', included: false },
+    ],
+  };
+
+  const scene = sceneFromData('fixture', data);
+  const [shot] = scene.shots({ positions: 1, lighting: 1 });
+
+  for (const [i, want] of [3, 4, 0].entries()) {
+    assert.ok(Math.abs(shot.camera[i] - want) < 1e-9,
+      `axis ${i}: one position should reproduce the saved camera, got ${shot.camera[i]}`);
+  }
+  assert.deepEqual(shot.target, [0, 0, 0], 'the orbit is about the saved target');
+
+  // Orbiting keeps the distance it was composed at, whatever the yaw.
+  const four = scene.shots({ positions: 4, lighting: 1 });
+  assert.equal(four.length, 4);
+  for (const s of four) {
+    const r = Math.hypot(s.camera[0], s.camera[1], s.camera[2]);
+    assert.ok(Math.abs(r - 5) < 1e-9, `radius drifted to ${r}`);
+    assert.ok(Math.abs(s.camera[1] - 4) < 1e-9, `elevation drifted to ${s.camera[1]}`);
+  }
+
+  /*
+   * The whole SceneData goes through, excluded objects and transforms
+   * included. Rebuilding it from library keys -- which is what the built-in
+   * scenes do -- would throw away the composition, and composing it is the
+   * only reason to have saved the scene.
+   */
+  assert.equal(scene.room, 'room-arealight');
+  assert.deepEqual(scene.sceneData.objects, data.objects);
+});
+
 test('every prerequisite message leads with a headline the pane can show', () => {
   // The pane renders line 1 bold and the rest as detail, so a message whose
   // first line is a path reads as a heading that is not one.
