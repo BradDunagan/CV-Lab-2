@@ -602,6 +602,42 @@ test('Electron helper binaries are never mistaken for the app', () => {
   assert.ok(ELECTRON_HELPERS.has('chrome-sandbox'));
 });
 
+test('scenes are one file each, and a repeated name is refused', () => {
+  /*
+   * scenes/ accumulates: a file per scene lets one be committed while another
+   * stays out of a public repository, which a single shared map cannot do.
+   *
+   * The map form is still read, because that is the shape pt-lab's
+   * localStorage has and pasting it in should work. Which form a file is gets
+   * decided by its CONTENTS -- naming a file cube-1.json does not make what is
+   * inside it a scene.
+   */
+  const { readSavedScenes } = require('../src/generate/driver');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cvlab-scenes-'));
+  const scene = (room) => ({ version: 1, room, objects: [], camera: { position: [0, 0, 1], target: [0, 0, 0] } });
+
+  fs.writeFileSync(path.join(dir, 'solo.json'), JSON.stringify(scene('room')));
+  fs.writeFileSync(path.join(dir, 'bundle.json'),
+    JSON.stringify({ 'from-map': scene('room-emissive') }));
+
+  const found = readSavedScenes(dir);
+  assert.deepEqual(Object.keys(found).sort(), ['from-map', 'solo'],
+    'a lone scene takes its file name; a map takes its own keys');
+  assert.equal(found.solo.room, 'room');
+  assert.equal(found['from-map'].room, 'room-emissive');
+
+  // Two files claiming one name: whichever lost would still be listed, and the
+  // wrong scene would render under the right name. Refused instead.
+  fs.writeFileSync(path.join(dir, 'zz.json'), JSON.stringify({ solo: scene('room') }));
+  assert.throws(() => readSavedScenes(dir), /both called "solo"/);
+
+  // A missing directory is not an error: the feature is optional.
+  assert.deepEqual(readSavedScenes(path.join(dir, 'nope')), {});
+});
+
 test('a saved scene orbits the camera it was saved with', () => {
   /*
    * A scene composed in pt-lab's editor carries ONE camera; every built-in

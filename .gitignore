@@ -25,6 +25,12 @@ overlays/
 # `git status` and that is exactly how 13 MB accumulated unnoticed.
 /*.js
 
+# Scenes composed in pt-lab and kept private. scenes/*.json is committed, so a
+# scene added there is published with the repository; anything a working copy
+# should have but the world should not gets the .local.json suffix. The loader
+# reads both -- the split is about what is shared, not about what works.
+scenes/*.local.json
+
 # Personal reference notes live alongside the docs as .txt; the project's own
 # documentation is .md. Keeps `git add -A` from sweeping them in.
 docs/*.txt
