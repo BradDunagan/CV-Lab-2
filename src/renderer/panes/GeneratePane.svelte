@@ -27,7 +27,7 @@
   import { onMount } from 'svelte';
   import { paneStore } from 'paneless';
   import { attachGenerateControls } from './generate-controls.svelte.js';
-  import { lab, setStatus } from '../lab.svelte.js';
+  import { lab, setStatus, actions, pipelineRun } from '../lab.svelte.js';
 
   let { paneId } = $props();
 
@@ -65,6 +65,17 @@
   /** Whatever the controls currently say. The column owns the fields; this is
    *  the copy everything else reads. */
   let current = $state({ ...DEFAULTS });
+
+  /**
+   * The contact sheet: one entry per image the last sweep wrote.
+   *
+   * Built from the `shot` progress events rather than by listing the output
+   * directory, so it holds exactly what THIS run produced. A directory would
+   * also hold whatever was there before, and clicking a stale image to watch
+   * the pipeline run over it is a good way to draw a conclusion about the
+   * wrong picture.
+   */
+  let sheet = $state([]);
 
   let total = $derived(current.positions * current.lighting);
   let estimate = $derived(total * Math.max(6, Math.round(current.samples * 0.42)));
@@ -135,6 +146,29 @@
     refreshControls();
   });
 
+  /*
+   * Draw each thumbnail once its canvas is in the document.
+   *
+   * The preload finds the canvas by id and draws into it, so this has to run
+   * AFTER Svelte has put the element there -- hence the effect on `sheet`
+   * rather than a call at the point the file arrived.
+   */
+  $effect(() => {
+    /*
+     * `running` is read on purpose. The sheet fills DURING a sweep, while the
+     * markup is still showing the render -- so at the moment a file arrives
+     * there is no canvas to draw into, and an effect that watched only `sheet`
+     * ran too early and never again. It has to re-run when the sheet becomes
+     * visible, which is when `running` goes false.
+     */
+    void running;
+    for (const shot of sheet) {
+      const id = `gen-thumb-${paneId}-${shot.name}`;
+      if (!document.getElementById(id)) continue;
+      lab.thumbnail(id, shot.file).catch((err) => setStatus(err.message, 'error'));
+    }
+  });
+
   /**
    * Tell the main process where the render goes.
    *
@@ -177,7 +211,19 @@
 
     const offProgress = lab.generate.onProgress((progress) => {
       if (progress.type === 'ready') ready = progress;
-      else if (progress.type === 'shot') shots = [...shots, progress];
+      else if (progress.type === 'shot') {
+        shots = [...shots, progress];
+        if (progress.file) {
+          sheet = [...sheet, {
+            name: progress.name?.replace(/\.png$/, '') ?? `shot ${shots.length}`,
+            file: progress.file,
+            // Ground truth sits beside the image under the same stem, and the
+            // pipeline's match() stages need it. Absent when --truth was off,
+            // in which case the run simply stops being scored.
+            truth: progress.truth ? progress.file.replace(/\.png$/, '.gt.json') : null,
+          }];
+        }
+      }
     });
 
     return () => {
@@ -194,6 +240,7 @@
     running = true;
     done = null;
     shots = [];
+    sheet = [];
     ready = null;
     setStatus(`Generating ${opts.positions * opts.lighting} image(s)...`);
 
@@ -208,6 +255,18 @@
 
     running = false;
     done = result;
+
+    /*
+     * The controls have done their job. Collapsing them hands the whole frame
+     * to the contact sheet, which is what there is to look at now -- and
+     * paneless keeps the column on a tab, so changing a parameter and going
+     * again is one click rather than a reopened frame.
+     */
+    if (result.ok && result.files.length > 0) {
+      const target = controlsPaneId();
+      if (target) paneStore.collapsePaneToTab(target, 0.4);
+    }
+
     setStatus(
       result.ok
         ? `Generated ${result.files.length} image(s) in ${opts.out}`
@@ -242,16 +301,41 @@ editor and exported as JSON. There are none.
 Add one as scenes/&lt;name&gt;.json, or scenes/&lt;name&gt;.local.json to keep it
 out of the repository.</pre>
     </div>
-  {:else if !running}
+  {:else if !running && sheet.length > 0}
     <!--
-      Only ever visible between runs. While a sweep is in flight the main
+      The contact sheet. Only between runs: while a sweep is in flight the main
       process lays pt-lab's own webContents over this whole pane.
+
+      Clicking one runs the pipeline over it. The thumbnails are drawn by the
+      preload into canvases by id, the same handshake SlotPane uses -- these
+      are files on disk, and no pixels cross the bridge to get here.
     -->
+    <div class="sheet">
+      {#each sheet as shot (shot.file)}
+        <button
+          class="shot"
+          class:current={pipelineRun.image === shot.file}
+          disabled={pipelineRun.busy}
+          title={shot.file}
+          onclick={() => actions.runPipelineOn(shot.file, shot.truth)}
+        >
+          <canvas id={`gen-thumb-${paneId}-${shot.name}`} width="128" height="128"></canvas>
+          <span class="name">{shot.name}</span>
+        </button>
+      {/each}
+    </div>
+    <p class="sheet-hint">
+      {#if pipelineRun.busy}
+        Running the pipeline over <code>{pipelineRun.image?.split('/').pop()}</code>
+        — step {pipelineRun.step} of {pipelineRun.total}.
+      {:else}
+        Click an image to run <code>pipelines/geometry.lab</code> over it. Any
+        slot frames open now are closed first.
+      {/if}
+    </p>
+  {:else if !running}
     <p class="placeholder">
-      {#if done && done.ok}
-        {done.files.length} image(s) written to <code>{current.out}</code>.
-        Press <b>Generate</b> to render another sweep here.
-      {:else if done}
+      {#if done}
         <span class="err">{done.error}</span>
       {:else}
         pt-lab renders here, live, while a sweep runs.
@@ -269,6 +353,27 @@ out of the repository.</pre>
     color: var(--cv-text, #333333);
     font: 12px ui-monospace, Menlo, Consolas, monospace;
   }
+  .sheet {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    align-content: flex-start; overflow: auto;
+    padding: 2px;
+  }
+  .shot {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 3px; cursor: pointer;
+    background: var(--cv-input, #ffffff);
+    border: 1px solid var(--cv-border, #cccccc);
+    border-radius: 3px;
+    color: inherit; font: inherit;
+  }
+  .shot:hover:not(:disabled) { border-color: var(--cv-accent, #2a7edf); }
+  .shot.current { border-color: var(--cv-accent, #2a7edf); box-shadow: 0 0 0 1px var(--cv-accent, #2a7edf); }
+  .shot:disabled { opacity: 0.6; cursor: default; }
+  .shot canvas { display: block; width: 128px; height: 128px; }
+  .shot .name { font-size: 10px; color: var(--cv-dim, #666666); }
+  .sheet-hint { margin: 0; flex: 0 0 auto; color: var(--cv-dim, #666666); }
+  .sheet-hint code { color: var(--cv-accent, #2a7edf); }
+
   .placeholder { margin: auto; text-align: center; color: var(--cv-dim, #666666); }
   .placeholder code { color: var(--cv-accent, #2a7edf); }
   .err { color: #c0362c; }
