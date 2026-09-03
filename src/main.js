@@ -196,6 +196,17 @@ function createWindow() {
    * against a working directory a packaged app never chose -- `/` when
    * launched from Finder -- and the pane has no way to know that.
    */
+  /*
+   * Which scenes there are.
+   *
+   * Asked for rather than listed in the renderer, because a list retyped in
+   * the pane is a list that drifts: the driver grew saved scenes and the pane
+   * went on offering the two literals someone had typed into it, so a scene
+   * that rendered perfectly from the CLI was invisible in the app.
+   */
+  ipcMain.removeHandler('generate:scenes');
+  ipcMain.handle('generate:scenes', () => generator.savedSceneNames());
+
   ipcMain.removeHandler('generate:defaults');
   ipcMain.handle('generate:defaults', () => ({ out: generator.defaultOutputDir() }));
 

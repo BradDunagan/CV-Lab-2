@@ -528,14 +528,41 @@ with no checkout, no build and nothing to install — the path tracer, the model
 and the environment are all inside the app.
 
 It needs a GPU capable of WebGL path tracing, which is the one real
-requirement, and about 20 s per image.
+requirement, and about 20 s per image. The frame is split: the controls on the
+left, and the tracer itself on the right, converging while the sweep runs.
 
-From a working copy there is a command line as well:
+### Which scenes the pane offers
+
+Exactly the ones in `scenes/`, and nothing else. A scene there is a file —
+one per scene, named for the scene — composed in pt-lab's editor and exported
+as JSON: its objects with their materials and transforms, the room, and a
+camera. `scenes/cube-1.json` ships with the repository.
+
+Composing them elsewhere is deliberate. pt-lab's editor already does that job,
+and its scenes live in `localStorage`, which is partitioned by ORIGIN — cv-lab
+cannot read it, and neither can another browser, another machine, or CI. As
+files they can be committed, hashed and replayed, which is what this project
+promises of everything else. `scenes/*.local.json` is gitignored, for a scene a
+working copy should have and a public repository should not.
+
+**The pane has no room control.** A scene records the room it was composed in,
+so a control here could only contradict the file. The command line keeps
+`--room` for the experiment it is good for: one subject, several backgrounds.
+
+From a working copy there is a command line as well, which takes those same
+files as `--scene saved:<name>`:
 
 ```bash
 npm run build:generate                                    # once
-npm run generate -- --out generated/ --scene cube --truth --aovs
+npm run generate -- --out generated/ --scene saved:cube-1 --truth --aovs
 ```
+
+It also has two built-in scenes the pane does not offer, `helmet` and `cube`.
+They exist for their bespoke **shot plans**, which a saved scene cannot express
+— the editor frames one camera, and a sweep is derived from it, whereas `cube`
+places the camera 20° off the axis so no view lands on a degenerate one and 25°
+above so three faces and seven vertices show. That is the case
+`design-lab-model.md` §5's claim is about.
 
 **The sibling `pt-lab-workspace` checkout is a build dependency, not a runtime
 one** — which is what lets the feature ship at all. Only `generate` needs a
@@ -728,18 +755,23 @@ split is on purpose:
 
 Two consequences worth knowing:
 
-**The window is real, just hidden.** `--show`, or *show the render window* in
-the Generate pane, makes it visible and you watch pt-lab path-trace. Nothing
-about the output changes — `exportPNG` renders offscreen at the requested size
-either way. It was hidden by default for no better reason than not wanting a
-window stealing focus for minutes, and the cost of that was nobody looking at
-the images for a long time.
+**In the app you watch it happen.** The Generate frame is split: the controls
+on the left, and on the right the tracer itself, converging. The main process
+lays pt-lab's own web contents over that pane, so it is genuinely the renderer
+rather than a picture of one.
 
-**The app never hosts the tracer.** The Generate pane sends options over IPC and
-displays progress; the main process runs pt-lab in its own window. That boundary
-is why growing the frame is cheap — every new pt-lab control is one field in the
-pane and one key in the options object, and nothing about the plumbing changes.
-`--scene`, `--truth`, `--aovs` and `--denoise` all arrived exactly that way.
+It used to be a separate window behind a *show the render window* checkbox that
+defaulted off, which meant that in practice nobody ever saw it — the checkbox is
+gone and the render is simply on. Nothing about the OUTPUT depends on either
+choice: `exportPNG` renders offscreen at the requested size whatever is on
+screen. The CLI still has `--show`, because it has no pane to put a render in.
+
+**The app never hosts the tracer.** pt-lab gets its own web contents loaded from
+`dist-generate/`, never the renderer's; the Generate pane sends options over IPC
+and says where to put the picture. That boundary is why growing the frame is
+cheap — every new pt-lab control is one field in the pane and one key in the
+options object, and nothing about the plumbing changes. `--scene`, `--truth`,
+`--aovs` and `--denoise` all arrived exactly that way.
 
 ---
 

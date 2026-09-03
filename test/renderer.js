@@ -451,6 +451,25 @@ async function collect(win, swatch, linearPng) {
         return Object.values(data?.byId ?? {}).some((c) => c.name === 'run');
       })(),
       explains: (generatePane()?.querySelector('.unavailable')?.textContent ?? '').trim(),
+      // What the scene dropdown offers, so it can be compared with what the
+      // driver actually has. A list retyped in the renderer is a list that
+      // drifts: the driver grew saved scenes and the pane went on offering two
+      // literals, so a scene that rendered from the CLI was invisible here.
+      scenes: (() => {
+        const paneId = generateControlsPane();
+        if (!paneId) return null;
+        const data = lab2().controlStore.getPaneData(paneId);
+        const control = Object.values(data?.byId ?? {}).find((c) => c.name === 'scene');
+        return control ? control.items.map((i) => i.id) : null;
+      })(),
+      // A room control would only ever contradict the scene file, which
+      // records the room it was composed in.
+      hasRoomControl: (() => {
+        const paneId = generateControlsPane();
+        if (!paneId) return false;
+        const data = lab2().controlStore.getPaneData(paneId);
+        return Object.values(data?.byId ?? {}).some((c) => c.name === 'room');
+      })(),
       // The render pane is the one paneless will hand to the main process, so
       // it has to be the RIGHT child of the split, not the whole frame.
       isRightChild: (() => {
@@ -612,9 +631,11 @@ app.whenReady().then(async () => {
    * which the "logged no errors" assertion below catches, exactly as it
    * should.
    */
-  const { checkPrerequisites, defaultOutputDir } = require('../src/generate/driver');
+  const { checkPrerequisites, defaultOutputDir, savedSceneNames } =
+    require('../src/generate/driver');
   ipcMain.handle('generate:check', () => checkPrerequisites());
   ipcMain.handle('generate:defaults', () => ({ out: defaultOutputDir() }));
+  ipcMain.handle('generate:scenes', () => savedSceneNames());
 
   /*
    * Where the render goes. The app's main process lays pt-lab's webContents
@@ -967,6 +988,21 @@ app.whenReady().then(async () => {
     // button's centred caption came out of both sides.
     assert.deepEqual(r.unclippedControls, [],
       'these controls paint text outside their own box: ' + JSON.stringify(r.unclippedControls));
+  });
+
+  test('the scene dropdown offers exactly the scenes the driver has', () => {
+    const { savedSceneNames } = require('../src/generate/driver');
+    const have = savedSceneNames();
+    // scenes/cube-1.json is committed, so this is not vacuous.
+    assert.ok(have.length > 0, 'no scenes in scenes/ -- the comparison proves nothing');
+    assert.deepEqual(r.generate.scenes, have.map((n) => `saved:${n}`),
+      'the pane offers a different set of scenes than the driver can render');
+  });
+
+  test('the Generate pane has no room control', () => {
+    // A scene records the room it was composed in, so the pane overriding it
+    // could only contradict the file. --room still exists on the CLI.
+    assert.equal(r.generate.hasRoomControl, false);
   });
 
   test('the render pane reports where it is', () => {
