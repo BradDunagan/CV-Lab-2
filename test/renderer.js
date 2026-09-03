@@ -635,7 +635,19 @@ app.whenReady().then(async () => {
     require('../src/generate/driver');
   ipcMain.handle('generate:check', () => checkPrerequisites());
   ipcMain.handle('generate:defaults', () => ({ out: defaultOutputDir() }));
-  ipcMain.handle('generate:scenes', () => savedSceneNames());
+  /*
+   * Counted, not just answered. Whether the dropdown's CONTENTS can be
+   * compared depends on the generator being built -- CI never builds it, so
+   * the pane shows its explanation and there is no control to read. Whether
+   * the pane ASKED does not depend on that, and asking is the property that
+   * stops the list being retyped in the renderer and drifting.
+   */
+  const sceneRequests = [];
+  ipcMain.handle('generate:scenes', () => {
+    const names = savedSceneNames();
+    sceneRequests.push(names);
+    return names;
+  });
 
   /*
    * Where the render goes. The app's main process lays pt-lab's webContents
@@ -990,11 +1002,36 @@ app.whenReady().then(async () => {
       'these controls paint text outside their own box: ' + JSON.stringify(r.unclippedControls));
   });
 
+  test('the pane asks the main process which scenes there are', () => {
+    /*
+     * The anti-drift check, and the one that runs everywhere.
+     *
+     * The dropdown listed two literals typed into the renderer; the driver
+     * grew saved scenes and the pane went on offering the literals, so a
+     * scene that rendered from the CLI was invisible in the app. A pane that
+     * ASKS cannot drift, and it asks whether or not the generator is built.
+     */
+    assert.ok(sceneRequests.length > 0,
+      'the Generate pane never asked for the scene list, so it has one of its own');
+  });
+
   test('the scene dropdown offers exactly the scenes the driver has', () => {
     const { savedSceneNames } = require('../src/generate/driver');
     const have = savedSceneNames();
     // scenes/cube-1.json is committed, so this is not vacuous.
     assert.ok(have.length > 0, 'no scenes in scenes/ -- the comparison proves nothing');
+
+    if (r.generate.scenes === null) {
+      /*
+       * No controls column to read. That happens when the generator is not
+       * built -- CI never builds it -- and the pane shows why instead. Not a
+       * silent skip: it has to be THAT reason, or this passed for the wrong
+       * one, which is how the whole class of bug in CLAUDE.md gets through.
+       */
+      assert.match(r.generate.explains, /not built|missing|checkout|older than/i,
+        'no scene control, and no explanation for its absence either');
+      return;
+    }
     assert.deepEqual(r.generate.scenes, have.map((n) => `saved:${n}`),
       'the pane offers a different set of scenes than the driver can render');
   });
@@ -1002,6 +1039,10 @@ app.whenReady().then(async () => {
   test('the Generate pane has no room control', () => {
     // A scene records the room it was composed in, so the pane overriding it
     // could only contradict the file. --room still exists on the CLI.
+    //
+    // Absence passes trivially where there is no controls column at all, so
+    // this only means anything alongside the comparison above.
+    if (r.generate.scenes === null) return;
     assert.equal(r.generate.hasRoomControl, false);
   });
 
