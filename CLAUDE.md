@@ -15,6 +15,7 @@ every result is **reproducible** from a replayable log.
 | `docs/design-lab-model.md` | the model — slots, operations, the command language, provenance, determinism. Written *before* implementation and corrected where reality disagreed |
 | `docs/electron-guide.md` | builds, CI, packaging, signing, and the Electron constraints that shaped the architecture. Written *after* doing the work |
 | `docs/glossary.md` | terms used in all of them, explained from scratch |
+| `docs/git-and-github.md` | the branch/CI/merge operations every change here goes through, and why this repository does them that way |
 | `notes/` | working notes; unlike `docs/`, never obliged to be current |
 
 `git log` is part of the record. Commit messages here carry the reasoning,
