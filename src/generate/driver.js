@@ -381,14 +381,55 @@ const CUBE_YAW_OFFSET = 0.35;
  * the opposite of what this project promises. As a FILE it can be committed,
  * hashed and replayed.
  */
-const SAVED_SCENES = path.join(ROOT, 'scenes', 'pt-lab-scenes.json');
+const SCENES_DIR = path.join(ROOT, 'scenes');
 
-function readSavedScenes() {
+/** Does this look like one SceneData, rather than a map of them? */
+function isSceneData(o) {
+  return !!o && typeof o === 'object' && 'room' in o && Array.isArray(o.objects);
+}
+
+/**
+ * Every scene under scenes/, by name.
+ *
+ * ONE FILE PER SCENE, named for the scene: scenes/cube-1.json is `cube-1`.
+ * A directory rather than a single map because scenes accumulate, and a map
+ * means editing a shared file for every addition -- conflicts, and no way to
+ * commit one scene while keeping another out of a public repository.
+ *
+ * A file holding a MAP of scenes is accepted too, because that is the shape
+ * pt-lab's localStorage has and pasting it in should work. The two are told
+ * apart by the file's own contents, not by its name.
+ *
+ * A repeated name throws rather than letting one file quietly shadow another:
+ * whichever lost would still be listed, and the wrong scene would render under
+ * the right name.
+ */
+function readSavedScenes(dir = SCENES_DIR) {
+  let files;
   try {
-    return JSON.parse(fs.readFileSync(SAVED_SCENES, 'utf8'));
+    files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
   } catch {
     return {};
   }
+
+  const out = {};
+  for (const file of files) {
+    const full = path.join(dir, file);
+    let data;
+    try {
+      data = JSON.parse(fs.readFileSync(full, 'utf8'));
+    } catch (err) {
+      throw new Error(`${full} is not valid JSON: ${err.message}`);
+    }
+    const entries = isSceneData(data)
+      ? [[path.basename(file, '.json'), data]]
+      : Object.entries(data).filter(([, v]) => isSceneData(v));
+    for (const [name, scene] of entries) {
+      if (out[name]) throw new Error(`two scenes under ${dir} are both called "${name}"`);
+      out[name] = scene;
+    }
+  }
+  return out;
 }
 
 /** The names a saved scene can be asked for by, for help text and the app. */
@@ -415,7 +456,7 @@ function savedScene(name) {
     const have = savedSceneNames();
     throw new Error(
       `unknown saved scene "${name}"` +
-      (have.length ? ` (have: ${have.join(', ')})` : ` -- ${SAVED_SCENES} has none`)
+      (have.length ? ` (have: ${have.join(', ')})` : ` -- ${SCENES_DIR} has none`)
     );
   }
   return sceneFromData(name, data);
@@ -716,7 +757,7 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
 }
 
 module.exports = {
-  generate, windowHost, plan, resolveScene, savedSceneNames, sceneFromData, registerScheme, checkPrerequisites, buildInputs,
+  generate, windowHost, plan, resolveScene, savedSceneNames, sceneFromData, readSavedScenes, registerScheme, checkPrerequisites, buildInputs,
   DEFAULTS, SCENES, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS,
   assetsDir, defaultOutputDir, isPackaged,
 };

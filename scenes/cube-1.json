@@ -1,0 +1,207 @@
+{
+  "version": 1,
+  "room": "room-arealight",
+  "objects": [
+    {
+      "key": "Table",
+      "included": false,
+      "material": {
+        "color": "#8a6a48",
+        "shininess": 0.4,
+        "reflectivity": 0,
+        "texture": "none"
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "key": "Cube",
+      "included": true,
+      "material": {
+        "color": "#b01818",
+        "shininess": 0.6,
+        "reflectivity": 0,
+        "texture": "none"
+      },
+      "transform": {
+        "position": [
+          -0.3,
+          0.8,
+          0.2
+        ],
+        "rotation": [
+          10,
+          10,
+          10
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "key": "Ball",
+      "included": false,
+      "material": {
+        "color": "#c8c8c8",
+        "shininess": 0.7,
+        "reflectivity": 0,
+        "texture": "none"
+      },
+      "transform": {
+        "position": [
+          0.25,
+          0.8,
+          0.12
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "key": "import-mrwf3es7-0",
+      "included": false,
+      "material": {
+        "color": "#ffffff",
+        "shininess": 0,
+        "reflectivity": 1,
+        "texture": "none"
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "key": "import-mrwf3oyr-1",
+      "included": false,
+      "material": {
+        "color": "#ffffff",
+        "shininess": 0,
+        "reflectivity": 1,
+        "texture": "none"
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "key": "import-mrwf3ua3-2",
+      "included": false,
+      "material": {
+        "color": "#ffffff",
+        "shininess": 0,
+        "reflectivity": 1,
+        "texture": "none"
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "key": "import-msallv9d-0",
+      "included": false,
+      "material": {
+        "color": "#ffffff",
+        "shininess": 0,
+        "reflectivity": 1,
+        "texture": "none"
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    }
+  ],
+  "camera": {
+    "position": [
+      -0.09373295943325394,
+      1.083399247474797,
+      0.023947105798567653
+    ],
+    "target": [
+      -0.2516087466746451,
+      0.8114184758193,
+      0.19430326151355914
+    ]
+  }
+}
