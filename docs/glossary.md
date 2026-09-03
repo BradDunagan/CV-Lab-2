@@ -408,6 +408,39 @@ argument is a well-travelled one worth reading about once.
 
 ---
 
+## Contact sheet
+
+**A page of every frame on a roll, printed small, made to decide which frames
+are worth spending effort on.**
+
+The name is literal. A developed strip of negatives is laid *in direct contact*
+with photographic paper and exposed once, giving one small positive per frame at
+the negative's own size. A photographer reads the sheet, marks the two or three
+frames worth having, and only those get the darkroom time an enlargement costs.
+
+The load-bearing idea is the PURPOSE rather than the layout. A contact sheet is
+not for looking at pictures; it is for choosing which picture to work on, and it
+exists because the next step is expensive.
+
+**Why it matters here.** The Generate frame builds one after a sweep: a
+thumbnail per image it rendered, docked along the bottom of the frame. Clicking
+one closes whatever slot frames are open and runs `pipelines/geometry.lab` over
+that image, which costs a screenful of frames and a moment of compute — so the
+sheet is exactly the "which one is worth it" step the photographic one is.
+
+Docked rather than left where the frame was, because a sheet buried under nine
+slot frames cannot be clicked, and picking the NEXT image is the whole loop.
+
+The thumbnails are drawn by the preload into canvases the renderer names, the
+same handshake a slot pane uses: these are files on disk and no pixels cross the
+contextBridge to reach the screen.
+
+**Elsewhere**: Lightroom's grid view, `contactsheet` in ImageMagick's montage
+tools, and the thumbnail wall every photo browser opens with are all the same
+idea. Film editors call the equivalent a *selects reel*.
+
+---
+
 ## Content hash
 
 **A short fixed-size fingerprint computed from data, where the same bytes always
