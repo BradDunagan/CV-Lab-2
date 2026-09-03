@@ -14,6 +14,7 @@
 
 const { app, BrowserWindow, protocol, net, session } = require('electron');
 const fs = require('node:fs');
+const { MIN_VISIBLE } = require('../lab/match');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -369,10 +370,116 @@ const SCENES = {
 /** See the note in the cube scene's shot plan. */
 const CUBE_YAW_OFFSET = 0.35;
 
+/**
+ * Scenes composed in pt-lab's editor, exported from its localStorage.
+ *
+ * pt-lab keeps saved scenes under one localStorage key, which is per-ORIGIN --
+ * so cv-lab's gen:// page cannot see them, and neither can anything else. The
+ * file here is that record, copied out once. That indirection is not a
+ * workaround to be removed later: a scene that lives only in a browser profile
+ * is machine-local, unversioned and invisible to the provenance log, which is
+ * the opposite of what this project promises. As a FILE it can be committed,
+ * hashed and replayed.
+ */
+const SAVED_SCENES = path.join(ROOT, 'scenes', 'pt-lab-scenes.json');
+
+function readSavedScenes() {
+  try {
+    return JSON.parse(fs.readFileSync(SAVED_SCENES, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+/** The names a saved scene can be asked for by, for help text and the app. */
+function savedSceneNames() {
+  return Object.keys(readSavedScenes()).sort();
+}
+
+/**
+ * Turn a saved scene into the same shape as a built-in one.
+ *
+ * A built-in carries a shot PLAN; a saved scene carries a single camera,
+ * because the editor is for composing a view rather than a sweep. The plan is
+ * derived from that camera: its distance, elevation and yaw about its own
+ * target become the orbit, so `positions: 1` reproduces the saved view
+ * exactly and anything more orbits the subject at the framing you chose.
+ *
+ * Rendering only the saved camera would be the other option and is worse --
+ * every downstream number here is per-view, and one view of a corner detector
+ * is what design-lab-model.md §5 already regrets relying on.
+ */
+function savedScene(name) {
+  const data = readSavedScenes()[name];
+  if (!data) {
+    const have = savedSceneNames();
+    throw new Error(
+      `unknown saved scene "${name}"` +
+      (have.length ? ` (have: ${have.join(', ')})` : ` -- ${SAVED_SCENES} has none`)
+    );
+  }
+  return sceneFromData(name, data);
+}
+
+/**
+ * The orbit, derived from one saved camera. Separated from the file read so it
+ * can be tested on a fixture built by hand rather than on whatever happens to
+ * be in someone's scenes file.
+ */
+function sceneFromData(name, data) {
+  const cam = data.camera;
+  if (!cam) throw new Error(`saved scene "${name}" has no camera`);
+
+  const target = cam.target;
+  const dx = cam.position[0] - target[0];
+  const dy = cam.position[1] - target[1];
+  const dz = cam.position[2] - target[2];
+  const radius = Math.hypot(dx, dy, dz);
+  const flat = Math.hypot(dx, dz);
+  const elevation = Math.atan2(dy, flat);
+  const yaw0 = Math.atan2(dx, dz);
+
+  return {
+    room: data.room,
+    // The whole SceneData goes through untouched -- per-object material and
+    // transform included, which is the entire point of composing it by hand.
+    sceneData: data,
+    shots({ positions, lighting }) {
+      const shots = [];
+      for (let p = 0; p < positions; p++) {
+        const yaw = yaw0 + (p / positions) * Math.PI * 2;
+        for (let l = 0; l < lighting; l++) {
+          shots.push({
+            name: `p${p}-l${l}.png`,
+            yaw,
+            offset: 0,
+            intensity: intensityFor(l, lighting),
+            camera: [
+              target[0] + Math.sin(yaw) * flat,
+              target[1] + radius * Math.sin(elevation),
+              target[2] + Math.cos(yaw) * flat,
+            ],
+            target: [...target],
+          });
+        }
+      }
+      return shots;
+    },
+  };
+}
+
+/** A built-in scene, or `saved:<name>` from pt-lab's editor. */
+function resolveScene(name) {
+  if (typeof name === 'string' && name.startsWith('saved:')) {
+    return savedScene(name.slice('saved:'.length));
+  }
+  return SCENES[name] ?? null;
+}
+
 /** One entry per image, computed up front. */
 function plan(options) {
   const opts = { ...DEFAULTS, ...options };
-  const scene = SCENES[opts.scene];
+  const scene = resolveScene(opts.scene);
   if (!scene) {
     throw new Error(`unknown scene "${opts.scene}" (have: ${Object.keys(SCENES).join(', ')})`);
   }
@@ -411,7 +518,7 @@ function windowHost(opts) {
  */
 async function generate(options = {}, onProgress = () => {}, createHost = windowHost) {
   const opts = { ...DEFAULTS, ...options };
-  const scene = SCENES[opts.scene];
+  const scene = resolveScene(opts.scene);
   if (!scene) {
     throw new Error(`unknown scene "${opts.scene}" (have: ${Object.keys(SCENES).join(', ')})`);
   }
@@ -516,11 +623,17 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
      * canvas, and applyScene then throws away the model it built. Passing
      * room: null to init avoids building a room twice for no reason.
      */
+    const rebuilds = !!(scene.objects || scene.sceneData);
     const info = await call(`init(${JSON.stringify({
-      width: opts.size, height: opts.size, room: scene.objects ? null : room,
+      width: opts.size, height: opts.size, room: rebuilds ? null : room,
     })})`);
     let objects = info.objects;
-    if (scene.objects) {
+    if (scene.sceneData) {
+      // A saved scene is already a SceneData -- room, per-object material and
+      // transform, the lot. It goes through as it is, with only the room
+      // overridden when the caller asked for a different one.
+      objects = await call(`applyScene(${JSON.stringify({ ...scene.sceneData, room })})`);
+    } else if (scene.objects) {
       objects = await call(`applyScene(${JSON.stringify({ room, objects: scene.objects })})`);
     }
     onProgress({
@@ -574,7 +687,13 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
           extra.truth = {
             file: gtFile,
             edges: gt.edges.length,
-            visibleEdges: gt.edges.filter((e) => e.visible > 0).length,
+            // >= MIN_VISIBLE, not > 0. `visible` is a fraction: an edge
+            // occluded by its own object still reports a percent or two from
+            // its endpoints, so `> 0` counted all twelve of a cube's edges as
+            // findable when only nine are. The line then read "12/12" over a
+            // score computed from nine, which makes an honest recall look like
+            // a detector missing a quarter of them.
+            visibleEdges: gt.edges.filter((e) => e.visible >= MIN_VISIBLE).length,
             vertices: gt.vertices.length,
             visibleVertices: gt.vertices.filter((v) => v.visible).length,
           };
@@ -597,7 +716,7 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
 }
 
 module.exports = {
-  generate, windowHost, plan, registerScheme, checkPrerequisites, buildInputs,
+  generate, windowHost, plan, resolveScene, savedSceneNames, sceneFromData, registerScheme, checkPrerequisites, buildInputs,
   DEFAULTS, SCENES, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS,
   assetsDir, defaultOutputDir, isPackaged,
 };

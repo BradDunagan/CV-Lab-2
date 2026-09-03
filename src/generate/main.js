@@ -90,11 +90,24 @@ const api = {
    * almost no clean vertices; a cube has eight, in known places. Ground truth
    * needs a subject whose corners exist.
    */
-  applyScene({ room = 'room-arealight', objects = [] } = {}) {
+  applyScene({ room = 'room-arealight', objects = [], version, camera } = {}) {
+    /*
+     * Two callers, one shape.
+     *
+     * A built-in scene names objects by library key and nothing else, so the
+     * SceneData is synthesised here. A scene saved in pt-lab's editor IS a
+     * SceneData already -- it arrives with `version` set, and its objects
+     * carry `included`, `material` and `transform` -- so it passes through
+     * untouched. Rebuilding it from keys would throw away the composition,
+     * which is the only reason to have saved it.
+     */
+    const fromEditor = version !== undefined;
     lab.applyScene({
       version: 1,
       room,
-      objects: objects.map((key) => ({ key, included: true })),
+      objects: fromEditor ? objects : objects.map((key) => ({ key, included: true })),
+      // The camera is the driver's business: it plans a sweep, and a saved
+      // camera is where that sweep starts rather than where it stays.
       camera: null,
     });
     return lab.listObjects();

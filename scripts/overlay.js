@@ -31,6 +31,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const { encodePNG } = require('./png');
+// The same threshold the matcher scores with, so the picture and the tally
+// cannot disagree about which edges were findable.
+const { MIN_VISIBLE } = require('../src/lab/match');
 
 const USAGE = `
 cv-lab-2 overlay
@@ -271,7 +274,7 @@ const S = opts.scale;
  */
 for (const e of truth.edges) {
   line(canvas, e.x0 * S, e.y0 * S, e.x1 * S, e.y1 * S,
-    e.visible >= 0.5 ? COLOURS.truthVisible : COLOURS.truthHidden);
+    e.visible >= MIN_VISIBLE ? COLOURS.truthVisible : COLOURS.truthHidden);
 }
 
 /** Verdict per detected feature id, from whichever match slot covers that kind. */

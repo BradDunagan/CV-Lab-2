@@ -97,7 +97,7 @@ function parseArgs(argv) {
       case '--out': opts.out = argv[++i]; break;
       case '--scene': {
         const name = argv[++i];
-        if (!SCENES[name]) {
+        if (!name.startsWith('saved:') && !SCENES[name]) {
           throw new Error(`unknown scene "${name}" (have: ${Object.keys(SCENES).join(', ')})`);
         }
         opts.scene = name;
