@@ -588,6 +588,48 @@ async function collect(win, swatch, linearPng) {
     await ui('A = pattern(kind=ramp, width=32, height=32)');
     r.afterResetEntry = window.lab.log().length;
     r.afterResetShown = !!canvasFor('A');
+    /*
+     * Clicking an image in the contact sheet: close what is open, run the
+     * pipeline, show every stage.
+     *
+     * Driven through the action rather than the sheet, because building a
+     * sheet needs a GPU-rendered sweep and CI has no GPU -- but the part worth
+     * checking is what happens to the PANES, which does not.
+     *
+     * LAST in this function, deliberately. geometry.lab uses short slot names
+     * and one of them, S, is already bound here -- so running it REBINDS
+     * rather than creates, and the session's "one entry per slot" invariant
+     * stops holding partway through. Measuring this after everything else
+     * keeps the run from being an input to any other answer.
+     */
+    r.pipelineRun = await (async () => {
+      // Something to close, so "closes what is open" is not vacuous.
+      lab2().newSlotPane(null);
+      lab2().newSlotPane(null);
+      const before = lab2().slotPaneIds().length;
+
+      await lab2().runPipelineOn(swatch, null);
+      await sleep(120);
+
+      const ids = lab2().slotPaneIds();
+      const bound = ids.map((id) => lab2().paneStore.getPane(id)?.name).filter(Boolean);
+      const buffers = window.lab.slots().filter((s) => s.kind === 'buffer').map((s) => s.name);
+      return {
+        before,
+        panes: ids.length,
+        bound: bound.sort(),
+        buffers: buffers.sort(),
+        // Every stage of the pipeline is in the log, hashed, like anything
+        // else -- the sheet is not a second execution path.
+        logged: window.lab.log().length,
+        collapsed: ids.every((id) => {
+          const parent = lab2().paneStore.getPane(id)?.parentId;
+          const left = parent ? lab2().paneStore.getPane(parent)?.leftChildId : null;
+          return left ? lab2().paneStore.getPane(left)?.isCollapsed === true : false;
+        }),
+      };
+    })();
+
     return r;
   })()`);
 }
@@ -643,6 +685,14 @@ app.whenReady().then(async () => {
    * stops the list being retyped in the renderer and drifting.
    */
   const sceneRequests = [];
+  /*
+   * The pipeline the contact sheet runs. Read from pipelines/ here exactly as
+   * the app's main process reads it, so the test exercises the real file
+   * rather than a copy that could disagree with it.
+   */
+  ipcMain.handle('lab:pipeline', (_event, name) =>
+    fs.promises.readFile(path.join(ROOT, 'pipelines', `${name}.lab`), 'utf8'));
+
   ipcMain.handle('generate:scenes', () => {
     const names = savedSceneNames();
     sceneRequests.push(names);
@@ -702,10 +752,19 @@ app.whenReady().then(async () => {
   /* --- the bridge --------------------------------------------------- */
 
   test('the bridge exposes only the lab API', () => {
+    /*
+     * Spelt out rather than counted, because the bridge is the security
+     * boundary: this list is where a new member has to be looked at on
+     * purpose instead of arriving with a feature. The two most recent are
+     * `pipeline`, which reads a named file from pipelines/ and nothing else,
+     * and `thumbnail`, which draws a file into a canvas the caller names --
+     * neither hands page script a path it did not already have, and neither
+     * returns pixels.
+     */
     assert.deepEqual(r.bridge, ['basename', 'confirmReset', 'draw', 'features',
       'generate', 'histogram', 'log', 'onMenuCommand', 'openImage', 'ops',
-      'probeAll', 'quote', 'reset', 'run', 'saveSession', 'sessionJSON',
-      'setMenuState', 'slots', 'versions']);
+      'pipeline', 'probeAll', 'quote', 'reset', 'run', 'saveSession',
+      'sessionJSON', 'setMenuState', 'slots', 'thumbnail', 'versions']);
   });
 
   test('no Node globals leak into page script', () => {
@@ -1044,6 +1103,42 @@ app.whenReady().then(async () => {
     // this only means anything alongside the comparison above.
     if (r.generate.scenes === null) return;
     assert.equal(r.generate.hasRoomControl, false);
+  });
+
+  test('running a pipeline over an image shows every stage it produces', () => {
+    const p = r.pipelineRun;
+    /*
+     * One pane per BUFFER, and none for the feature lists. fit and corners
+     * produce geometry rather than pixels, and a feature list has no tile of
+     * its own -- it is drawn over any tile of matching size, which is why the
+     * fits appear on all of them at once.
+     */
+    assert.deepEqual(p.bound, p.buffers,
+      'the panes open do not match the slots that have pixels');
+    assert.equal(p.panes, p.buffers.length);
+    assert.ok(p.buffers.length > 4,
+      `the pipeline should exceed the typing limit of 4, got ${p.buffers.length}`);
+  });
+
+  test('a pipeline run closes the panes from the last one', () => {
+    // Otherwise the second image you click is measured beside the first one's
+    // stages, which is a good way to read the wrong picture.
+    assert.ok(r.pipelineRun.before > 0, 'nothing was open, so nothing was closed');
+    assert.equal(r.pipelineRun.panes, r.pipelineRun.buffers.length,
+      'panes accumulated across runs');
+  });
+
+  test('every stage of a pipeline run is logged like a typed command', () => {
+    // The sheet composes command TEXT and runs it through the one execution
+    // path (design-lab-model.md §4). If it did not, these would be missing.
+    assert.ok(r.pipelineRun.logged >= r.pipelineRun.buffers.length,
+      'the pipeline ran without appearing in the log');
+  });
+
+  test('a packed pipeline run collapses each pane\'s controls', () => {
+    // Nine frames have no room for nine controls columns beside a usable
+    // image. Collapsed, not removed: paneless keeps them on a tab.
+    assert.equal(r.pipelineRun.collapsed, true);
   });
 
   test('the render pane reports where it is', () => {

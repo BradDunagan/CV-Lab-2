@@ -170,6 +170,47 @@ contextBridge.exposeInMainWorld('lab', {
   slots: () => slotSummaries(),
 
   /**
+   * The text of a pipeline in pipelines/, by name.
+   *
+   * Read from the file the CLI runs rather than kept as a copy here, so the
+   * two cannot say different things.
+   */
+  pipeline: (name) => ipcRenderer.invoke('lab:pipeline', name),
+
+  /**
+   * Draw a file into a canvas, scaled to fit, for a contact sheet.
+   *
+   * Not `load`: a thumbnail is not a slot. Loading six generated images to
+   * look at them would put six buffers in the session and six entries in the
+   * log, and the log is a record of what was COMPUTED -- browsing is not.
+   *
+   * Same rule as `draw`, for the same reason: the caller passes a canvas id
+   * and the pixels stay here. A data URL would be a string rather than a
+   * typed array and would technically cross, which is not the point -- the
+   * point is that the preload owns the pixels.
+   */
+  thumbnail: async (canvasId, filePath) => {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) throw new Error(`no canvas "${canvasId}"`);
+
+    const bytes = await fs.readFile(filePath);
+    const bitmap = await createImageBitmap(new Blob([bytes]));
+    try {
+      const scale = Math.min(canvas.width / bitmap.width, canvas.height / bitmap.height);
+      const w = Math.max(1, Math.round(bitmap.width * scale));
+      const h = Math.max(1, Math.round(bitmap.height * scale));
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Centred, aspect kept. A generated sweep is square today and need not
+      // stay so; a squashed thumbnail is a lie about the image behind it.
+      ctx.drawImage(bitmap, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+    } finally {
+      bitmap.close();
+    }
+    return { width: bitmap.width, height: bitmap.height };
+  },
+
+  /**
    * Render a slot into a canvas already in the document.
    *
    * contextIsolation separates the JS contexts but NOT the DOM, so the canvas

@@ -224,7 +224,18 @@ export const actions = {
   saveSession: () => {},
   resetSession: () => {},
   newSlotPane: () => {},
+  /**
+   * Run a pipeline over one image and lay every stage out.
+   *
+   * Called from the Generate frame's contact sheet, which has the file path
+   * and none of what running it needs -- the frame store to clear the last
+   * image's panes, and the pane registry to open this one's.
+   */
+  runPipelineOn: async () => {},
 };
+
+/** True while runPipelineOn is working, so the sheet can say so. */
+export const pipelineRun = $state({ busy: false, image: null, step: 0, total: 0 });
 
 /* ------------------------------------------------------------------ */
 /* the multi-slot probe — §7                                           */

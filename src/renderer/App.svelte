@@ -33,6 +33,7 @@
   import {
     lab, viewport, display, slots, probe, status, setStatus, actions,
     refreshSlots, resetViewport, isViewReset, clearSession, hideProbe, bufferSlots,
+    runCommand, pipelineRun,
   } from './lab.svelte.js';
 
   /* ------------------------------------------------------------------ */
@@ -146,6 +147,20 @@
   const SLOT_MIN_H = 320;
 
   /**
+   * The strip the contact sheet is docked into once a sweep has produced one.
+   *
+   * A row of 128px thumbnails, their names, and the line telling you what
+   * clicking one does. Reserved rather than overlapped: the whole point of the
+   * sheet is picking the NEXT image, and a sheet buried under nine slot frames
+   * cannot be clicked. Tiling around it costs a little height and keeps the
+   * loop -- pick, watch, pick again -- actually available.
+   */
+  const SHEET_STRIP_H = 224;
+
+  /** True once the sheet is docked, so the slot grid leaves room for it. */
+  let sheetDocked = $state(false);
+
+  /**
    * The grid of slot frames, from what actually fits.
    *
    * Not a fixed 2x2 any more. The frames are wider than they were, and on a
@@ -170,12 +185,27 @@
     return { cols, rows };
   }
 
-  function slotFrameRect(index) {
+  /**
+   * A grid for `count` panes, when there are more than the roomy layout holds.
+   *
+   * Columns chosen so the cells come out roughly square, which is what suits a
+   * square-ish image: cols ≈ √(n · areaW / areaH). Every stage of a pipeline
+   * on screen at once means small cells by definition -- the alternative is
+   * not seeing the stage you wanted.
+   */
+  function denseGrid(areaW, areaH, count) {
+    const cols = Math.max(1, Math.min(count, Math.round(Math.sqrt((count * areaW) / areaH))));
+    return { cols, rows: Math.ceil(count / cols) };
+  }
+
+  function slotFrameRect(index, count = 0) {
     const { width, height } = contentBox();
     const left = Math.round(width * LOG_FRACTION) + GAP;
     const areaW = width - left - GAP;
-    const areaH = height - GAP * 2;
-    const { cols, rows } = slotGrid(areaW, areaH);
+    const areaH = height - GAP * 2 - (sheetDocked ? SHEET_STRIP_H + GAP : 0);
+    const { cols, rows } = count > AUTO_PANE_LIMIT
+      ? denseGrid(areaW, areaH, count)
+      : slotGrid(areaW, areaH);
     const cellW = Math.floor((areaW - GAP * (cols - 1)) / cols);
     const cellH = Math.floor((areaH - GAP * (rows - 1)) / rows);
     const col = index % cols, row = Math.floor(index / cols) % rows;
@@ -186,7 +216,12 @@
       // width it asked for and leaves the rest of its cell empty, because the
       // alternative is an image stretched to whatever the window happened to
       // leave over -- which is how a 345px image became a 690px one.
-      w: Math.min(cellW, CONTROLS_WIDTH + SPLITTER_W + SLOT_IMAGE_W),
+      //
+      // Except when they are packed: a dense grid has no spare room to leave,
+      // and its frames have their controls collapsed, so the cell IS the size.
+      w: count > AUTO_PANE_LIMIT
+        ? cellW
+        : Math.min(cellW, CONTROLS_WIDTH + SPLITTER_W + SLOT_IMAGE_W),
       h: cellH,
     };
   }
@@ -321,8 +356,8 @@
    * that already asked "which panes show slots?" therefore still gets the
    * answer it expects, and the column reads the name off its sibling.
    */
-  function newSlotPane(slotName) {
-    const rect = slotFrameRect(slotPaneIds().length);
+  function newSlotPane(slotName, { collapseControls = false, count = 0 } = {}) {
+    const rect = slotFrameRect(slotPaneIds().length, count);
     const rootId = makeFrame('Slot', SlotPane, rect.x, rect.y, rect.w, rect.h);
     if (!rootId) return null;
 
@@ -345,6 +380,15 @@
     });
 
     slotControls.set(split.leftId, attachSlotControls(split.leftId, split.rightId));
+
+    /*
+     * Collapsed, not omitted. A packed frame has no room for a controls
+     * column beside a usable image, but the column still exists and paneless
+     * puts it back on its own tab -- so the transform is one click away rather
+     * than gone, and every pane in a pipeline run stays adjustable.
+     */
+    if (collapseControls) paneStore.collapsePaneToTab(split.leftId, controlsRatio(rect.w));
+
     if (slotName) bindSlotPane(split.rightId, slotName);
     return split.rightId;
   }
@@ -378,12 +422,21 @@
     const bound = new Set(ids.map((id) => paneData.byId[id]?.name).filter(Boolean));
     let empty = ids.filter((id) => !paneData.byId[id]?.name);
 
+    /*
+     * The limit is for TYPING, where an unbounded reflex buries the layout
+     * under frames nobody asked for. A pipeline run is the opposite case: it
+     * was asked for, as one action, and seeing every stage is the point of
+     * having clicked. So it opens a pane per slot and packs them.
+     */
+    const running = pipelineRun.busy;
+    const limit = running ? Infinity : AUTO_PANE_LIMIT;
+
     for (const slot of fresh) {
       if (bound.has(slot.name)) continue;
       if (empty.length > 0) {
         bindSlotPane(empty.shift(), slot.name);
-      } else if (ids.length + 1 <= AUTO_PANE_LIMIT) {
-        newSlotPane(slot.name);
+      } else if (ids.length + 1 <= limit) {
+        newSlotPane(slot.name, { collapseControls: running, count: ids.length + 1 });
         ids.push('new');
       } else {
         setStatus(
@@ -392,6 +445,9 @@
         );
       }
     }
+
+    // The grid the panes belong on changed when their number did.
+    if (running) retileSlotFrames();
   }
 
   /* ------------------------------------------------------------------ */
@@ -437,6 +493,116 @@
       headerVisible: false,
     });
     return split.rightId;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* running a pipeline over one generated image                         */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Put every slot frame back on a grid sized for how many there now are.
+   *
+   * Called as each pane appears, because the grid a pipeline needs is not
+   * known until it has finished producing slots -- and laying the first pane
+   * out for a grid of one, then leaving it there, gives a screen that is
+   * mostly empty next to eight small frames.
+   */
+  function retileSlotFrames() {
+    const ids = slotPaneIds();
+    ids.forEach((paneId, index) => {
+      const frameId = paneData.byId[paneId]?.frameId;
+      if (!frameId) return;
+      const rect = slotFrameRect(index, ids.length);
+      frames.resizeFrame(Number(frameId), rect.x, rect.y, rect.w, rect.h);
+    });
+  }
+
+  /** The frame the Generate pane lives in, if it is open. */
+  function generateFrameId() {
+    const paneId = Object.keys(paneData.byId)
+      .find((id) => contentRegistry.get(id) === GeneratePane);
+    return paneId ? paneData.byId[paneId]?.frameId ?? null : null;
+  }
+
+  /**
+   * Put the contact sheet along the bottom, out of the slot grid's way.
+   *
+   * Called when a pipeline run starts rather than when the sweep ends,
+   * because until something is going to cover it the frame is better where
+   * the user put it.
+   */
+  function dockSheet() {
+    const frameId = generateFrameId();
+    if (!frameId) return;
+    const { width, height } = contentBox();
+    const left = Math.round(width * LOG_FRACTION) + GAP;
+    frames.resizeFrame(
+      Number(frameId),
+      left, height - SHEET_STRIP_H - GAP,
+      width - left - GAP, SHEET_STRIP_H
+    );
+    sheetDocked = true;
+  }
+
+  /** Every frame whose right-hand pane is a slot pane. */
+  function slotFrameIds() {
+    return [...new Set(slotPaneIds()
+      .map((id) => paneData.byId[id]?.frameId)
+      .filter(Boolean))];
+  }
+
+  function closeSlotFrames() {
+    for (const id of slotFrameIds()) frames.closeFrame(Number(id));
+    // Panes go with the frame, so the auto-open bookkeeping has to forget the
+    // slots it thought were on screen or the next run opens nothing.
+    seen = new Set();
+  }
+
+  /**
+   * Run a pipeline over one image, and show every stage of it.
+   *
+   * The statements come from the FILE in pipelines/, the same one the batch
+   * runner executes, and each goes through runCommand -- so this is not a
+   * second execution path. Every stage is logged, hashed and replayable
+   * exactly as if it had been typed, which is §4's whole argument.
+   *
+   * `A` and the ground truth are prepended here the way scripts/lab-cli.js
+   * prepends them, because a .lab script describes what to do with an image
+   * and not which image.
+   */
+  async function runPipelineOn(file, truthFile) {
+    if (pipelineRun.busy) return;
+    closeSlotFrames();
+    dockSheet();
+
+    const source = await lab.pipeline('geometry');
+    const statements = source
+      .split('\n')
+      .map((line) => line.replace(/\/\/.*$/, '').trim())
+      .filter(Boolean);
+
+    const prefix = [`A = load(${lab.quote(file)}, from=srgb, as=linear)`];
+    if (truthFile) prefix.push(`T = groundTruth(${lab.quote(truthFile)})`);
+    const lines = [...prefix, ...statements];
+
+    pipelineRun.busy = true;
+    pipelineRun.image = file;
+    pipelineRun.total = lines.length;
+    pipelineRun.step = 0;
+    try {
+      for (const line of lines) {
+        pipelineRun.step += 1;
+        const result = await runCommand(line);
+        // Stop at the first refusal rather than running the rest against a
+        // slot that was never produced -- the log already says which line.
+        if (!result.ok) break;
+        // Let the panes this opened actually paint before the next stage, so
+        // the run is something you watch rather than a jump to the end.
+        await new Promise((r) => requestAnimationFrame(() => r()));
+      }
+    } finally {
+      pipelineRun.busy = false;
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -535,6 +701,10 @@
       // invoking an item's onClick tests the wiring this file owns, which is
       // the part that can be wrong.
       menuCommand: (id) => onMenuCommand(id),
+      // The contact sheet's click, without the sheet. Generating one needs a
+      // GPU that CI does not have; running a pipeline over an image does not,
+      // and the closing-and-opening of panes is the part worth checking.
+      runPipelineOn: (file, truth) => runPipelineOn(file, truth),
       paneMenu: (paneId) => paneMenuProvider(paneId, []),
     };
   }
@@ -547,6 +717,7 @@
     actions.saveSession = saveSession;
     actions.resetSession = resetSession;
     actions.newSlotPane = () => newSlotPane(null);
+    actions.runPipelineOn = runPipelineOn;
     setDefaultPaneContentProvider(paneContentProvider);
     setDefaultPaneMenuProvider(paneMenuProvider);
 

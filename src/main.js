@@ -204,6 +204,23 @@ function createWindow() {
    * went on offering the two literals someone had typed into it, so a scene
    * that rendered perfectly from the CLI was invisible in the app.
    */
+  /*
+   * The pipeline the contact sheet runs, read from pipelines/ rather than
+   * typed into the renderer.
+   *
+   * A copy in the renderer is a copy that drifts from the file the CLI runs,
+   * and the whole claim of this project is that the GUI and a script cannot
+   * diverge. Same file, same statements, one execution path.
+   */
+  ipcMain.removeHandler('lab:pipeline');
+  ipcMain.handle('lab:pipeline', (_event, name) => {
+    // Name only, never a path: this reads a file on the user's disk at the
+    // renderer's request, and the renderer does not get to say where from.
+    if (!/^[a-z0-9-]+$/i.test(String(name))) throw new Error(`bad pipeline name "${name}"`);
+    const file = path.join(__dirname, '..', 'pipelines', `${name}.lab`);
+    return fsSync.promises.readFile(file, 'utf8');
+  });
+
   ipcMain.removeHandler('generate:scenes');
   ipcMain.handle('generate:scenes', () => generator.savedSceneNames());
 
