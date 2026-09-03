@@ -270,6 +270,8 @@ contextBridge.exposeInMainWorld('lab', {
     /** null if the generator can run, or a sentence saying what is missing. */
     check: () => ipcRenderer.invoke('generate:check'),
     defaults: () => ipcRenderer.invoke('generate:defaults'),
+    /** The scenes in scenes/, by name. The pane offers exactly these. */
+    scenes: () => ipcRenderer.invoke('generate:scenes'),
     run: (options) => ipcRenderer.invoke('generate:run', options),
     /*
      * Where to put the embedded render.

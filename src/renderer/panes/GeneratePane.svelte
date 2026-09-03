@@ -32,6 +32,8 @@
   let { paneId } = $props();
 
   let unavailable = $state(null);
+  /** null until asked; [] means scenes/ holds nothing the pane can offer. */
+  let scenes = $state(null);
   let running = $state(false);
   let done = $state(null);
 
@@ -47,15 +49,14 @@
     // path would resolve against a working directory a packaged app never
     // chose, which on macOS is `/`.
     out: '',
-    scene: 'helmet',
+    // Replaced on mount by the first scene in scenes/. There is no built-in
+    // fallback: the pane offers files and nothing else, so an empty scenes/
+    // means there is nothing to render rather than something to render badly.
+    scene: '',
     size: 384,
     samples: 48,
     positions: 3,
     lighting: 2,
-    // 'default' means "whatever this scene asks for" -- the helmet wants a
-    // plain room, the cube wants an area-lit one so that every strong edge in
-    // frame has geometry behind it.
-    room: 'default',
     truth: false,
     aovs: false,
     denoise: false,
@@ -110,12 +111,9 @@
         ...(current.truth ? ['', 'then  npm run score -- results/'] : []), '');
     }
     lines.push(`Roughly ${estimate}s for ${total} image${total === 1 ? '' : 's'}.`);
-    lines.push(current.scene === 'cube'
-      ? 'A cube has twelve edges and eight vertices in known places, nine and ' +
-        'seven of them visible from a general viewpoint, which is what makes ' +
-        '"is this corner real" a question with an answer.'
-      : 'A room isolates the subject; "none" uses pt-lab\'s HDR environment, ' +
-        'whose blurred background dominates the edge count.');
+    lines.push('The scene comes from scenes/, composed in pt-lab, and carries ' +
+      'its own room and lighting. Ground truth is only as useful as the ' +
+      'subject: edges that are paint rather than geometry cannot be scored.');
     return lines.join('\n');
   };
 
@@ -151,12 +149,14 @@
   }
 
   onMount(() => {
-    lab.generate.check().then((problem) => {
+    Promise.all([lab.generate.check(), lab.generate.scenes()]).then(([problem, found]) => {
       unavailable = problem;
-      if (problem) return;
+      scenes = found;
+      if (problem || found.length === 0) return;
       const target = controlsPaneId();
       if (!target) return;
-      controls = attachGenerateControls(target, current, {
+      current = { ...current, scene: `saved:${found[0]}` };
+      controls = attachGenerateControls(target, current, found, {
         onRun: (opts) => { current = opts; start(opts); },
         onChange: (opts) => { current = opts; },
       });
@@ -198,16 +198,13 @@
     setStatus(`Generating ${opts.positions * opts.lighting} image(s)...`);
 
     /*
-     * Three states, and they are all different. `default` leaves the key off
-     * so the scene's own room applies; `none` is this app's word for pt-lab's
-     * default HDR-environment scene, which is not one of its room kinds; a
-     * name is a room kind.
+     * No `room` key at all, which the driver reads as "the scene's own room".
+     * A scene composed in pt-lab records the room it was composed in, so
+     * overriding it from here could only ever contradict the file. The CLI
+     * keeps `--room` for the experiment that wants it: one subject, several
+     * backgrounds.
      */
-    const { room, ...rest } = opts;
-    const result = await lab.generate.run({
-      ...rest,
-      ...(room === 'default' ? {} : { room: room === 'none' ? null : room }),
-    });
+    const result = await lab.generate.run({ ...opts });
 
     running = false;
     done = result;
@@ -230,6 +227,20 @@
     <div class="unavailable">
       <p><b>{unavailable.split('\n')[0]}</b></p>
       <pre>{unavailable.split('\n').slice(1).join('\n')}</pre>
+    </div>
+  {:else if scenes && scenes.length === 0}
+    <!--
+      Nothing to offer, said plainly. The pane renders scenes/ and only
+      scenes/, so an empty directory is not a broken generator -- it is a
+      generator with no subject, and the fix is a file rather than a build.
+    -->
+    <div class="unavailable">
+      <p><b>No scenes to render.</b></p>
+      <pre>The Generate pane offers the scenes in scenes/, composed in pt-lab's
+editor and exported as JSON. There are none.
+
+Add one as scenes/&lt;name&gt;.json, or scenes/&lt;name&gt;.local.json to keep it
+out of the repository.</pre>
     </div>
   {:else if !running}
     <!--

@@ -36,9 +36,6 @@ const textWidth = (chars) => Math.ceil(chars * CHAR_W);
 
 /* --- what the column offers ------------------------------------------ */
 
-const SCENES = ['helmet', 'cube'];
-const ROOMS = ['default', 'room', 'room-emissive', 'room-arealight', 'none'];
-
 /**
  * One row per option, in the order they are stacked.
  *
@@ -47,6 +44,17 @@ const ROOMS = ['default', 'room', 'room-emissive', 'room-arealight', 'none'];
  * `samples` is a number. The bounds are carried here rather than in the
  * control because paneless's editbox does not enforce a range -- so they are
  * applied on the way out, where they actually have to hold.
+ *
+ * `scene` has no options here. The list comes from the main process, because
+ * the scenes are FILES: a literal typed in this module is a literal that goes
+ * stale the moment one is added, which is exactly what happened -- saved
+ * scenes rendered from the CLI and did not appear in the pane at all.
+ *
+ * There is no `room` row. A scene records its own room, so the control could
+ * only ever override what the scene said; leaving it out means the file
+ * decides, which is the whole point of composing a scene. The override still
+ * exists on the driver and the CLI for the experiment it is good for --
+ * rendering one subject against different backgrounds.
  */
 const ROWS = [
   { key: 'out', label: 'out', kind: 'editbox' },
@@ -54,8 +62,7 @@ const ROWS = [
   { key: 'samples', label: 'samples', kind: 'editbox', parse: Number, min: 4, max: 1000 },
   { key: 'positions', label: 'positions', kind: 'editbox', parse: Number, min: 1, max: 24 },
   { key: 'lighting', label: 'lighting', kind: 'editbox', parse: Number, min: 1, max: 8 },
-  { key: 'scene', label: 'scene', kind: 'dropdown', options: SCENES },
-  { key: 'room', label: 'room', kind: 'dropdown', options: ROOMS },
+  { key: 'scene', label: 'scene', kind: 'dropdown', options: [] },
   { key: 'truth', label: '', kind: 'checkbox', text: 'ground truth' },
   { key: 'aovs', label: '', kind: 'checkbox', text: 'AOV passes' },
   { key: 'denoise', label: '', kind: 'checkbox', text: 'denoise' },
@@ -63,11 +70,12 @@ const ROWS = [
 
 const LABEL_W = textWidth(Math.max(...ROWS.map((r) => r.label.length)));
 
-const FIELD_W = Math.max(
-  ...ROWS.filter((r) => r.kind === 'dropdown')
-    .map((r) => textWidth(Math.max(...r.options.map((o) => o.length)))),
-  textWidth(22) // an output path is the widest thing typed here
-) + TEXT_INSET * 2 + ARROW_W;
+/*
+ * An output path is the widest thing that goes in here, and a scene name is
+ * not known until the main process says so -- so the column is sized for a
+ * generous string rather than for the longest of a list it no longer owns.
+ */
+const FIELD_W = textWidth(22) + TEXT_INSET * 2 + ARROW_W;
 
 /** What the Generate frame should give the column before the user drags it. */
 export const CONTROLS_WIDTH = PAD + LABEL_W + LABEL_GAP + FIELD_W + PAD;
@@ -119,7 +127,7 @@ function ensureRootPanel(paneId) {
   return id;
 }
 
-function build(paneId, options) {
+function build(paneId, options, scenes) {
   const root = ensureRootPanel(paneId);
   const ids = { rows: {} };
   let y = TOP_PAD;
@@ -136,10 +144,16 @@ function build(paneId, options) {
     const common = { name: row.key, fontFamily: FONT, fontSize: FONT_SIZE };
     let id;
     if (row.kind === 'dropdown') {
+      // The id is what the driver is given, the label is what is read. A
+      // scene file called cube-1 is asked for as `saved:cube-1`, and nothing
+      // downstream has to know that the pane spelt it differently.
+      const items = row.key === 'scene'
+        ? scenes.map((name) => ({ id: `saved:${name}`, label: name }))
+        : row.options.map((o) => ({ id: o, label: o }));
       id = controlStore.addControl(paneId, root, 'dropdown', FIELD_X, y, FIELD_W, ROW_H, {
         ...common,
-        items: row.options.map((o) => ({ id: o, label: o })),
-        selectedId: options[row.key],
+        items,
+        selectedId: options[row.key] ?? items[0]?.id,
       });
       controlStore.updateControl(paneId, id, { width: FIELD_W_EVAL });
     } else if (row.kind === 'checkbox') {
@@ -203,8 +217,8 @@ function set(paneId, controlId, updates) {
  * the text under the controls. Both are supplied by GeneratePane, which owns
  * the run state -- this module owns only what is drawn.
  */
-export function attachGenerateControls(paneId, options, handlers) {
-  const ids = build(paneId, options);
+export function attachGenerateControls(paneId, options, scenes, handlers) {
+  const ids = build(paneId, options, scenes);
 
   const read = () => {
     const out = { ...options };

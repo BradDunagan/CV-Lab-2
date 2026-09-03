@@ -172,10 +172,16 @@ generator **ships as part of the application**: **Panes → Generate Images…**
 install. It needs a GPU capable of WebGL path tracing, takes about 20 s per
 image, and adds ~17 MB to the installer.
 
-The pane has the parameters, a progress log, and a *show the render window*
-box — tick it and pt-lab's own window appears, path tracing in front of you.
-Images default to `~/Pictures/CV-Lab`, because a packaged app inherits a
-working directory it never chose.
+The frame is split: parameters and progress on the left, and on the right the
+tracer itself, converging while the sweep runs. Images default to
+`~/Pictures/CV-Lab`, because a packaged app inherits a working directory it
+never chose.
+
+**The pane offers the scenes in `scenes/`, and nothing else.** They are
+composed in pt-lab's editor and exported as JSON — one file per scene, named
+for the scene, carrying its objects, their materials and transforms, the room
+and a camera. `scenes/cube-1.json` ships with the repository. A scene records
+the room it was composed in, so the pane has no room control: the file decides.
 
 From a working copy there is a command line too:
 
@@ -185,22 +191,27 @@ npm run generate -- --out generated/ --positions 3 --lighting 2
 npm run lab -- --script pipelines/geometry.lab --out results/ generated/*.png
 ```
 
-It hosts [pt-lab](../pt-lab-workspace) — a GPU path tracer — in its own window,
-orbits the camera, varies the environment intensity, and writes one PNG per
-combination. `--show` does from the CLI what the checkbox does in the pane.
-`--dry-run` prints the sweep without rendering, which is worth doing before
-committing several minutes.
+It hosts [pt-lab](../pt-lab-workspace) — a GPU path tracer — orbits the camera,
+varies the environment intensity, and writes one PNG per combination. `--show`
+puts the render in a window of its own, which the CLI needs and the app does
+not. `--dry-run` prints the sweep without rendering, which is worth doing
+before committing several minutes.
 
-Two scenes. **`helmet`** is pt-lab's damaged helmet, and every number recorded
-in `notes/` was measured on it. **`cube`** is a 10 cm cube on a table with a
-ball beside it — twelve edges and eight vertices in known places, which is what
-makes ground truth possible; see the next section. `--truth` and `--aovs` write
-what is really in the frame alongside the render.
+The command line takes the same `scenes/` files as `--scene saved:<name>`, and
+two built-in scenes the pane does not offer. **`helmet`** is pt-lab's damaged
+helmet, and every number recorded in `notes/` was measured on it. **`cube`** is
+a 10 cm cube on a table with a ball beside it. Both exist for their bespoke
+**shot plans** — `cube`'s puts the camera 20° off the axis so no view lands on
+a degenerate one, and 25° above so three faces and seven vertices show — which
+a saved scene cannot express, because the editor frames one camera and the
+orbit is derived from it. `--truth` and `--aovs` write what is really in the
+frame alongside the render.
 
-It defaults to a **room**, which isolates the subject. `--room none` uses
-pt-lab's default HDR environment: better-looking, and a poor CV fixture,
-because the blurred background and textured tabletop dominate the edge count —
-446 segments against 156 for the same object in a room. Beauty renders go
+A scene carries its own room; `--room` overrides it, which is worth doing to
+render one subject against several backgrounds. `--room none` uses pt-lab's
+default HDR environment: better-looking, and a poor CV fixture, because the
+blurred background and textured tabletop dominate the edge count — 446 segments
+against 156 for the same object in a room. Beauty renders go
 through pt-lab's own `exportPNG`, so each is **tagged sRGB** (`sRGB` + `gAMA` +
 `cHRM`) and `load` confirms the encoding instead of assuming it. `--denoise`
 runs OIDN over each export; it is off by default, matching pt-lab, so every
