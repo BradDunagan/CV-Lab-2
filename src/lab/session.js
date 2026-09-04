@@ -72,10 +72,25 @@ function hashScalars(values) {
  * Numbers go in at full precision: rounding would hide real changes, which is
  * the opposite of the point.
  */
-function hashFeatures(features) {
+function hashFeatures(features, meta) {
   const canonical = features.map((f) =>
     Object.keys(f).sort().map((k) => [k, f[k]]));
-  return crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+  const hash = crypto.createHash('sha256').update(JSON.stringify(canonical));
+
+  /*
+   * Slot-level metadata is part of the content when there is any: ground truth
+   * for the same edges at a different depth scale is not the same ground
+   * truth, and a hash that said it was would be lying to a replay.
+   *
+   * Folded in only when present, so a features slot WITHOUT metadata -- every
+   * one there was before this existed, including the fit and corner slots
+   * whose hashes test/determinism.js pins across three platforms -- hashes
+   * exactly the bytes it always did.
+   */
+  if (meta && Object.keys(meta).length > 0) {
+    hash.update(JSON.stringify(Object.keys(meta).sort().map((k) => [k, meta[k]])));
+  }
+  return hash.digest('hex');
 }
 
 class Session {
@@ -283,7 +298,7 @@ class Session {
                  hash: this.buffers.hash(result.handle) };
       case 'features':
         return { kind: 'features', count: result.features.length,
-                 hash: hashFeatures(result.features) };
+                 hash: hashFeatures(result.features, result.meta) };
       case 'scalars':
         return { kind: 'scalars', values: result.values, hash: hashScalars(result.values) };
       default:
@@ -450,4 +465,4 @@ class Session {
   }
 }
 
-module.exports = { Session, SessionError, nativeAdapter, hashScalars };
+module.exports = { Session, SessionError, nativeAdapter, hashScalars, hashFeatures };

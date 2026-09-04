@@ -10,12 +10,10 @@
 // A, T and the three passes D/NM/AL are prepended by the runner, one per
 // image: a .lab script names operations rather than files.
 //
-// maxDepth is the one number that cannot be prepended, because it belongs to
-// the scene rather than to the runner's conventions -- it is in each
-// <name>.gt.json. The default of 1 makes every depth step read in units of
-// maxDepth rather than metres, which moves the occlusion threshold rather
-// than breaking it: the classification still works, the numbers are just not
-// in metres. Set it when the metres matter.
+// explain takes T for one number: maxDepth, the metre scale the depth pass was
+// packed against. It is in the .gt.json and nowhere else -- the passes carry no
+// colour chunks and therefore no metadata -- and it changes per image, so it
+// could not be a parameter written into a script.
 
 G  = gray(A)
 B  = gaussian(G, sigma=1.4)
@@ -29,8 +27,8 @@ F  = fit(R)
 C  = corners(F)
 
 // What the detector responded to, whether or not it matched anything.
-EF = explain(F, D, NM, AL)
-EC = explain(C, D, NM, AL)
+EF = explain(F, D, NM, AL, T)
+EC = explain(C, D, NM, AL, T)
 
 // And whether it was really there.
 MF = match(F, T)

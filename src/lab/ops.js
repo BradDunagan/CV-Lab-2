@@ -86,7 +86,7 @@ function groundTruthKernel(readTextFile) {
   return async ({ params }) => {
     if (!params.path) throw new Error('groundTruth: path is required');
     const text = await readTextFile(params.path);
-    const { features, width, height } = readGroundTruth(text, params.path);
+    const { features, width, height, meta } = readGroundTruth(text, params.path);
     const wanted = params.kind;
     return {
       kind: 'features',
@@ -99,6 +99,17 @@ function groundTruthKernel(readTextFile) {
       // produce numbers rather than an error.
       width,
       height,
+      /*
+       * What the file says about the SCENE rather than about any one feature.
+       *
+       * `maxDepth` is the reason this is carried at all: it is the metre scale
+       * pt-lab packed the depth pass against, it exists nowhere else -- the
+       * passes are written with no colour chunks at all -- and `explain` needs
+       * it to read that pass in metres. Parsed all along and dropped here,
+       * which left the one number needed to read a depth pass unreachable from
+       * inside the lab.
+       */
+      meta,
     };
   };
 }
@@ -449,17 +460,20 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'depth', channels: [3, 4], space: 'any' },
         { name: 'normal', channels: [3, 4], space: 'any' },
         { name: 'albedo', channels: [3, 4], space: 'any' },
+        /*
+         * Ground truth, for its `maxDepth` and nothing else.
+         *
+         * Not scoring -- this operation never looks at the truth's features.
+         * It is here because the metre scale the depth pass was packed against
+         * exists ONLY in the .gt.json: the passes carry no colour chunks and
+         * therefore no metadata, so without the truth there is no way to read
+         * a depth pass in metres at all. Taking it as a number instead would
+         * be a parameter nobody could fill in correctly from inside a script,
+         * since it changes per image.
+         */
+        { name: 'truth', kind: 'features' },
       ],
       params: [
-        /*
-         * The scale the depth pass was packed against, in metres. It is NOT
-         * in the image -- pt-lab writes the passes with no colour chunks at
-         * all -- so it travels in the ground-truth JSON as `maxDepth`, and
-         * has to be given here. Getting it wrong scales every depth step
-         * uniformly, which moves the occlusion threshold rather than breaking
-         * it, so a wrong value is quiet: check it against the .gt.json.
-         */
-        { name: 'maxDepth', type: 'number', default: 1, min: 1e-6 },
         // How far either side of the edge to look. Three pixels is about what
         // blur and non-maximum suppression move an edge by, so the two sides
         // stop being the same surface a little before that.
@@ -474,7 +488,16 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         // Lazily, like every other kernel that touches the addon: this module
         // has to stay loadable without it so the pure-JS suites can require it.
         const native = require('../../native');
-        const [src, depth, normal, albedo] = inputs;
+        const [src, depth, normal, albedo, truth] = inputs;
+
+        const maxDepth = truth?.meta?.maxDepth;
+        if (typeof maxDepth !== 'number' || !(maxDepth > 0)) {
+          throw new Error(
+            'explain: the ground truth carries no maxDepth, so the depth pass ' +
+            'cannot be read in metres. It is written by `npm run generate -- --truth`; ' +
+            'a hand-written .gt.json needs a numeric "maxDepth".'
+          );
+        }
 
         /*
          * A buffer input is a handle, not a shape -- its dimensions come from
@@ -511,7 +534,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         const metres = new Float32Array(packed.width * packed.height);
         for (let i = 0, p = 0; i < metres.length; i++, p += packed.channels) {
           metres[i] = (packed.data[p] + packed.data[p + 1] / 255 + packed.data[p + 2] / 65025)
-            * params.maxDepth;
+            * maxDepth;
         }
 
         return {
