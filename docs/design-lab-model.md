@@ -1113,13 +1113,41 @@ item genuinely deferrable.
   saved session.
 - **Ground truth beyond a cube.** Twenty-four views settled which corner
   fields discriminate (§5) and every one of them was a synthetic cube in a lit
-  room. Two things it cannot say: whether the same thresholds hold on a
-  photograph, where edges are noisier and geometry is not a box; and what the
-  *helmet's* segments are actually made of — the apparatus runs on that scene
-  unchanged, and the answer is the one the 156-segment count has been waiting
-  for since it was measured. The AOV passes exist for that question and nothing
-  yet consumes them: classifying an unmatched detection as texture, shading or
-  noise needs a per-pixel comparison the lab has no operation for.
+  room.
+
+  *Settled:* the AOV passes are consumed now. `explain` samples across a
+  detection in the depth, normal and albedo passes and reports what put it
+  there — a depth step is an occlusion, a normal step without one is a crease,
+  an albedo step is texture, and none of the three is shading. So an unmatched
+  detection is no longer one bucket. Over six views of a cube on a table with a
+  ball in a lit room, **111 of 123 invented segments were shading** — a shadow
+  boundary or a specular terminator, which is a real image edge belonging to
+  the light. The detector was right and the ground truth, which models geometry
+  alone, was right to call it invented.
+
+  *Settled, and sharper than the question asked:* §5's claim reproduces on a
+  bare cube and fails on a furnished one. `scenes/cube-1.json` — one cube,
+  nothing else — gives `endpointGap` an **18.8× margin with no overlap** over
+  six views, and 13.8× on a single view, against §5's 14× from one hand-read
+  image. The same pipeline on the cube-with-table-and-ball scene does not
+  separate at all: the ranges overlap and the best F1 falls to 0.68. **The
+  threshold survives the subject and fails on the clutter**, which is not what
+  "does it hold on anything that is not a cube" was expecting.
+
+  *Open, and newly visible:* corner precision on a multi-object scene is
+  measuring the truth model as much as the detector. 37% of invented corners
+  sat on real depth steps, and **half of those were formed by two segments that
+  both matched real geometry** — two real occluding contours crossing in the
+  image where no mesh vertex exists. A T-junction. Ground truth lists vertices,
+  so it counts every one as invented. Whether it *should* carry image-space
+  T-junctions is genuinely unclear: they are view-dependent, and an edge is
+  not, so they are a property of the picture rather than of the scene.
+
+  *Still open:* whether the thresholds hold on a photograph, where edges are
+  noisier and geometry is not a box; and what the *helmet's* segments are
+  actually made of — the apparatus runs on that scene unchanged now, and the
+  answer is the one the 156-segment count has been waiting for since it was
+  measured.
 
 - **Multi-image operations.** Stereo pairs, image stacks and frame sequences
   all want more than "two inputs". Does a slot ever hold a *stack*, or is that

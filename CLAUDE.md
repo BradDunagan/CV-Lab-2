@@ -103,10 +103,22 @@ npm run smoke:package   # launch it and check it actually works
 ## Open questions
 
 In `design-lab-model.md` §11 — whether `load` should default to `as=linear`;
-whether higher-precision decoding is worth a native decoder; whether
+whether higher-precision decoding is worth a native decoder; and whether
 `pt-lab-workspace` writes gamma-encoded or linear PNGs, which matters because
 every image in `assets/` declares nothing and the lab assumes sRGB by
-convention; and whether the corner thresholds measured over twenty-four views
-of a cube hold on anything that is not a cube. The AOV passes are exported and
-nothing yet consumes them — classifying an unmatched detection as texture,
-shading or noise is the next thing they are for.
+convention.
+
+The AOV passes are consumed now: `explain` says what put each detection in the
+picture, and **111 of 123 invented segments turned out to be shading** — the
+detector finding a shadow boundary, which is a real image edge belonging to the
+light rather than to the object. That answers the question §11 asked and
+sharpens the one about corner thresholds: they hold on a bare cube with an
+18.8× margin and break on the same cube once a table, a ball and a lit room are
+added, so it is the clutter rather than the subject.
+
+What it opened instead: **corner precision on a multi-object scene measures the
+truth model as much as the detector.** Half the invented corners that sat on
+real depth steps were two real occluding contours crossing where no mesh vertex
+exists — a T-junction, which ground truth cannot represent because it lists
+vertices. Whether it should is unclear: T-junctions are view-dependent and an
+edge is not.

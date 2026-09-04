@@ -1124,9 +1124,12 @@ Stated plainly, so you do not go looking:
 - **An ICC-profiled PNG loads silently under the sRGB convention.** The profile
   is detected and then discarded; only explicit `sRGB` and `gAMA` declarations
   cause a refusal. Same for a `gAMA` value that is neither sRGB nor linear.
-- **The AOV passes are exported and nothing consumes them.** Classifying an
-  unmatched detection as texture, shading or noise needs a per-pixel operation
-  that does not exist yet.
+- **Ground truth models geometry, so an image-space T-junction is scored as an
+  invention.** Where two real occluding contours cross, the picture has a
+  corner and the scene has no vertex — nothing touches there. `explain` makes
+  these visible (they come back `occlusion` while matching nothing) but the
+  truth cannot represent them, so corner precision on a scene with more than
+  one object reads lower than the detector deserves.
 - **Bit-exactness holds within a machine and across the three supported
   platforms**, for the geometry and for every buffer this pipeline currently
   produces. It does **not** hold across compiler versions or optimisation
