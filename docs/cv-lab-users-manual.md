@@ -388,6 +388,54 @@ Refuses two feature lists measured in different images, because scoring a
 512-pixel run against 256-pixel truth produces plausible numbers rather than an
 error.
 
+#### `explain(src features, depth, normal, albedo, …)` → features
+
+Say what put each detected feature in the picture, from the renderer's
+auxiliary passes. Returns the same records with a `cause` and the three
+measurements behind it.
+
+| `cause` | measured | means |
+|---|---|---|
+| `occlusion` | a depth step | one surface ending in front of another |
+| `crease` | a normal step, no depth step | a fold |
+| `texture` | an albedo step, neither of the above | paint rather than shape |
+| `shading` | none of the three | a shadow boundary or specular terminator |
+
+**`shading` is not a detector failure.** A shadow boundary is a real image edge
+belonging to the *light* rather than to the object, so the detector is right to
+find it and ground truth — which models geometry alone — is right to call it
+invented. Before this operation the two were scored together as "not geometry",
+which pooled a detector that was wrong with a detector that was answering a
+question nobody asked.
+
+| parameter | default | what it does |
+|---|---|---|
+| `maxDepth` | 1 | the metre scale the depth pass was packed against — the `maxDepth` in the image's `.gt.json` |
+| `offset` | 2.5 px | how far either side of the edge to sample |
+| `samples` | 7 | crossings along a segment; a corner is always crossed on four axes |
+| `depthStep` | 0.02 | metres of depth change that counts as a step |
+| `normalStep` | 20° | angle between the two sides' normals that counts as a fold |
+| `albedoStep` | 0.06 | linear reflectance difference that counts as paint |
+
+The order of the tests is not arbitrary. An occluding edge has a normal step
+too — the two surfaces face different ways — and usually an albedo step as
+well, so depth is tested first; testing normal first would report every
+silhouette as a crease.
+
+Takes **detections**, not match records: sampling across an edge needs its
+direction, and a match record keeps only a midpoint. It also means the answer
+is available whether or not the detection matched anything, which is what makes
+"what does this detector respond to?" a question you can ask.
+
+A pass that is not supplied leaves the cause `unknown` rather than falling
+through to `shading` — reaching that answer by not looking would be a confident
+wrong one, and `shading` is exactly the bucket this exists to stop over-filling.
+
+Read the passes with `from=linear`. They carry raw code values and pt-lab
+writes them with no colour chunks at all, so the sRGB-by-convention default
+applies a transfer curve that was never there. `npm run lab -- --aovs <dir>`
+prepends the three loads correctly, per image.
+
 ---
 
 ## 4. The application

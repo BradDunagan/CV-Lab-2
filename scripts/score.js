@@ -174,11 +174,35 @@ if (files.length === 0) {
 
 const totals = new Map();          // slot -> pooled records
 const byCause = new Map();         // cause -> pooled segment records
+const inventedCorners = new Map(); // explained cause -> count, false positives only
 const cornerSamples = [];          // one per detected corner, across all images
 
 for (const file of files) {
   const name = file.replace(/\.features\.json$/, '');
   const slots = readFeatures(path.join(opts.dir, file));
+
+  /*
+   * What the renderer says put each detection there, if `explain` was run.
+   *
+   * A match record's `cause` comes from the ground-truth edge it hit, so a
+   * FALSE POSITIVE has none -- it matched nothing to take a cause from. That
+   * left every invented detection in one bucket called "(not geometry)",
+   * which pooled two very different findings: a detector that was wrong, and
+   * a detector that was right about an edge the ground truth does not model.
+   * A shadow boundary is a real image edge belonging to the light.
+   *
+   * Found by shape rather than by slot name, so a pipeline can call the slot
+   * whatever it likes: any features carrying a `cause` that are not match
+   * records are an explanation.
+   */
+  const explained = new Map();       // "segment:12" -> "shading"
+  for (const features of slots.values()) {
+    for (const f of features) {
+      if (f.type === 'edge-match' || typeof f.cause !== 'string') continue;
+      const kind = f.type === 'edge-corner' ? 'corner' : 'segment';
+      explained.set(`${kind}:${f.id}`, f.cause);
+    }
+  }
 
   for (const slot of opts.match) {
     const records = slots.get(slot);
@@ -188,9 +212,25 @@ for (const file of files) {
 
     for (const r of records) {
       if (r.kind !== 'segment') continue;
-      const cause = r.cause ?? (r.role === 'false-positive' ? '(not geometry)' : '(unknown)');
+      const cause = r.cause
+        ?? (r.role === 'false-positive'
+          ? explained.get(`segment:${r.detected}`) ?? '(not geometry)'
+          : '(unknown)');
       if (!byCause.has(cause)) byCause.set(cause, []);
       byCause.get(cause).push(r);
+    }
+
+    /*
+     * Corners get their own tally rather than joining the segment table: the
+     * two are different questions and the recall column would be meaningless
+     * pooled. Only the inventions, because a hit's cause is the geometry it
+     * hit and is already reported above.
+     */
+    for (const r of records) {
+      if (r.kind !== 'corner' || r.role !== 'false-positive') continue;
+      const cause = explained.get(`corner:${r.detected}`);
+      if (!cause) continue;
+      inventedCorners.set(cause, (inventedCorners.get(cause) ?? 0) + 1);
     }
   }
 
@@ -252,6 +292,30 @@ if (byCause.size > 0) {
       `${String(t.hit).padStart(7)}${String(t.miss).padStart(9)}${pct(t.recall).padStart(9)}`
     );
   }
+}
+
+if (inventedCorners.size > 0) {
+  /*
+   * The invented corners, by what the renderer says was actually there.
+   *
+   * `shading` is not a detector failure. A shadow boundary and a specular
+   * terminator are real image edges belonging to the LIGHT, so a corner where
+   * two of them meet is something the detector was right to find and the
+   * ground truth -- which models geometry alone -- is right to call invented.
+   *
+   * The rows that deserve attention are `occlusion` and `crease`: a detection
+   * sitting on a real depth step or a real fold that matched nothing is
+   * either geometry the truth does not list, or a matching tolerance that is
+   * too tight. Both are worth chasing; shading is worth counting and leaving
+   * alone.
+   */
+  const total = [...inventedCorners.values()].reduce((a, b) => a + b, 0);
+  console.log('\nINVENTED CORNERS BY WHAT WAS REALLY THERE');
+  console.log('  cause          count   share');
+  for (const [cause, n] of [...inventedCorners].sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${cause.padEnd(13)}${String(n).padStart(7)}${pct(n / total).padStart(8)}`);
+  }
+  console.log('\n  shading is the light rather than the object, and not a miss.');
 }
 
 /* ------------------------------------------------------------------ */

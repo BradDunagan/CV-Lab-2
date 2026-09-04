@@ -14,6 +14,7 @@ const { Registry, defineOp } = require('./registry');
 const { findCorners } = require('./corners');
 const { readGroundTruth } = require('./groundtruth');
 const { matchFeatures } = require('./match');
+const { explainFeatures } = require('./explain');
 
 /**
  * Bind a declared operation to its C kernel.
@@ -421,6 +422,109 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         return {
           kind: 'features',
           features: matchFeatures(src.features, truth.features, params),
+          width: src.width,
+          height: src.height,
+        };
+      },
+    }),
+
+    defineOp({
+      name: 'explain',
+      version: 1,
+      summary: 'Say what put each detected feature in the picture, from the renderer\'s AOV passes.',
+      /*
+       * Features in, features out, with three auxiliary passes alongside.
+       *
+       * The passes are what make the question answerable at all: a shadow
+       * boundary and a silhouette are the same step in luminance, and nothing
+       * in the beauty render tells them apart. See glossary.md, AOV.
+       *
+       * Detections rather than match records, deliberately. A match record
+       * keeps only a midpoint, and sampling ACROSS an edge needs its
+       * direction -- but more than that, what a detector responds to is worth
+       * knowing whether or not it happened to match something.
+       */
+      inputs: [
+        { name: 'src', kind: 'features' },
+        { name: 'depth', channels: [3, 4], space: 'any' },
+        { name: 'normal', channels: [3, 4], space: 'any' },
+        { name: 'albedo', channels: [3, 4], space: 'any' },
+      ],
+      params: [
+        /*
+         * The scale the depth pass was packed against, in metres. It is NOT
+         * in the image -- pt-lab writes the passes with no colour chunks at
+         * all -- so it travels in the ground-truth JSON as `maxDepth`, and
+         * has to be given here. Getting it wrong scales every depth step
+         * uniformly, which moves the occlusion threshold rather than breaking
+         * it, so a wrong value is quiet: check it against the .gt.json.
+         */
+        { name: 'maxDepth', type: 'number', default: 1, min: 1e-6 },
+        // How far either side of the edge to look. Three pixels is about what
+        // blur and non-maximum suppression move an edge by, so the two sides
+        // stop being the same surface a little before that.
+        { name: 'offset', type: 'number', default: 2.5, min: 0.5, max: 16 },
+        { name: 'samples', type: 'number', default: 7, min: 1, max: 64 },
+        { name: 'depthStep', type: 'number', default: 0.02, min: 0 },
+        { name: 'normalStep', type: 'number', default: 20, min: 0, max: 180 },
+        { name: 'albedoStep', type: 'number', default: 0.06, min: 0 },
+      ],
+      output: { kind: 'features' },
+      kernel: ({ inputs, params }) => {
+        // Lazily, like every other kernel that touches the addon: this module
+        // has to stay loadable without it so the pure-JS suites can require it.
+        const native = require('../../native');
+        const [src, depth, normal, albedo] = inputs;
+
+        /*
+         * A buffer input is a handle, not a shape -- its dimensions come from
+         * bufferInfo. Reading src.width off one gives undefined, which then
+         * compares unequal to everything and reports a confusing size.
+         */
+        const raster = (buf) => {
+          const info = native.bufferInfo(buf.handle);
+          return {
+            width: info.width, height: info.height, channels: info.channels,
+            data: native.bufferRead(buf.handle),
+          };
+        };
+
+        const rasters = {
+          depth: raster(depth), normal: raster(normal), albedo: raster(albedo),
+        };
+        for (const [name, r] of Object.entries(rasters)) {
+          if (r.width !== src.width || r.height !== src.height) {
+            throw new Error(
+              `explain: ${name} is ${r.width}x${r.height} but the features were ` +
+                `measured in ${src.width}x${src.height}. Their coordinates do not mean ` +
+                `the same thing.`
+            );
+          }
+        }
+
+        /*
+         * Depth is a 24-bit fixed-point value packed across R, G and B, which
+         * is why the pass looks like fine rainbow stripes rather than a ramp.
+         * Loaded as floats in [0,1] the byte-wise decode reduces to this.
+         */
+        const packed = rasters.depth;
+        const metres = new Float32Array(packed.width * packed.height);
+        for (let i = 0, p = 0; i < metres.length; i++, p += packed.channels) {
+          metres[i] = (packed.data[p] + packed.data[p + 1] / 255 + packed.data[p + 2] / 65025)
+            * params.maxDepth;
+        }
+
+        return {
+          kind: 'features',
+          features: explainFeatures(
+            src.features,
+            {
+              depth: { width: packed.width, height: packed.height, channels: 1, data: metres },
+              normal: rasters.normal,
+              albedo: rasters.albedo,
+            },
+            params
+          ),
           width: src.width,
           height: src.height,
         };
