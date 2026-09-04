@@ -388,7 +388,7 @@ Refuses two feature lists measured in different images, because scoring a
 512-pixel run against 256-pixel truth produces plausible numbers rather than an
 error.
 
-#### `explain(src features, depth, normal, albedo, …)` → features
+#### `explain(src features, depth, normal, albedo, truth features, …)` → features
 
 Say what put each detected feature in the picture, from the renderer's
 auxiliary passes. Returns the same records with a `cause` and the three
@@ -410,7 +410,6 @@ question nobody asked.
 
 | parameter | default | what it does |
 |---|---|---|
-| `maxDepth` | 1 | the metre scale the depth pass was packed against — the `maxDepth` in the image's `.gt.json` |
 | `offset` | 2.5 px | how far either side of the edge to sample |
 | `samples` | 7 | crossings along a segment; a corner is always crossed on four axes |
 | `depthStep` | 0.02 | metres of depth change that counts as a step |
@@ -430,6 +429,12 @@ is available whether or not the detection matched anything, which is what makes
 A pass that is not supplied leaves the cause `unknown` rather than falling
 through to `shading` — reaching that answer by not looking would be a confident
 wrong one, and `shading` is exactly the bucket this exists to stop over-filling.
+
+**It takes the ground truth for one number, not for scoring** — it never looks
+at the truth's features. The metre scale the depth pass was packed against,
+`maxDepth`, exists only in the `.gt.json`: the passes carry no colour chunks and
+therefore no metadata at all. It also changes per image, so it could not be a
+parameter written into a script.
 
 Read the passes with `from=linear`. They carry raw code values and pt-lab
 writes them with no colour chunks at all, so the sRGB-by-convention default

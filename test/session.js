@@ -14,7 +14,7 @@ const crypto = require('node:crypto');
 
 const { parseStatement, parseScript, quoteString, ParseError } = require('../src/lab/parser');
 const { Registry, defineOp } = require('../src/lab/registry');
-const { Session, SessionError } = require('../src/lab/session');
+const { Session, SessionError, hashFeatures } = require('../src/lab/session');
 
 let failures = 0;
 const queue = [];
@@ -518,6 +518,35 @@ test('format() renders a readable log', async () => {
   assert.match(text, /#1 {2}A#1 ← ramp\(n=4\)/);
   assert.match(text, /#4 {2}D#1 ← add\(A#1, C#1\)/);
   assert.match(text, /sha256:[0-9a-f]{8}…/);
+});
+
+test('a features slot with no metadata hashes exactly as it always did', () => {
+  /*
+   * The compatibility this rests on. Slot-level metadata is folded into the
+   * hash only when there IS any, so every features slot that predates it --
+   * including the fit and corner slots whose hashes test/determinism.js pins
+   * across three platforms -- is byte-for-byte the value it was.
+   *
+   * Written as the two calls agreeing rather than as a literal hash, because a
+   * literal would pass just as happily if BOTH sides changed together.
+   */
+  const features = [{ type: 'edge-segment', id: 1, x0: 0, y0: 0, x1: 4, y1: 3 }];
+  assert.equal(hashFeatures(features), hashFeatures(features, undefined));
+  assert.equal(hashFeatures(features), hashFeatures(features, {}));
+});
+
+test('metadata is part of the content, so a different scale is a different hash', () => {
+  // Ground truth for the same edges at a different depth scale is not the same
+  // ground truth, and a hash that said otherwise would be lying to a replay.
+  const features = [{ type: 'gt-edge', id: 1, x0: 0, y0: 0, x1: 4, y1: 3 }];
+  const a = hashFeatures(features, { maxDepth: 3.5 });
+  const b = hashFeatures(features, { maxDepth: 4.4 });
+  assert.notEqual(a, b);
+  // ...and it does not depend on the order the keys happen to be written in.
+  assert.equal(
+    hashFeatures(features, { maxDepth: 3.5, image: 'p0.png' }),
+    hashFeatures(features, { image: 'p0.png', maxDepth: 3.5 })
+  );
 });
 
 runAll();

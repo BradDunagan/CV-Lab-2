@@ -116,8 +116,8 @@ packed vector components, unlit reflectance -- and pt-lab writes them with no
 colour chunks at all, so the sRGB-by-convention default would apply a transfer
 curve that was never there and the numbers would come back silently wrong.
 
-The depth scale, maxDepth, is NOT in the image; it travels in the ground
-truth, so explain() should be given maxDepth=<the value from the .gt.json>.
+The depth scale is NOT in the image; it travels in the ground truth, which is
+why explain() takes the truth slot as an input. So --aovs needs --truth.
 
 With --truth, one more line is prepended:
 
