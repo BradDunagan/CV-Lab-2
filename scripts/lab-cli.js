@@ -43,7 +43,7 @@ const ROOT = path.join(__dirname, '..');
 
 function parseArgs(argv) {
   const opts = { images: [], script: null, out: null, from: 'srgb', as: 'srgb',
-                 slot: 'A', truth: null, truthSlot: 'T', quiet: false };
+                 slot: 'A', truth: null, truthSlot: 'T', aovs: null, quiet: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = () => {
@@ -66,6 +66,7 @@ function parseArgs(argv) {
       // keeps the command language free of variables, so anything that varies
       // per image is composed out here rather than typed in there.
       case '--truth': opts.truth = next(); break;
+      case '--aovs': opts.aovs = next(); break;
       case '--truth-slot': opts.truthSlot = next(); break;
       case '--quiet': opts.quiet = true; break;
       case '--help': case '-h': opts.help = true; break;
@@ -91,6 +92,8 @@ cv-lab-2 batch runner
   --slot <name>     slot the image loads into            (default A)
   --truth <dir>     ground truth to score against: <dir>/<name>.gt.json
   --truth-slot <n>  slot the ground truth loads into     (default T)
+  --aovs <dir>      the renderer's auxiliary passes, for explain():
+                    <dir>/aov/<name>-{depth,normal,albedo}.png
   --quiet           only report failures
 
 The script is the command language, unchanged — no variables, no loops. Each
@@ -99,6 +102,22 @@ image gets a fresh session that starts with
   <slot> = load("<image>", from=<from>, as=<as>)
 
 and then runs your script, so write it against <slot>.
+
+With --aovs, three more are prepended and explain() becomes usable, because
+the passes belong to the IMAGE and a .lab script names operations rather than
+files:
+
+  D  = load("<dir>/aov/<name>-depth.png",  from=linear, as=linear)
+  NM = load("<dir>/aov/<name>-normal.png", from=linear, as=linear)
+  AL = load("<dir>/aov/<name>-albedo.png", from=linear, as=linear)
+
+from=linear is not optional. The passes carry raw code values -- metres,
+packed vector components, unlit reflectance -- and pt-lab writes them with no
+colour chunks at all, so the sRGB-by-convention default would apply a transfer
+curve that was never there and the numbers would come back silently wrong.
+
+The depth scale, maxDepth, is NOT in the image; it travels in the ground
+truth, so explain() should be given maxDepth=<the value from the .gt.json>.
 
 With --truth, one more line is prepended:
 
@@ -172,6 +191,24 @@ async function runOne(win, { image, script, opts }) {
     const truthPath = path.join(opts.truth, `${name}.gt.json`);
     const quotedTruth = await call(`quote(${JSON.stringify(truthPath)})`);
     prelude.push(`${opts.truthSlot} = groundTruth(${quotedTruth})`);
+  }
+
+  if (opts.aovs) {
+    /*
+     * The auxiliary passes belong to the image, and a .lab script names
+     * operations rather than files -- so like `A` and the ground truth, they
+     * are prepended per image rather than written into the script.
+     *
+     * A missing pass is left to `load` to complain about by name. Inventing a
+     * friendlier message here would hide which of the three is absent, and
+     * that is the only thing worth knowing.
+     */
+    const name = path.basename(image).replace(/\.[^.]+$/, '');
+    for (const [slot, pass] of [['D', 'depth'], ['NM', 'normal'], ['AL', 'albedo']]) {
+      const file = path.join(opts.aovs, 'aov', `${name}-${pass}.png`);
+      const quotedPass = await call(`quote(${JSON.stringify(file)})`);
+      prelude.push(`${slot} = load(${quotedPass}, from=linear, as=linear)`);
+    }
   }
 
   const commands = [...prelude, ...script];

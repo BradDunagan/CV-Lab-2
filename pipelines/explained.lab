@@ -1,0 +1,37 @@
+// The geometry pipeline, plus what the renderer says put each edge there.
+//
+// Run it over a directory generated WITH ground truth and AOV passes:
+//
+//   npm run generate -- --out generated/ --scene saved:cube-1 --truth --aovs
+//   npm run lab -- --script pipelines/explained.lab --as linear \
+//                  --truth generated/ --aovs generated/ --out results/ generated/*.png
+//   npm run score -- results/
+//
+// A, T and the three passes D/NM/AL are prepended by the runner, one per
+// image: a .lab script names operations rather than files.
+//
+// maxDepth is the one number that cannot be prepended, because it belongs to
+// the scene rather than to the runner's conventions -- it is in each
+// <name>.gt.json. The default of 1 makes every depth step read in units of
+// maxDepth rather than metres, which moves the occlusion threshold rather
+// than breaking it: the classification still works, the numbers are just not
+// in metres. Set it when the metres matter.
+
+G  = gray(A)
+B  = gaussian(G, sigma=1.4)
+Gx = sobel(B, axis=x)
+Gy = sobel(B, axis=y)
+M  = sobel(B, axis=mag)
+N  = nms(M, Gx, Gy)
+S  = segments(N, Gx, Gy)
+R  = merge(S)
+F  = fit(R)
+C  = corners(F)
+
+// What the detector responded to, whether or not it matched anything.
+EF = explain(F, D, NM, AL)
+EC = explain(C, D, NM, AL)
+
+// And whether it was really there.
+MF = match(F, T)
+MC = match(C, T)

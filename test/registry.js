@@ -195,10 +195,13 @@ test('reports every problem, not just the first', () => {
 
 test('the first slice registers cleanly', () => {
   const r = createRegistry();
+  // Spelt out rather than counted: an operation is the lab's public surface
+  // and the command language's vocabulary, so adding one is a decision to be
+  // made on purpose rather than a list that grows on its own.
   assert.deepEqual(r.names(),
-    ['corners', 'fit', 'gaussian', 'gray', 'groundTruth', 'hysteresis', 'load',
-     'match', 'merge', 'nms', 'orient', 'pattern', 'segments', 'sobel', 'stats',
-     'threshold', 'toLinear', 'toSrgb']);
+    ['corners', 'explain', 'fit', 'gaussian', 'gray', 'groundTruth', 'hysteresis',
+     'load', 'match', 'merge', 'nms', 'orient', 'pattern', 'segments', 'sobel',
+     'stats', 'threshold', 'toLinear', 'toSrgb']);
 });
 
 test('load is unimplemented without a decoder, implemented with one', () => {
