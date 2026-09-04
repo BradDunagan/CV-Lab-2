@@ -2,9 +2,12 @@
 //
 // Run it over a directory the generator wrote WITH ground truth:
 //
-//   npm run generate -- --out generated/ --scene cube --truth
+//   npm run generate -- --out generated/cube/ --scene cube --truth
 //   npm run lab -- --script pipelines/geometry.lab --as linear \
-//                  --truth generated/ --out results/ generated/*.png
+//                  --truth generated/cube/ --out results/cube/ generated/cube/*.png
+//
+// One directory per scene -- see explained.lab for what writing them all into
+// the bare generated/ produces, and why the file listing does not show it.
 //
 // --as linear matters: `gray` computes luminance, and the luminance
 // coefficients are only valid on linear values. Loading as srgb makes the

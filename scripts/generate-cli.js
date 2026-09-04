@@ -30,7 +30,7 @@
  */
 
 const { app } = require('electron');
-const { generate, registerScheme, checkPrerequisites, DEFAULTS, SCENES } =
+const { generate, registerScheme, checkPrerequisites, DEFAULTS, SCENES, savedSceneNames } =
   require('../src/generate/driver');
 
 /* ------------------------------------------------------------------ */
@@ -41,7 +41,7 @@ CV-Lab image generator — renders from pt-lab
   npm run generate -- --out <dir> [options]
 
   --out <dir>        where to write the PNGs (required)
-  --scene <name>     helmet | cube                       (default helmet)
+  --scene <name>     helmet | cube | saved:<name>        (default helmet)
   --size <px>        square render size                  (default 512)
   --samples <n>      path-tracing samples per image      (default 96)
   --positions <n>    camera positions to step through    (default 3)
@@ -64,6 +64,16 @@ SCENES
            area light. Twelve edges and eight vertices in known places, nine
            and seven of them visible from a general viewpoint — which is what
            makes 'is this corner real' a question with an answer.
+
+  saved:<name>
+           a scene saved from pt-lab's demo app and committed under scenes/,
+           carrying its own room. Look in scenes/ for what is there, or pass
+           a name that does not exist and the error lists them.
+           These are the ones to add to: a built-in is a code change.
+
+Write each sweep into its OWN directory under generated/ — the image names are
+a function of pose and lighting alone, so two scenes sharing a directory leave
+a set that globs as one sweep and is not one.
 
 --room none uses pt-lab's default scene, which lights the subject with a
 photographic HDR environment. It looks better and is a poor CV fixture: the
@@ -98,7 +108,9 @@ function parseArgs(argv) {
       case '--scene': {
         const name = argv[++i];
         if (!name.startsWith('saved:') && !SCENES[name]) {
-          throw new Error(`unknown scene "${name}" (have: ${Object.keys(SCENES).join(', ')})`);
+          const saved = savedSceneNames().map((n) => `saved:${n}`);
+          throw new Error(`unknown scene "${name}" (have: `
+            + [...Object.keys(SCENES), ...saved].join(', ') + ')');
         }
         opts.scene = name;
         break;

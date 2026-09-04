@@ -2,10 +2,18 @@
 //
 // Run it over a directory generated WITH ground truth and AOV passes:
 //
-//   npm run generate -- --out generated/ --scene saved:cube-1 --truth --aovs
+//   npm run generate -- --out generated/cube1/ --scene saved:cube-1 --truth --aovs
 //   npm run lab -- --script pipelines/explained.lab --as linear \
-//                  --truth generated/ --aovs generated/ --out results/ generated/*.png
-//   npm run score -- results/
+//                  --truth generated/cube1/ --aovs generated/cube1/ \
+//                  --out results/cube1/ generated/cube1/*.png
+//   npm run score -- results/cube1/
+//
+// One directory PER SCENE, and never the bare generated/. The image names are
+// a function of pose and lighting alone -- p0-l0, p1-l0 -- so a second sweep
+// with a different scene or size overwrites only the names that collide and
+// leaves the rest. What is left globs as one sweep and is not one: three
+// scenes at two resolutions once accumulated here that way, and nothing about
+// the file listing said so.
 //
 // A, T and the three passes D/NM/AL are prepended by the runner, one per
 // image: a .lab script names operations rather than files.

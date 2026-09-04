@@ -345,6 +345,35 @@ test('a missing ground-truth file fails that image and says which', () => {
 
 /* ------------------------------------------------------------------- */
 
+test('every script under scripts/ is syntactically valid', () => {
+  /*
+   * generate-cli.js needs Electron to RUN, so no suite invokes it and a syntax
+   * error in it survives the whole suite and all three CI jobs -- which is how
+   * the same mistake landed three times: a backtick written inside the USAGE
+   * template literal, which ends the literal and turns the rest of the help
+   * text into code. Parsing needs neither Electron nor a GPU, so the guard
+   * costs nothing and covers every entry point rather than the two that
+   * happen to be runnable here.
+   *
+   * vm.Script compiles without executing: no require runs, no window opens.
+   */
+  const vm = require('node:vm');
+  const dir = path.join(ROOT, 'scripts');
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.js')).sort();
+  assert.ok(files.length > 5, `only found ${files.length} scripts -- wrong directory?`);
+
+  for (const file of files) {
+    const src = fs.readFileSync(path.join(dir, file), 'utf8');
+    try {
+      new vm.Script(src, { filename: file });
+    } catch (err) {
+      assert.fail(`scripts/${file} does not parse: ${err.message}`);
+    }
+  }
+});
+
+/* ------------------------------------------------------------------- */
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(failures === 0 ? '\nAll batch runner tests passed.' : `\n${failures} failing.`);
 process.exit(failures === 0 ? 0 : 1);
