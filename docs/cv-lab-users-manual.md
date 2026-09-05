@@ -673,10 +673,22 @@ process for somewhere real and offers **`~/Pictures/CV-Lab`**. The CLI keeps
 relative-to-cwd, which is what a CLI should do.
 
 **The two scenes are for different questions.** `helmet` is a dense textured
-mesh whose image edges are overwhelmingly paint — a fine detector workout and a
-poor thing to grade against geometry. `cube` is a 10 cm cube on a table with a
-ball beside it: twelve edges and eight vertices in known places, nine and seven
-of them visible from a general viewpoint.
+mesh — a fine detector workout and a poor thing to grade against geometry, but
+not for the reason this said until it was measured. Its edges are **not**
+overwhelmingly paint: over six views at 256 px, 61% of detected segments match
+real geometry and only 8% of the invented ones are texture. What makes it a poor
+subject is the truth set, which lists ~3,000 visible edges a view against ~160
+detections, and the 73% of invented segments that sit on a real depth step no
+mesh edge can be paired with. `cube` is a 10 cm cube on a table with a ball
+beside it: twelve edges and eight vertices in known places, nine and seven of
+them visible from a general viewpoint.
+
+**Ground-truth visibility is computed at the render size.** The same scene from
+the same camera reports 3,045 visible edges at 256 px and 2,587 at 512 px —
+18% more at the lower resolution, because a coarser depth buffer occludes less
+of a dense mesh. The total never changes; only the visible fraction does. So a
+**recall number is only comparable within one render size**, and nothing in the
+scoring output says so.
 
 **`--room none`** uses pt-lab's photographic HDR environment. It looks better
 and is a poor CV fixture — the blurred background and textured tabletop

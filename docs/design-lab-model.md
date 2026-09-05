@@ -1143,11 +1143,37 @@ item genuinely deferrable.
   T-junctions is genuinely unclear: they are view-dependent, and an edge is
   not, so they are a property of the picture rather than of the scene.
 
-  *Still open:* whether the thresholds hold on a photograph, where edges are
-  noisier and geometry is not a box; and what the *helmet's* segments are
-  actually made of — the apparatus runs on that scene unchanged now, and the
-  answer is the one the 156-segment count has been waiting for since it was
-  measured.
+  *Settled, and it contradicted the documentation:* the helmet's segments are
+  now broken down. The 156-segment count reproduces — 164 an image over six
+  views at 256 px — and **61% of the segments found match real geometry**. Four
+  places in this repository claimed its edges were "overwhelmingly paint"; that
+  was inferred from the model being a dense textured mesh and never measured.
+  **Texture is 8%** of the invented segments. The dominant bucket is
+  `occlusion` at 73%, sitting on depth steps of ~9 cm — indistinguishable from
+  the steps under segments that *did* match — which is the T-junction problem
+  again at twice the share. §5's threshold claim fails here as it failed on the
+  clutter: nothing clean, best F1 0.51.
+
+  *Open, and it is now the question:* whether those 73% are the matcher losing
+  a fitted segment among dozens of tiny truth edges, or `explain` reading
+  grazing slant as a step. It samples 2.5 px either side, and near the
+  silhouette of a *curved* surface that distance buys a large depth change with
+  no occlusion present — which a cube's flat faces cannot demonstrate, so no
+  measurement so far could have caught it. Sweeping the sample offset would
+  separate them: if the occlusion share tracks the offset, it is slant.
+
+  *Open:* whether the thresholds hold on a photograph, where edges are noisier
+  and geometry is not a box.
+
+- **Ground-truth visibility is measured at the render size,** and nothing says
+  so. The same scene from the same camera reports 3,045 of 9,572 edges visible
+  at 256 px and 2,587 of the same 9,572 at 512 px: a coarser depth buffer
+  occludes less of a dense mesh. The definition is defensible — visible in the
+  image you actually rendered — but it makes **recall resolution-dependent**,
+  in the direction that flatters the larger image, and the scoring table
+  reports it as though it were a property of the detector. Either document it
+  as a per-size figure or rasterise visibility at a fixed resolution
+  independent of the render.
 
 - **Multi-image operations.** Stereo pairs, image stacks and frame sequences
   all want more than "two inputs". Does a slot ever hold a *stack*, or is that

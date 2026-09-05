@@ -254,7 +254,9 @@ npm run overlay -- generated/p0-l0.png results/ overlays/
 `--scene cube` renders a 10 cm cube on a table in a lit room. A cube has twelve
 edges and eight vertices in known places, nine and seven of them visible from a
 general viewpoint, which is what makes *is this corner real* a question with an
-answer — unlike the helmet, whose image edges are overwhelmingly paint.
+answer. The helmet is the harder case, and not because of its paint: 61% of the
+segments found on it match real geometry, but its truth set lists ~3,000 visible
+edges a view against ~160 detections.
 
 `--truth` writes one `<name>.gt.json` per image: every silhouette, crease and
 mesh-boundary edge projected into image space, with the fraction of it that is

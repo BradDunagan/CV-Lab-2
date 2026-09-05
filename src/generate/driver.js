@@ -262,10 +262,15 @@ function intensityFor(l, lighting) {
  */
 const SCENES = {
   /**
-   * pt-lab's damaged helmet. What every number recorded so far was measured
-   * on, and a poor subject for GROUND TRUTH: a dense textured mesh whose image
-   * edges are overwhelmingly paint rather than geometry, with almost no clean
-   * vertices anywhere.
+   * pt-lab's damaged helmet. What every number recorded so far was measured on,
+   * and a poor subject for GROUND TRUTH -- though not for the reason this
+   * comment gave until 2026-09-05, when it was finally measured rather than
+   * assumed. Its image edges are NOT overwhelmingly paint: 61% of detected
+   * segments match real geometry and 8% of the invented ones are texture. The
+   * problem is the truth set. A dense mesh projects ~3,000 visible edges into a
+   * 256px image against ~160 detections, so recall is meaningless, and 73% of
+   * invented segments sit on a real depth step that no single mesh edge pairs
+   * with. Use `cube` when the question is 'is this corner real'.
    */
   helmet: {
     room: 'room',

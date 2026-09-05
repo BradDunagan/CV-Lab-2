@@ -58,8 +58,10 @@ CV-Lab image generator — renders from pt-lab
 SCENES
 
   helmet   pt-lab's damaged helmet, lit by a plain room. Every number recorded
-           so far was measured here. A poor ground-truth subject: its image
-           edges are overwhelmingly paint rather than geometry.
+           so far was measured here. A poor ground-truth subject -- not because
+           its edges are paint (61% of them match real geometry) but because a
+           dense mesh projects ~3000 visible truth edges into a 256px image
+           against ~160 detections, which makes recall meaningless.
   cube     a 10 cm cube on a table, with a ball beside it, in a room lit by an
            area light. Twelve edges and eight vertices in known places, nine
            and seven of them visible from a general viewpoint — which is what
