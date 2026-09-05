@@ -185,6 +185,42 @@ git fetch origin
 git rev-list --left-right --count origin/main...my-branch
 ```
 
+**Trap — `git branch -r` lists branches that no longer exist.** A plain `git
+fetch` adds and updates remote-tracking refs and **never deletes** them. So a
+branch removed on GitHub — which is what `gh pr merge --delete-branch` does, and
+the web UI's button after a merge — leaves its `origin/<name>` behind locally,
+forever, and `git branch -r` goes on printing it.
+
+Five of them had accumulated here. Trying to clean them up is what said so:
+
+```
+$ git push origin --delete ci-deprecations contact-sheet explain-aovs \
+                           explain-maxdepth paneless-ui saved-scenes
+error: unable to delete 'ci-deprecations': remote ref does not exist
+error: unable to delete 'contact-sheet': remote ref does not exist
+error: unable to delete 'explain-aovs': remote ref does not exist
+error: unable to delete 'explain-maxdepth': remote ref does not exist
+error: unable to delete 'saved-scenes': remote ref does not exist
+error: failed to push some refs
+```
+
+Only `paneless-ui` was real. Note what the last line means: **one push deleting
+six refs deleted none of them.** Five bogus names took the real one down with
+them, and `paneless-ui` was still on `origin` afterwards.
+
+The authority on what is actually there is the remote itself, not your cache of
+it:
+
+```bash
+git ls-remote --heads origin     # asks origin; no local refs involved
+git fetch --prune                # drops every origin/* whose branch is gone
+```
+
+`--prune` is the same idea as the stale comparison above, one level up:
+`origin/main` being a cached *value* is documented in §3, and the *set* of
+`origin/*` refs is cached exactly as hard. Fetch updates the values and leaves
+the set alone.
+
 ---
 
 ## 6. CI: what runs it, and what it does
@@ -470,4 +506,6 @@ git checkout main && git merge --ff-only my-change && git push
 git diff --stat main my-change    # empty = identical content
 git branch -D my-change
 git push origin --delete my-change
+git ls-remote --heads origin      # what is really on origin
+git fetch --prune                 # drop origin/* refs whose branch is gone
 ```
