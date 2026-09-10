@@ -30,12 +30,17 @@ native/buffer.*      the buffer type: allocation, dtypes, overflow-checked sizin
 native/kernels.*     the compute kernels, behind one uniform C signature
 native/render.*      display transforms and downsampling, done in C
 native/addon_*.c     the Node-API surface
-src/lab/registry.js  operation definitions, validation, provenance records
+src/lab/ops.js       the nineteen operations themselves: inputs, params,
+                     defaults, and the kernel each one binds to
+src/lab/registry.js  the schema they are declared against — validation,
+                     error messages, provenance records
 src/lab/parser.js    the command language
 src/lab/session.js   slots, execution, the log, the provenance graph
 src/lab/corners.js   corner hypotheses (pure JS — no pixels involved)
 src/lab/groundtruth.js   reads a renderer's ground truth in as features
 src/lab/match.js     scores detected features against it (pure JS)
+src/lab/explain.js   what put each edge in the picture — reads the AOV
+                     passes: occlusion, crease, texture, or shading
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
 scripts/generate-cli.js  drives pt-lab to render varied images (needs a GPU)
 scripts/score.js     tallies match records: precision, recall, and which

@@ -399,26 +399,29 @@ history — a slot's provenance is the sub-graph of log entries it depends on,
 derived on demand.
 
 ```
-#1  A ← load("samples/board.png")            sha256:9f2c…  4243×2829×1 f32 srgb    [v1]
-#2  B ← gaussian(A#1, sigma=1.4)             sha256:31ab…  4243×2829×1 f32 linear  [v1]
-#3  C ← sobel(B#2, axis=mag)                 sha256:c740…  4243×2829×1 f32 linear  [v1]
-#4  D ← threshold(C#3, t=0.2)                sha256:0e55…  4243×2829×1 i32 —       [v1]
-#5  E ← overlay(A#1, D#4, alpha=0.5)         sha256:aa13…  4243×2829×3 f32 linear  [v1]
+#1  A ← load("samples/board.png")            sha256:9f2c…  4243×2829×3 f32 srgb    [v1]
+#2  A ← toLinear(A#1)                        sha256:5db8…  4243×2829×3 f32 linear  [v2]
+#3  B ← gray(A#2)                            sha256:7e10…  4243×2829×1 f32 linear  [v1]
+#4  C ← gaussian(B#3, sigma=1.4)             sha256:31ab…  4243×2829×1 f32 linear  [v1]
+#5  D ← sobel(C#4, axis=x)                   sha256:c740…  4243×2829×1 f32 —       [v1]
+#6  E ← sobel(C#4, axis=y)                   sha256:0e55…  4243×2829×1 f32 —       [v1]
+#7  F ← orient(D#5, E#6)                     sha256:aa13…  4243×2829×1 f32 —       [v1]
 ```
 
 Reading that back:
 
 - **A slot participates in many commands, but exactly one command *produced*
-  each version of it.** `A#1` is produced by `#1` and consumed by `#2` and
-  `#5`. "The command that produced it" is singular and correct; "the commands
+  each version of it.** `C#4` is produced by `#4` and consumed by `#5` and
+  `#6`. "The command that produced it" is singular and correct; "the commands
   it took part in" is a different and larger set.
-- **A slot's provenance is therefore a chain, not a line.** `E`'s provenance is
-  the transitive closure `{#5, #1, #4, #3, #2}` — a DAG, since `A#1` is reached
-  by two routes.
+- **A slot's provenance is therefore a chain, not a line.** `F`'s provenance is
+  the transitive closure `{#7, #6, #5, #4, #3, #2, #1}` — a DAG, since `C#4` is
+  reached by two routes.
 
 ### Slots are versioned; log entries are immutable
 
-`A = blur(A)` does not mutate `A#1`. It appends an entry producing `A#2`, and
+`A = blur(A)` does not mutate the version it reads. It appends an entry
+producing the next one — as `#2` above does, turning `A#1` into `A#2` — and
 rebinds the name. The old buffer may be freed, but the *entry* never changes,
 so anything referring to `A#1` still means what it meant.
 
@@ -924,6 +927,22 @@ in `double`. Numerically that is nothing. For a lab that compares content
 hashes it is the difference between two provenance chains agreeing and not, so
 the lookup table now narrows to `f32` before applying the transfer function,
 deliberately. Expect more of these wherever a value can be computed two ways.
+
+**5. Anything that assigns identities must number them canonically.** A label
+is not a measurement — it is a name — and the name must be a function of the
+image, not of the order in which the algorithm happened to find things.
+`segments` grows regions in order of gradient magnitude, and that ordering is
+not guaranteed identical across platforms in its last bits: two runs finding
+*the same* regions but numbering them differently produce different content
+hashes, and a replay then reports a change that did not happen. So both
+`segments` and `merge` renumber at the end, by **raster order of each label's
+first pixel** — `native/kernels.c:1121` and `:1358`. `merge` matters for the
+second reason as well: its numbering would otherwise depend on the order the
+unions occurred in.
+
+The rule generalises past label maps. Any operation that emits ids — feature
+records included — owes them an ordering derived from the data, because a hash
+over a set of identities is only stable if the identities are.
 
 **What remains achievable:** bit-exact results within a machine, and — with
 rules 3 and 3b — across platforms, for the geometry and for every buffer this

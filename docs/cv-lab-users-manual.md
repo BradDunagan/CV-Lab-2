@@ -63,10 +63,11 @@ In practice:
 
 ```lab
 A = load("samples/board.png", as=linear)
-B = gaussian(A, sigma=1.4)
-C = sobel(B, axis=mag)
-D = threshold(C, t=0.2)
-stats(C)
+B = gray(A)
+C = gaussian(B, sigma=1.4)
+D = sobel(C, axis=mag)
+E = threshold(D, t=0.2)
+stats(D)
 // comments, so scripts document themselves
 ```
 
@@ -96,8 +97,8 @@ moment a slot was reassigned.
 Not the text you typed. The **resolved** record:
 
 ```
-you type   B = gaussian(A, sigma=1.4)
-log holds  gaussian(A#1, sigma=1.4)   [v1]  →  B#1, sha256:31ab…
+you type   C = gaussian(B, sigma=1.4)
+log holds  gaussian(B#1, sigma=1.4)   [v1]  →  C#1, sha256:31ab…
 ```
 
 Defaults are filled in at record time and parameters are put in canonical
@@ -113,8 +114,9 @@ having tried.
 
 ## 3. Operation reference
 
-Eighteen operations. Every one is a single entry in `src/lab/registry.js`, which
-is also what validates your arguments and generates the error messages.
+Nineteen operations. Every one is a single entry in `src/lab/ops.js`, declared
+against the schema in `src/lab/registry.js` — which is also what validates your
+arguments and generates the error messages.
 
 Notation: `[1]` means the input must have one channel; `linear` means it demands
 linear values and will refuse sRGB ones (§9).
@@ -270,6 +272,12 @@ choosing `minMag`; run it on anything before choosing a threshold.
 Grow straight edges from the gradient field. One label per segment, 0 for
 background.
 
+**It does not operate on the picture.** All three inputs are 1-channel `f32`
+buffers derived from it, and all three must come from the *same* blurred image:
+a **thinned magnitude**, and the two **signed** derivatives that say which way
+each pixel's gradient points. The magnitude decides which pixels are edges at
+all; `gx` and `gy` decide which of them belong to the same edge.
+
 | parameter | default | what it does |
 |---|---|---|
 | `angleTol` | 22.5° | how far a pixel's gradient may differ from the region's before it is a different edge |
@@ -281,6 +289,24 @@ background.
 **Feed it a thinned magnitude** — `nms` output, not a raw gradient. A raw ridge
 is several pixels wide and no line fits a wide band within a one-pixel
 tolerance, so the regions fragment.
+
+```lab
+lin = load("samples/board.png", as=linear)
+gry = gray(lin)
+blr = gaussian(gry, sigma=1.4)
+
+gx  = sobel(blr, axis=x)     // signed: negative on half of every edge
+gy  = sobel(blr, axis=y)
+mag = sobel(blr, axis=mag)   // a ridge, still several pixels wide
+
+mag = nms(mag, gx, gy)       // thinned to one pixel -- THIS is what segments wants
+lbl = segments(mag, gx, gy, minMag=0.005)
+```
+
+`mag = nms(mag, …)` does not overwrite anything: it appends a log entry and
+binds the name to a new version, so the unthinned magnitude is still `mag#1` and
+still reachable. `gx` and `gy` are passed on unthinned, and deliberately — they
+carry direction, not strength.
 
 `minMag` defaults to 0.005 rather than something rounder because it was tuned
 against a real render: a hard 0→1 step gives gradient magnitudes near 0.5, and
@@ -297,8 +323,11 @@ joined by comparing the two label maps.
 
 #### `fit(src[1] i32)` → features (`edge-segment`)
 
-The first operation whose output is not pixels. A label map says *which* edge a
-pixel belongs to; this says what each edge **is**.
+The point in the pipeline where pixels stop. Everything up to `merge` answers
+*which* pixels belong to which edge; `fit` answers what each edge **is**, and
+that answer has no pixels, no dimensions and no colour space of its own.
+(`groundTruth` also produces features and `stats` produces scalars, but neither
+is a stage: one reads a file, the other binds to no slot.)
 
 Per segment: `id`, `pixels`, `x0 y0`, `x1 y1`, `length`, `angle`, `residual`,
 `rms`, and the centroid `cx cy`.

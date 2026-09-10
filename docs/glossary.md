@@ -589,14 +589,14 @@ one node may be reached by more than one route. In `design-lab-model.md` §5's
 example:
 
 ```
-#1 A ──► #2 B ──► #3 C ──► #4 D ──┐
-   │                              ├──► #5 E
-   └──────────────────────────────┘
+                                  ┌──► #5 D ──┐
+#1 A ──► #2 A ──► #3 B ──► #4 C ──┤           ├──► #7 F
+                                  └──► #6 E ──┘
 ```
 
-`E` depends on `A#1` twice over — directly, and through the `B → C → D` chain.
-A tree would require exactly one path to each node; here there are two. That is
-the whole difference.
+`F` depends on `C#4` twice over — once through `D`, once through `E`. A tree
+would require exactly one path to each node; here there are two. That is the
+whole difference.
 
 **Why "acyclic" is worth guaranteeing.** Because the graph has no cycles, you
 can always find a valid order to evaluate things in (a *topological sort*), and
@@ -1118,6 +1118,78 @@ makes it the default for gradients.
 **Worth knowing:** values outside the range are *clamped*, not discarded, so
 clipping is invisible unless you look for it. Tools often render out-of-range
 pixels in a distinct colour so that over-clipping announces itself.
+
+---
+
+## Region
+
+**A set of pixels that belong together — connected, and identified by sharing
+one label. Not an area with a position and a size.**
+
+That distinction is the one worth holding onto. A region has no rectangle, no
+centre and no width; it is exactly the pixels carrying its number in a **label
+map**, and its shape is whatever growing found. The rectangular thing with an
+`x, y, width, height` is a `CvRect` (`native/buffer.h`), used for crops and
+tiles, and it is a different concept that happens to share the everyday word.
+
+**In this lab a region is always an edge.** `segments` starts at a seed pixel
+and adds neighbours while two conditions both hold: the candidate's gradient
+direction is within `angleTol` of the region's, and the whole set still fits a
+straight line within `maxResidual`. A region that stops being straight stops
+growing, so every region here is a one-pixel-wide, elongated run along an edge
+— never a blob, a patch or an enclosed shape. `merge` then joins regions that
+are collinear and nearly touching, and `fit` replaces each one with a
+description: endpoints, angle, length, residual.
+
+Two consequences follow:
+
+- **Regions are numbered canonically**, by raster order of each one's first
+  pixel, because a region's number is a name and a name must come from the
+  image rather than from the order the algorithm found things in
+  (`design-lab-model.md` §5, rule 5).
+- **Nothing in the lab characterises a region that is not a line.**
+  `hysteresis` traverses arbitrarily-shaped connected sets and `threshold`
+  produces them, but neither measures one: no area, no centroid, no bounding
+  box.
+
+### Regions that are not edges
+
+The word is narrower here than in the field at large, and deliberately so — the
+straightness constraint is what makes a region describable by four numbers. The
+general kind is what a **label map** normally carries, and this lab does not
+produce one yet:
+
+| kind | what groups the pixels | what you would measure |
+|---|---|---|
+| **connected components** | touching foreground pixels of a mask | area, centroid, bounding box, perimeter |
+| **blob** | a compact bright or dark area | position, scale, elongation, orientation |
+| **watershed basin** | pixels draining to one minimum | shape, and which basins adjoin |
+| **superpixel** | colour and position similarity | a tessellation, used as a computation unit |
+
+Each is an *area* rather than a run, which changes what a description even
+consists of: a straight region is summarised by two endpoints, and an enclosed
+one is not summarisable that way at all. That is the step this lab has not
+taken — the point at which *region properties* (see **Label map**) turn images
+into measurements of shape rather than of geometry.
+
+Three things are already in place for it, none by accident:
+
+- **The label map is the right carrier as it stands.** It has no straightness
+  in it — the `i32` rules, the categorical colormap and the
+  never-interpolate rule all apply unchanged to a region of any shape.
+- **`cv_label_index` is shared** (`native/kernels.c:909`), so a new consumer of
+  a label map gets pixel membership per label without rewriting the scan that
+  `merge` and `fit` each got wrong once (`design-lab-model.md` §5, *Cost,
+  measured*).
+- **Feature types are namespaced** `edge-segment`, `edge-corner`. A region
+  feature would be `region-*` and could have its own `corner` — meaning a
+  convex hull vertex, not two lines crossing — without colliding
+  (`design-lab-model.md` §1).
+
+What is *not* in place is the vocabulary: nothing in the command language,
+the scoring machinery or the ground-truth model describes an area. Ground truth
+lists edges and vertices, so a region feature would have nothing to be scored
+against until the truth model grew a notion of a surface.
 
 ---
 
