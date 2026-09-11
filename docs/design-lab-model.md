@@ -910,14 +910,30 @@ the output where this lab claims *sub-pixel* accuracy.
   matrix. That is margin, not a proof: a double sitting within one libm ULP of
   an `f32` rounding boundary would still split, with probability around 1e-9
   per value. On a 12 MP image that is roughly a 1% chance per run.
+- **`explain` calls `acos` and `tan`, and has no `f32` to hide behind.**
+  `angleBetween` has called `acos` since v1 for `normalStep`; v2 adds another
+  for `slant`, and `tan` once per image for the focal length. These write
+  **feature records**, which are doubles hashed as they are — so where a buffer
+  rounds a last-bit difference away before it can reach a hash, this does not,
+  and a single differing ULP changes the content hash of the whole list. The
+  matrix agrees today, which is why it is written down rather than fixed.
+
+  The precedent is against it. `fit` v2 exists precisely because the geometry
+  path's `atan2` and `hypot` had to stop being libm's: `cv_atan2` and `cv_len2`
+  (`native/kernels.h`) are the project's own, and replacing them is what made a
+  feature list compare equal across platforms at all. `explain` reached for
+  `Math.acos` in pure JS and reintroduced the same exposure by a different
+  door — a `cv_acos`-shaped answer exists, and the JS path has no route to it
+  today.
 - `segments` and `merge` emit `i32` label maps, so a last-bit difference only
   shows up if it flips a threshold comparison. They agree today. A pixel
   sitting exactly at `maxResidual` would not, and then whole segments would
   differ rather than last bits.
 
-Both are recorded rather than fixed, because both would mean replacing `exp`
-and `pow` in the per-pixel path, and neither has been observed to bite. The
-geometry was fixed because it *had* bitten, on the first run that looked.
+All three are recorded rather than fixed, because the first two would mean
+replacing `exp` and `pow` in the per-pixel path and none has been observed to
+bite. The geometry was fixed because it *had* bitten, on the first run that
+looked.
 
 **4. Where two routes reach the same value, make them agree on purpose.**
 Found by a test, not by reasoning: `load(as=linear)` and
