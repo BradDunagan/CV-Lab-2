@@ -1173,13 +1173,53 @@ item genuinely deferrable.
   again at twice the share. §5's threshold claim fails here as it failed on the
   clutter: nothing clean, best F1 0.51.
 
-  *Open, and it is now the question:* whether those 73% are the matcher losing
-  a fitted segment among dozens of tiny truth edges, or `explain` reading
-  grazing slant as a step. It samples 2.5 px either side, and near the
-  silhouette of a *curved* surface that distance buys a large depth change with
-  no occlusion present — which a cube's flat faces cannot demonstrate, so no
-  measurement so far could have caught it. Sweeping the sample offset would
-  separate them: if the occlusion share tracks the offset, it is slant.
+  *Settled, and it invalidates the measurement rather than the detector:* it is
+  slant. Sweeping `explain`'s `offset` over 1.0 / 1.5 / 2.5 / 4 / 6 / 8 px, the
+  invented-occlusion share on the helmet runs **57% → 92%** and on the clutter
+  scene **0% → 19%**, with detections, matches and misses identical in every
+  row. Matched detections drift with it too — 65% → 99% — so the classifier is
+  offset-dependent on everything it touches, not only on what failed to match.
+
+  The per-detection test is decisive. A real step is the size of the step and
+  does not care how far either side it is sampled; a slant is a gradient and
+  scales with the sampling distance. Each detection's `depthStep` at offset 8
+  over its value at 1.0 — an 8× change in distance — comes back at a median of
+  **8.03** over the helmet's 282 invented occlusions, and **1.12** over the
+  clutter scene's 61 matched ones, which are real silhouettes against a
+  background. Constant gradient against genuine step, measured on the same
+  data. **241 of the 282 are grazing surface; 13 survive as real depth steps.**
+
+  Two consequences. The T-junction question above is 13 segments on the helmet
+  rather than 282, and the clutter scene's 37% has not had this test run on it.
+  And **every AOV breakdown on record inherits the defect**, the matched column
+  included — `explain` is version 1, its depth test compares a fixed 2 cm
+  threshold against a difference read at a fixed pixel distance, and what a
+  benign slant produces scales with the offset, the resolution and the camera
+  distance. No constant is right. The test would have to subtract the step that
+  slant alone accounts for, from the normal pass and the view direction, and
+  fire only on the excess. Not attempted: changing it changes every number this
+  repository has published from it.
+
+  *Settled, and it names the fix:* the normal pass was then read at the same
+  sample points, asking whether **one tangent plane through the midpoint
+  accounts for the depth difference `explain` measured**. Predicted over
+  measured is **0.99** (p25–p75 0.93–1.00) across the 241, and **0.07**
+  (0.02–0.18) across the 199 matched detections whose step is offset-invariant.
+  A continuous surface gives 1; a real discontinuity cannot be reached by a
+  plane fitted on one side of it. The mechanism is measured, not inferred.
+
+  Two things fell out. The **normal pass is in view space**, which nothing
+  here said — established by the fit (a world→camera rotation gives 1.16,
+  spread 0.72–1.28) and corroborated by the normal at one pixel staying
+  +Z-dominant across three cameras 6 m apart. And **slant does not
+  discriminate**: median slant is 64.0° under the slant group and 64.1° under
+  the genuine steps, because both live at a silhouette, where a surface turns
+  away *and* where one surface ends in front of another. A threshold on slant
+  would be no better than the threshold on depth it replaced.
+
+  What discriminates is the residual — measured minus plane-predicted — and
+  computing it needs the camera, which is in the `.gt.json` beside the
+  `maxDepth` that `explain` already takes from there and is not read.
 
   *Open:* whether the thresholds hold on a photograph, where edges are noisier
   and geometry is not a box.
