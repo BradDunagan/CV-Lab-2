@@ -441,7 +441,12 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
 
     defineOp({
       name: 'explain',
-      version: 1,
+      // v2: the depth test is a residual. v1 compared the raw difference
+      // across an edge against a fixed threshold, which reads a surface turned
+      // away from the camera as a step -- 241 of 282 `occlusion` calls on the
+      // helmet were that, measured. What slant accounts for is subtracted
+      // first; see explain.js and design-lab-model.md §11.
+      version: 2,
       summary: 'Say what put each detected feature in the picture, from the renderer\'s AOV passes.',
       /*
        * Features in, features out, with three auxiliary passes alongside.
@@ -461,7 +466,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'normal', channels: [3, 4], space: 'any' },
         { name: 'albedo', channels: [3, 4], space: 'any' },
         /*
-         * Ground truth, for its `maxDepth` and nothing else.
+         * Ground truth, for its `maxDepth` and its camera.
          *
          * Not scoring -- this operation never looks at the truth's features.
          * It is here because the metre scale the depth pass was packed against
@@ -496,6 +501,22 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
             'explain: the ground truth carries no maxDepth, so the depth pass ' +
             'cannot be read in metres. It is written by `npm run generate -- --truth`; ' +
             'a hand-written .gt.json needs a numeric "maxDepth".'
+          );
+        }
+
+        /*
+         * And the field of view, which is what turns a pixel offset into a
+         * direction. Without it the depth test cannot tell a step from a
+         * surface receding, which is the defect v2 exists to fix -- so this
+         * refuses rather than quietly computing v1's answer under v2's number.
+         */
+        const camera = truth?.meta?.camera;
+        if (typeof camera?.fov !== 'number' || !(camera.fov > 0) || !(camera.fov < 180)) {
+          throw new Error(
+            'explain: the ground truth carries no camera fov, so a depth difference ' +
+            'cannot be separated from a surface turned away from the camera. It is ' +
+            'written by `npm run generate -- --truth`; a hand-written .gt.json needs ' +
+            '"camera": { "fov": <degrees> }.'
           );
         }
 
@@ -545,6 +566,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
               depth: { width: packed.width, height: packed.height, channels: 1, data: metres },
               normal: rasters.normal,
               albedo: rasters.albedo,
+              camera,
             },
             params
           ),

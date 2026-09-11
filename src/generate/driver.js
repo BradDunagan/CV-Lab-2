@@ -268,9 +268,10 @@ const SCENES = {
    * assumed. Its image edges are NOT overwhelmingly paint: 61% of detected
    * segments match real geometry and 8% of the invented ones are texture. The
    * problem is the truth set. A dense mesh projects ~3,000 visible edges into a
-   * 256px image against ~160 detections, so recall is meaningless, and 73% of
-   * invented segments sit on a real depth step that no single mesh edge pairs
-   * with. Use `cube` when the question is 'is this corner real'.
+   * 256px image against ~160 detections, so recall is meaningless. The 73% of
+   * invented segments that looked like real depth steps were mostly `explain`
+   * v1 reading a receding surface as one; corrected, it is 23%. Use `cube`
+   * when the question is 'is this corner real'.
    */
   helmet: {
     room: 'room',

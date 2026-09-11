@@ -132,10 +132,17 @@ The helmet has now been run through the same apparatus, and it corrected this
 repository rather than the detector. Four places here said its edges were
 "overwhelmingly paint"; **texture is 8%**, and 61% of what the detector finds on
 it matches real geometry. What makes it a poor fixture is the truth set —
-~3,000 visible edges a view against ~160 detections — and the 73% of invented
-segments sitting on real depth steps, which is the T-junction problem at twice
-the clutter scene's share. Two things that measurement exposed and did not
-settle: whether those depth steps are the matcher losing a segment among tiny
-truth edges or `explain` reading grazing slant on a curved surface as a step,
-and that **ground-truth visibility is computed at the render size**, so recall
-is not comparable across resolutions.
+~3,000 visible edges a view against ~160 detections.
+
+The 73% of invented segments that looked like real depth steps were **the
+measurement, not the scene**. Sweeping `explain`'s sample offset showed the
+occlusion share tracking it on every subject, 57% → 92%, and a per-detection
+test settled it: the depth difference scales with the sampling distance, which
+is what a surface receding from the camera does and what a step does not.
+`explain` v2 subtracts what a continuous surface accounts for and tests the
+residual; invented occlusion falls 282 → 88 and all 199 verified real steps
+keep it. Slant itself is recorded and deliberately not thresholded — it is 64°
+under both populations, because both live at a silhouette.
+
+Still open from the same run: **ground-truth visibility is computed at the
+render size**, so recall is not comparable across resolutions.

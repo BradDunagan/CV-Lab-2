@@ -14,6 +14,7 @@
 const assert = require('node:assert/strict');
 const {
   explainFeature, explainFeatures, crossings, sample, normalAt, angleBetween, median,
+  viewGeometry, slantAt,
 } = require('../src/lab/explain');
 
 let failures = 0;
@@ -229,6 +230,136 @@ test('bilinear sampling reads between pixels', () => {
   // And outside the raster it clamps rather than reading rubbish.
   assert.equal(sample(r, -5, 8, 0), 0);
   assert.equal(sample(r, 999, 8, 0), 1);
+});
+
+/* --- slant, which v1 could not tell from a step ---------------------- */
+
+const CAMERA = { fov: 50 };
+
+/*
+ * These fixtures are 128 px rather than 32. At 32 px with a 50° field of view
+ * the focal length is 34 px, so five pixels spans a sixth of the frame and the
+ * depth of a grazing plane runs 1.4 m to 3.4 m across it -- bilinear sampling
+ * of a curve that steep is 60 mm out on its own, which would be read here as a
+ * residual the correction failed to explain. The fixture has to be finer than
+ * the effect it is measuring.
+ */
+const S = 128;
+const CENTRE = { type: 'edge-segment', id: 1, x0: S / 2, y0: S / 2 - 10, x1: S / 2, y1: S / 2 + 10 };
+
+const raster = (channels, fill) => {
+  const data = new Float32Array(S * S * channels);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const v = fill(x, y);
+      for (let c = 0; c < channels; c++) data[(y * S + x) * channels + c] = v[c] ?? 0;
+    }
+  }
+  return { width: S, height: S, channels, data };
+};
+
+/**
+ * A depth pass for one flat surface, built from the geometry `explain` uses to
+ * predict one: `z = c / (n·e)`.
+ *
+ * Constructed rather than recorded. A fixture pasted in from a renderer could
+ * not say whether the code or the numbers were wrong, and the claim under test
+ * is a property — a plane is exactly what slant accounts for — so the fixture
+ * is that property, written out.
+ */
+function slantedPlane(normal, zCentre, stepBeyondMiddle = 0) {
+  const g = viewGeometry(CAMERA, S, S);
+  const e = (x, y) => [(x - g.cx) / g.f, -(y - g.cy) / g.f, -1];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const mid = e(S / 2, S / 2);
+  const c = dot(normal, [mid[0] * zCentre, mid[1] * zCentre, -zCentre]);
+  return raster(1, (x, y) => [c / dot(normal, e(x, y)) + (x >= S / 2 ? stepBeyondMiddle : 0)]);
+}
+
+/** 80° from the line of sight: nearly edge-on, as a curved surface is at its rim. */
+const GRAZING = [Math.sin((80 * Math.PI) / 180), 0, Math.cos((80 * Math.PI) / 180)];
+const grazingPass = () => raster(3, () => packNormal(GRAZING));
+const facingPass = () => raster(3, () => FACING);
+const greyPass = () => raster(3, () => [0.5, 0.5, 0.5]);
+
+const scene = ({ depth, normal, albedo, camera }) => ({
+  depth: { width: S, height: S, channels: 1, data: depth.data },
+  normal, albedo, camera,
+});
+
+test('slant is measured from the line of sight, not from the image plane', () => {
+  const g = viewGeometry(CAMERA, S, S);
+  assert.ok(Math.abs(slantAt(g, facingPass(), S / 2, S / 2)) < 1e-6,
+    'a surface facing the camera is not at zero slant');
+  const grazed = slantAt(g, grazingPass(), S / 2, S / 2);
+  assert.ok(Math.abs(grazed - 80) < 0.5, `an 80° surface measured ${grazed.toFixed(1)}°`);
+});
+
+test('a receding surface is not an occlusion, however large the difference', () => {
+  /*
+   * The v1 defect, as a test. At 80° the surface drops 0.4 m across five
+   * pixels -- twenty times the threshold -- with nothing in front of anything.
+   * 241 of the 282 `occlusion` calls on the helmet were this.
+   */
+  const r = explainFeature(CENTRE, scene({
+    depth: slantedPlane(GRAZING, 2.0),
+    normal: grazingPass(),
+    albedo: greyPass(),
+    camera: CAMERA,
+  }));
+  assert.ok(r.depthStep > 0.2, `the fixture does not exercise it: ${r.depthStep}`);
+  assert.ok(r.depthExcess < 0.005, `a plane left ${r.depthExcess} m unexplained`);
+  assert.equal(r.cause, 'shading');
+});
+
+test('a real step is still an occlusion, and the correction leaves it alone', () => {
+  // Same sampling, same threshold: what changed is only what gets subtracted.
+  const r = explainFeature(CENTRE, scene({
+    depth: raster(1, (x) => [x < S / 2 ? 1.0 : 1.5]),
+    normal: facingPass(),
+    albedo: greyPass(),
+    camera: CAMERA,
+  }));
+  assert.equal(r.cause, 'occlusion');
+  assert.ok(Math.abs(r.depthExcess - 0.5) < 1e-3, `excess ${r.depthExcess}`);
+  assert.ok(r.planeStep < 1e-3, `a surface facing the camera explained ${r.planeStep} m`);
+});
+
+test('a step ON a receding surface is still found, by what the surface cannot explain', () => {
+  // The case that says this subtracts rather than suppresses: a real 0.4 m
+  // discontinuity added to a grazing plane that accounts for everything else.
+  const r = explainFeature(CENTRE, scene({
+    depth: slantedPlane(GRAZING, 2.0, 0.4),
+    normal: grazingPass(),
+    albedo: greyPass(),
+    camera: CAMERA,
+  }));
+  assert.equal(r.cause, 'occlusion');
+  assert.ok(Math.abs(r.depthExcess - 0.4) < 0.01, `excess ${r.depthExcess}, wanted 0.4`);
+});
+
+test('without a camera nothing is subtracted, and the record says which', () => {
+  /*
+   * `planeStep: 0` is the honest form of "not corrected". The operation refuses
+   * to run without a field of view, precisely so v1's answer cannot arrive
+   * under v2's version number -- but the function below it stays usable, and
+   * says what it did.
+   */
+  const uncorrected = explainFeature(CENTRE, scene({
+    depth: slantedPlane(GRAZING, 2.0),
+    normal: grazingPass(),
+    albedo: greyPass(),
+    camera: null,
+  }));
+  assert.equal(uncorrected.planeStep, 0);
+  assert.equal(uncorrected.depthExcess, uncorrected.depthStep);
+  assert.equal(uncorrected.cause, 'occlusion', 'this is v1, and v1 was wrong here');
+});
+
+test('a field of view that cannot be one is refused rather than approximated', () => {
+  for (const fov of [0, -50, 180, 'wide', undefined, null]) {
+    assert.equal(viewGeometry({ fov }, S, S), null, `${fov} was accepted`);
+  }
 });
 
 console.log(failures === 0 ? '\nAll explain tests passed.' : `\n${failures} failing.`);

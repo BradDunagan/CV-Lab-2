@@ -420,15 +420,41 @@ error.
 #### `explain(src features, depth, normal, albedo, truth features, …)` → features
 
 Say what put each detected feature in the picture, from the renderer's
-auxiliary passes. Returns the same records with a `cause` and the three
-measurements behind it.
+auxiliary passes. Returns the same records with a `cause` and the measurements
+behind it.
 
 | `cause` | measured | means |
 |---|---|---|
-| `occlusion` | a depth step | one surface ending in front of another |
+| `occlusion` | a depth step the surface cannot explain | one surface ending in front of another |
 | `crease` | a normal step, no depth step | a fold |
 | `texture` | an albedo step, neither of the above | paint rather than shape |
 | `shading` | none of the three | a shadow boundary or specular terminator |
+
+**The depth test is a residual, and v1 got that wrong.** Sampling a fixed
+distance either side of an edge on a surface *turned away* from the camera
+reads a large depth difference with nothing occluding anything — the surface
+simply recedes. v1 compared the raw difference against the threshold, and over
+six helmet views **241 of the 282 detections it called `occlusion` were that**:
+a single tangent plane accounted for the difference to within 1%, where across
+a genuine step the same plane accounts for 7% of it. v2 extends each side's
+tangent plane to the other side and asks whether the depth recorded there is
+where a continuous surface would have put it. What is left over is the
+evidence. Re-run on the same six views, invented `occlusion` falls 282 → 88 and
+every one of the 199 detections sitting on a verified real step keeps it.
+
+Four numbers are recorded per feature, so a record says which it was:
+
+| field | is |
+|---|---|
+| `depthStep` | the depth difference actually measured across the edge |
+| `planeStep` | how much of it a continuous surface at that orientation accounts for |
+| `depthExcess` | what is left — the quantity the threshold is applied to |
+| `slant` | how far the surface is turned from the line of sight, in degrees |
+
+`slant` is reported and **not** thresholded, deliberately: median slant is
+64.0° under the misread detections and 64.1° under the genuine steps, because
+both live at a silhouette — where a surface turns away *and* where one surface
+ends in front of another. Only the residual separates them.
 
 **`shading` is not a detector failure.** A shadow boundary is a real image edge
 belonging to the *light* rather than to the object, so the detector is right to
@@ -441,7 +467,7 @@ question nobody asked.
 |---|---|---|
 | `offset` | 2.5 px | how far either side of the edge to sample |
 | `samples` | 7 | crossings along a segment; a corner is always crossed on four axes |
-| `depthStep` | 0.02 | metres of depth change that counts as a step |
+| `depthStep` | 0.02 | metres of *unexplained* depth change that counts as a step |
 | `normalStep` | 20° | angle between the two sides' normals that counts as a fold |
 | `albedoStep` | 0.06 | linear reflectance difference that counts as paint |
 
@@ -459,11 +485,17 @@ A pass that is not supplied leaves the cause `unknown` rather than falling
 through to `shading` — reaching that answer by not looking would be a confident
 wrong one, and `shading` is exactly the bucket this exists to stop over-filling.
 
-**It takes the ground truth for one number, not for scoring** — it never looks
+**It takes the ground truth for two numbers, not for scoring** — it never looks
 at the truth's features. The metre scale the depth pass was packed against,
 `maxDepth`, exists only in the `.gt.json`: the passes carry no colour chunks and
 therefore no metadata at all. It also changes per image, so it could not be a
-parameter written into a script.
+parameter written into a script. The second is the camera's **field of view**,
+which is what turns a pixel offset into a direction and so into the tangent
+plane above; without it a depth difference cannot be separated from a surface
+turned away, and the operation refuses rather than quietly computing v1's
+answer. Only the fov is needed, not where the camera is: the normal pass is in
+**view space**, so its normals are already in the frame the depth pass is
+measured in.
 
 Read the passes with `from=linear`. They carry raw code values and pt-lab
 writes them with no colour chunks at all, so the sRGB-by-convention default
@@ -707,8 +739,9 @@ not for the reason this said until it was measured. Its edges are **not**
 overwhelmingly paint: over six views at 256 px, 61% of detected segments match
 real geometry and only 8% of the invented ones are texture. What makes it a poor
 subject is the truth set, which lists ~3,000 visible edges a view against ~160
-detections, and the 73% of invented segments that sit on a real depth step no
-mesh edge can be paired with. `cube` is a 10 cm cube on a table with a ball
+detections. The 73% of invented segments that appeared to sit on a real depth
+step were mostly the measurement: `explain` v1 read a surface receding from the
+camera as a step, and correcting that drops them to 23%. `cube` is a 10 cm cube on a table with a ball
 beside it: twelve edges and eight vertices in known places, nine and seven of
 them visible from a general viewpoint.
 

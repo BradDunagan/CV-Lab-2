@@ -1217,9 +1217,28 @@ item genuinely deferrable.
   away *and* where one surface ends in front of another. A threshold on slant
   would be no better than the threshold on depth it replaced.
 
-  What discriminates is the residual — measured minus plane-predicted — and
-  computing it needs the camera, which is in the `.gt.json` beside the
-  `maxDepth` that `explain` already takes from there and is not read.
+  What discriminates is the residual, and `explain` **v2** now tests it: each
+  side's tangent plane is extended to the other side and asked whether the
+  depth recorded there is where a continuous surface would have put it. The
+  camera's field of view is taken from the `.gt.json` beside the `maxDepth`
+  already read from there, and only the fov is needed, the normals being in
+  view space. `depthStep`, `planeStep`, `depthExcess` and `slant` are all
+  recorded, so a record says which it was, and the operation refuses without a
+  fov rather than producing v1's answer under v2's number.
+
+  On the same six views: invented `occlusion` falls **282 → 88**, and **all
+  199** detections whose step was verified offset-invariant keep it. The
+  displaced ones land in `shading` (46 → 218) and `texture` (32 → 52), which is
+  where a real image edge on a smoothly receding surface belongs.
+
+  Two things the implementation had to be told by a test rather than by
+  reasoning. The plane must be anchored on the samples, never on the midpoint
+  between them — at a real edge the midpoint is the one place neither surface
+  is, and since the prediction scales with the depth there, a 0.4 m step
+  accounted for a fifth of itself. And it is the **larger** of the two
+  prediction errors that matters: a plane anchored on the far side of a step is
+  anchored deeper, slant costs depth in proportion to depth, and that side
+  over-explains the step it is standing on.
 
   *Open:* whether the thresholds hold on a photograph, where edges are noisier
   and geometry is not a box.

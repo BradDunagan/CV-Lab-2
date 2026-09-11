@@ -16,6 +16,23 @@
  * | no | no | yes | TEXTURE — paint rather than shape |
  * | no | no | no | SHADING — a shadow boundary or specular terminator |
  *
+ * **The depth test is a residual, not a difference, and v1 got that wrong.**
+ * Sampling a fixed distance either side of an edge on a surface turned away
+ * from the camera reads a large depth difference with nothing occluding
+ * anything: the surface simply recedes. Measured over six helmet views, 241 of
+ * the 282 detections v1 called `occlusion` were that — a single tangent plane
+ * through the sample midpoint accounted for the difference to within 1%, where
+ * across a genuine step the same plane accounts for 7% of it. So the depth
+ * evidence here is what a locally flat surface at the measured orientation
+ * does NOT explain, and `depthStep` (measured) and `planeStep` (explained) are
+ * both recorded so a record says which it was.
+ *
+ * Note what this does not do: threshold on slant. Median slant is 64.0° under
+ * the misread detections and 64.1° under the genuine steps — both live at a
+ * silhouette, where a surface turns away AND where one surface ends in front
+ * of another — so a slant threshold would be exactly as wrong as the raw depth
+ * one. Only the residual separates them. See design-lab-model.md §11.
+ *
  * That last row is the one this exists for. A shading edge is a real image
  * edge belonging to the LIGHT rather than to the object, so a detector is
  * right to find it and ground truth — which models only geometry — is right
@@ -43,7 +60,7 @@ const CAUSES = ['occlusion', 'crease', 'texture', 'shading'];
 const DEFAULTS = {
   offset: 2.5,
   samples: 7,
-  depthStep: 0.02,     // metres; a step this size is a different surface
+  depthStep: 0.02,     // metres; an UNEXPLAINED step this size is another surface
   normalStep: 20,      // degrees between the two sides' normals
   albedoStep: 0.06,    // linear reflectance difference
 };
@@ -128,21 +145,127 @@ function crossings(feature, { offset, samples }) {
 }
 
 /**
+ * What a locally flat surface accounts for, so the rest can be the evidence.
+ *
+ * The normal pass is in VIEW space — established by measurement, since nothing
+ * documented it: fitting the prediction below against the depth pass gives
+ * 0.99 with the normals as they are and 1.16 with them rotated out of world
+ * space, and one pixel's normal stays +Z-dominant across three cameras 6 m
+ * apart, which world-space normals of a convex object cannot do.
+ *
+ * That is why only the FIELD OF VIEW is needed and not where the camera is: a
+ * view-space normal is already in the frame the depth pass is measured in, so
+ * the focal length is the whole of the camera that matters here.
+ */
+function viewGeometry(camera, width, height) {
+  const fov = camera?.fov;
+  if (typeof fov !== 'number' || !(fov > 0) || !(fov < 180)) return null;
+  return {
+    f: (height / 2) / Math.tan((fov * Math.PI) / 360),
+    cx: width / 2,
+    cy: height / 2,
+  };
+}
+
+/** The direction from the camera through a pixel, in view space: -Z forward. */
+function viewRay(g, x, y) {
+  return [(x - g.cx) / g.f, -(y - g.cy) / g.f, -1];
+}
+
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/**
+ * How far the depth on one side of a pair sits from where a continuous surface
+ * would put it — the evidence that one surface ends in front of another.
+ *
+ * Each side's tangent plane is extended to the other side and asked what depth
+ * it predicts there; the answer is compared with the depth actually recorded.
+ * For a point at view-space depth `z` the position is `z * (ex, ey, -1)` — the
+ * depth pass holds distance along the view axis, not radius — so the plane
+ * `n·P = c` gives `z = c / (n·e)` at any other pixel. A surface that merely
+ * recedes predicts its other side exactly and leaves nothing; a step is
+ * precisely what extrapolation cannot reach.
+ *
+ * Two details, both of which a test had to find rather than reasoning reach:
+ *
+ * **Anchored on the samples, never on the midpoint between them.** The
+ * midpoint of a pair straddling a real edge is the one place where neither
+ * surface is — its normal is a blend of two and its depth the average of two —
+ * and since the prediction scales with that depth, a 0.4 m step measured this
+ * way accounted for a fifth of itself.
+ *
+ * **The LARGER of the two prediction errors, not the smaller.** A plane
+ * anchored on the far side of a step is anchored deeper, and slant costs depth
+ * in proportion to depth, so that side over-explains and hides the step it is
+ * standing on. Taking the larger error asks whether the depth is reachable
+ * from the nearer surface, which is the question.
+ *
+ * Returns null when it cannot be computed rather than guessing: no camera, no
+ * normal pass, no normal recorded at either sample, or a plane so nearly
+ * edge-on to the ray that the intersection runs away. A null leaves the raw
+ * difference standing — v1's behaviour, reached honestly and visible in the
+ * record as `planeStep: 0`.
+ */
+function surfaceResidual(g, normal, depth, a, b) {
+  if (!g || !normal || !depth) return null;
+  const oneSided = (from, to) => {
+    const n = normalAt(normal, from.x, from.y);
+    if (!n[0] && !n[1] && !n[2]) return null;
+    const z = sample(depth, from.x, from.y, 0);
+    const e = viewRay(g, from.x, from.y);
+    const c = dot3(n, [e[0] * z, e[1] * z, -z]);
+    const predicted = c / dot3(n, viewRay(g, to.x, to.y));
+    if (!Number.isFinite(predicted)) return null;
+    return Math.abs(sample(depth, to.x, to.y, 0) - predicted);
+  };
+  const ab = oneSided(a, b), ba = oneSided(b, a);
+  if (ab === null && ba === null) return null;
+  return Math.max(ab ?? 0, ba ?? 0);
+}
+
+/** How far the surface is turned from the line of sight, in degrees. */
+function slantAt(g, normal, x, y) {
+  if (!g || !normal) return 0;
+  const n = normalAt(normal, x, y);
+  if (!n[0] && !n[1] && !n[2]) return 0;
+  const e = viewRay(g, x, y);
+  const len = Math.hypot(e[0], e[1], e[2]);
+  const cos = Math.min(1, Math.abs(dot3(n, e)) / len);
+  return (Math.acos(cos) * 180) / Math.PI;
+}
+
+/**
  * Measure what changes across a feature, and say what that makes it.
  *
- * `depth` is in metres, already unpacked. `normal` holds components in [0,1].
- * `albedo` is linear reflectance. Any of them may be null, in which case the
- * test it settles is skipped and the cause falls through — an honest
- * `unknown` rather than a confident `shading` reached by not looking.
+ * `depth` is in metres, already unpacked. `normal` holds components in [0,1],
+ * in view space. `albedo` is linear reflectance. `camera` needs only a `fov`,
+ * and without it the depth evidence cannot be corrected for slant — see
+ * `planeAccountsFor`. Any of them may be null, in which case the test it
+ * settles is skipped and the cause falls through — an honest `unknown` rather
+ * than a confident `shading` reached by not looking.
  */
-function explainFeature(feature, { depth, normal, albedo }, opts = {}) {
+function explainFeature(feature, { depth, normal, albedo, camera }, opts = {}) {
   const o = { ...DEFAULTS, ...opts };
   const pairs = crossings(feature, o);
-  if (pairs.length === 0) return { cause: 'unknown', depthStep: 0, normalStep: 0, albedoStep: 0 };
+  if (pairs.length === 0) {
+    return { cause: 'unknown', depthStep: 0, planeStep: 0, depthExcess: 0,
+             normalStep: 0, albedoStep: 0, slant: 0 };
+  }
 
-  const depths = [], normals = [], albedos = [];
+  const g = depth ? viewGeometry(camera, depth.width, depth.height) : null;
+  const depths = [], planes = [], excesses = [], normals = [], albedos = [], slants = [];
   for (const [a, b] of pairs) {
-    if (depth) depths.push(Math.abs(sample(depth, a.x, a.y, 0) - sample(depth, b.x, b.y, 0)));
+    if (depth) {
+      const measured = Math.abs(sample(depth, a.x, a.y, 0) - sample(depth, b.x, b.y, 0));
+      const residual = surfaceResidual(g, normal, depth, a, b);
+      // Capped at the measured difference, so `planeStep` is never negative:
+      // nothing can be more unexplained than it was measured to be.
+      const excess = residual === null ? measured : Math.min(measured, residual);
+      depths.push(measured);
+      planes.push(measured - excess);
+      excesses.push(excess);
+      slants.push(slantAt(g, normal, (a.x + b.x) / 2, (a.y + b.y) / 2));
+    }
     if (normal) normals.push(angleBetween(normalAt(normal, a.x, a.y), normalAt(normal, b.x, b.y)));
     if (albedo) {
       let worst = 0;
@@ -153,10 +276,18 @@ function explainFeature(feature, { depth, normal, albedo }, opts = {}) {
     }
   }
 
+  /*
+   * Each is the median over the pairs, INCLUDING the excess -- which is the
+   * median of the per-pair residuals, not the difference of two medians. Those
+   * are not the same number, and only the first one is a residual.
+   */
   const evidence = {
     depthStep: median(depths),
+    planeStep: median(planes),
+    depthExcess: median(excesses),
     normalStep: median(normals),
     albedoStep: median(albedos),
+    slant: median(slants),
   };
 
   /*
@@ -168,7 +299,7 @@ function explainFeature(feature, { depth, normal, albedo }, opts = {}) {
    */
   let cause;
   if (!depth && !normal && !albedo) cause = 'unknown';
-  else if (depth && evidence.depthStep >= o.depthStep) cause = 'occlusion';
+  else if (depth && evidence.depthExcess >= o.depthStep) cause = 'occlusion';
   else if (normal && evidence.normalStep >= o.normalStep) cause = 'crease';
   else if (albedo && evidence.albedoStep >= o.albedoStep) cause = 'texture';
   else if (depth && normal && albedo) cause = 'shading';
@@ -190,5 +321,6 @@ function explainFeatures(features, rasters, opts = {}) {
 
 module.exports = {
   explainFeatures, explainFeature, crossings, sample, normalAt, angleBetween, median,
+  viewGeometry, viewRay, surfaceResidual, slantAt,
   CAUSES, DEFAULTS,
 };
