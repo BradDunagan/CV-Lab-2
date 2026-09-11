@@ -1408,6 +1408,49 @@ and in Node, usable as a general deep-copy utility.
 
 ---
 
+## T-junction
+
+**A place where one edge runs into another in the image and stops, forming a
+T — because the nearer surface hides the rest of it.**
+
+```
+      ────────────────────   the crossbar: the near surface's contour
+              │
+              │             the stem: an edge of something further away,
+              │             disappearing behind it
+```
+
+**Nothing touches there.** The two edges may be metres apart in the scene; they
+meet only in projection, where the near silhouette happens to cut across the
+far edge. Move the camera and the junction slides along the crossbar, or stops
+existing. That is the whole of it: **a T-junction is a property of the picture,
+a crease or a mesh edge is a property of the scene.**
+
+Classically it is the strongest depth cue a line drawing has — the stem says
+which side of the crossbar is in front, which is how a drawing of a box reads
+as solid rather than as seven lines. In the Huffman–Clowes labelling of line
+drawings it is one of the junction types the whole interpretation turns on.
+
+**Why it matters here.** `corners` finds them, and is right to: two fitted
+segments meeting at an angle, often both matching real geometry. But this
+lab's ground truth is a **list of mesh vertices**, and a T-junction has no
+vertex — nothing in the model is at that point — so `match` scores every one of
+them as invented. The detector was not wrong; the truth set cannot represent
+what it found.
+
+That is the sense in which corner precision on a scene with more than one
+object measures the truth model as much as the detector. On the cube-with-table
+scene, half the invented corners sitting on a real depth step were two real
+occluding contours crossing (`design-lab-model.md` §11).
+
+**Whether ground truth should carry them is open**, and the difficulty is the
+first paragraph: an edge list is the same from every camera, and a T-junction
+list would not be. Adding them makes the truth set a function of the view,
+which is a different kind of object from the one this lab currently compares
+against.
+
+---
+
 ## TLS — total least squares (orthogonal regression)
 
 **A line fit that minimises each point's *perpendicular* distance to the line,
