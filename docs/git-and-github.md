@@ -244,6 +244,37 @@ CI on a branch you need either a pull request or:
 gh workflow run build.yml --ref contact-sheet
 ```
 
+**The second trap, and it hides the first one's opposite: `[skip ci]` is read
+off the LAST commit of the push, not off each commit in it.** So a docs commit
+carrying the marker, stacked on top of a code commit that does not, suppresses
+CI for both — the push matches the trigger and is then skipped wholesale.
+
+Seen on 2026-09-11, pushing two commits to `main`:
+
+```
+2281ce6  glossary: a T-junction ... [skip ci]      ← head; docs only
+3cf5875  explain: the depth test is a residual     ← code, no marker
+```
+
+`gh run list` showed nothing new. The `explain` change — a new classification
+path, four new fields in a content-hashed feature record — was on `main`
+unbuilt, and nothing said so: a skipped push leaves no run, no red tick, and no
+entry to notice the absence of.
+
+Recovering is one command, since `workflow_dispatch` is in the trigger list:
+
+```bash
+gh workflow run build.yml --ref main
+sleep 10 && gh run list --limit 3        # the dispatch run appears at the top
+gh run watch <run-id> --exit-status
+```
+
+Avoiding it is a habit: **put the `[skip ci]` commit first, not last**, or drop
+the marker altogether when anything under it in the same push touches code.
+GitHub accepts the marker anywhere in the head commit's message — `[skip ci]`,
+`[ci skip]`, `[no ci]`, `[skip actions]`, `[actions skip]` — and the title is
+where it usually ends up, which is what makes this easy to do by accident.
+
 ### What it actually does
 
 Three machines — macOS, Ubuntu, Windows — each: check out this repo *and* the
