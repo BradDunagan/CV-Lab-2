@@ -1170,13 +1170,26 @@ item genuinely deferrable.
   "does it hold on anything that is not a cube" was expecting.
 
   *Open, and newly visible:* corner precision on a multi-object scene is
-  measuring the truth model as much as the detector. 37% of invented corners
-  sat on real depth steps, and **half of those were formed by two segments that
-  both matched real geometry** — two real occluding contours crossing in the
-  image where no mesh vertex exists. A T-junction. Ground truth lists vertices,
-  so it counts every one as invented. Whether it *should* carry image-space
-  T-junctions is genuinely unclear: they are view-dependent, and an edge is
-  not, so they are a property of the picture rather than of the scene.
+  measuring the truth model as much as the detector. Under `explain` v1, 37% of
+  invented corners sat on real depth steps, and **half of those were formed by
+  two segments that both matched real geometry** — two real occluding contours
+  crossing in the image where no mesh vertex exists. A T-junction. Ground truth
+  lists vertices, so it counts every one as invented. Whether it *should* carry
+  image-space T-junctions is genuinely unclear: they are view-dependent, and an
+  edge is not, so they are a property of the picture rather than of the scene.
+
+  *Re-measured under v2, 09-12:* **24%**, of 311 invented corners — the rest
+  being 74% shading, 2% crease. The v1 figure was inflated by the depth defect
+  described below, as every other number in that column was.
+
+  The T-junction reading survives the correction and gets **stronger**. Of the
+  74 invented corners still on a depth step, **60 (81%) are formed by two or
+  more segments that themselves matched real geometry**, and 47 of them by
+  segments that *all* matched — against "half of those" under v1. So what is
+  left after the slant defect is removed is disproportionately the case ground
+  truth cannot represent: real contours crossing where the model has no vertex.
+  It is now the dominant explanation for an invented corner on a depth step,
+  not a third of one.
 
   *Settled, and it contradicted the documentation:* the helmet's segments are
   now broken down. The 156-segment count reproduces — 164 an image over six
@@ -1206,9 +1219,9 @@ item genuinely deferrable.
   data. **241 of the 282 are grazing surface; 13 survive as real depth steps.**
 
   Two consequences. The T-junction question above is 13 segments on the helmet
-  rather than 282, and the clutter scene's 37% has not had this test run on it.
-  And **every AOV breakdown on record inherits the defect**, the matched column
-  included — `explain` is version 1, its depth test compares a fixed 2 cm
+  rather than 282, and the clutter scene's 37% became 24% when the same test
+  was run on it (09-12). And **every AOV breakdown on record inherits the
+  defect**, the matched column included — v1's depth test compared a fixed 2 cm
   threshold against a difference read at a fixed pixel distance, and what a
   benign slant produces scales with the offset, the resolution and the camera
   distance. No constant is right. The test would have to subtract the step that
