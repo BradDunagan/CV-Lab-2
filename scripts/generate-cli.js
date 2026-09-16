@@ -30,8 +30,10 @@
  */
 
 const { app } = require('electron');
-const { generate, registerScheme, checkPrerequisites, DEFAULTS, SCENES, savedSceneNames } =
-  require('../src/generate/driver');
+const {
+  generate, registerScheme, checkPrerequisites, parseLight, resolveLights, resolveScene,
+  DEFAULTS, SCENES, savedSceneNames,
+} = require('../src/generate/driver');
 
 /* ------------------------------------------------------------------ */
 
@@ -48,6 +50,9 @@ CV-Lab image generator — renders from pt-lab
   --lighting <n>     light intensities                   (default 2)
   --room <kind>      room | room-emissive | room-arealight | none
                      (default: whatever the scene asks for)
+  --light <spec>     add a light; repeat for more. Replaces the scene's own
+                     lights rather than adding to them. See LIGHTS below
+  --no-lights        render without the scene's own lights
   --aovs             also write the depth, normal and albedo passes
   --truth            also write <name>.gt.json: where the edges really are
   --crease-angle <d> how sharp a fold counts as an edge  (default 20)
@@ -76,6 +81,24 @@ SCENES
 Write each sweep into its OWN directory under generated/ — the image names are
 a function of pose and lighting alone, so two scenes sharing a directory leave
 a set that globs as one sweep and is not one.
+
+LIGHTS
+
+A light is <type>[:<intensity>][@<x>,<y>,<z>][#<rrggbb>]:
+
+  --light point                          20 cd, 2.2 m above the room centre
+  --light spot:40@1,2.2,1                40 cd, aimed at the room centre
+  --light 'area:120@0,2.4,0#ffd8a8'      120 nt over 0.5 m square, warm
+
+point | spot | area, in pt-lab's physical units: candela for point and spot,
+nits for area. Spot and area lights aim at the room centre.
+Whatever is left out is pt-lab's default, and the ready line prints what was
+really used. Quote a spec with a colour: zsh can read # as a glob.
+
+The lights come on top of the room's own lighting, never instead of it. A scene
+saved with lights brings them along; any --light replaces that set, and
+--no-lights empties it. --lighting scales every light by the same factor as
+the lamp, so each rung is the same lighting at a different brightness.
 
 --room none uses pt-lab's default scene, which lights the subject with a
 photographic HDR environment. It looks better and is a poor CV fixture: the
@@ -130,6 +153,13 @@ function parseArgs(argv) {
         opts.room = kind === 'none' ? null : kind;
         break;
       }
+      case '--light': {
+        // parseLight names the spec and the expected form when it refuses.
+        const light = parseLight(argv[++i]);
+        opts.lights = [...(opts.lights ?? []), light];
+        break;
+      }
+      case '--no-lights': opts.lights = []; break;
       case '--aovs': opts.aovs = true; break;
       case '--denoise': opts.denoise = true; break;
       case '--truth': opts.truth = true; break;
@@ -199,8 +229,22 @@ if (opts && (opts.help || !opts.out)) {
   if (problem) bail(process.stderr, problem, 2);
 }
 
+/** One line per light, in the same form --light takes, so it can be pasted back. */
+function describeLight(l) {
+  const at = l.position ? `@${l.position.join(',')}` : '';
+  return `${l.type}${l.intensity !== undefined ? `:${l.intensity}` : ''}${at}${l.color ?? ''}`;
+}
+
 app.whenReady().then(async () => {
   console.log('Initialising the path tracer (loads a model and builds a BVH)…');
+  // A dry run never reaches 'ready', which is where the lights are reported
+  // from pt-lab itself -- so say what WOULD be applied, defaults unfilled.
+  if (opts.dryRun) {
+    const lights = resolveLights(opts, resolveScene(opts.scene));
+    console.log(lights.length === 0
+      ? '  (dry run) no editor lights'
+      : lights.map((l) => `  (dry run) light  ${describeLight(l)}`).join('\n'));
+  }
 
   const { files, truth, errors } = await generate(opts, (event) => {
     if (event.type === 'ready') {
@@ -208,6 +252,9 @@ app.whenReady().then(async () => {
         `${event.status.mode}, scene ${event.scene}` +
         `${event.room ? ` in ${event.room}` : ''}, ` +
         `${event.total} image(s) to render`);
+      console.log(event.lights.length === 0
+        ? '  no editor lights -- the room lights the scene'
+        : event.lights.map((l) => `  light  ${describeLight(l)}  ${l.name}`).join('\n'));
     } else if (event.type === 'shot' && event.dryRun) {
       console.log(`  (dry run) ${event.name}  yaw=${event.yaw.toFixed(2)} ` +
         `offset=${event.offset.toFixed(2)} intensity=${event.intensity}`);

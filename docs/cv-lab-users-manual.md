@@ -649,8 +649,8 @@ left, and the tracer itself on the right, converging while the sweep runs.
 
 Exactly the ones in `scenes/`, and nothing else. A scene there is a file —
 one per scene, named for the scene — composed in pt-lab's editor and exported
-as JSON: its objects with their materials and transforms, the room, and a
-camera. `scenes/cube-1.json` ships with the repository.
+as JSON: its objects with their materials and transforms, the room, any
+lights added in the editor, and a camera. `scenes/cube-1.json` ships with the repository.
 
 Composing them elsewhere is deliberate. pt-lab's editor already does that job,
 and its scenes live in `localStorage`, which is partitioned by ORIGIN — cv-lab
@@ -659,9 +659,10 @@ files they can be committed, hashed and replayed, which is what this project
 promises of everything else. `scenes/*.local.json` is gitignored, for a scene a
 working copy should have and a public repository should not.
 
-**The pane has no room control.** A scene records the room it was composed in,
-so a control here could only contradict the file. The command line keeps
-`--room` for the experiment it is good for: one subject, several backgrounds.
+**The pane has no room or light controls.** A scene records the room and the
+lights it was composed with, so a control here could only contradict the file.
+The command line keeps `--room` and `--light` for the experiment they are good
+for: one subject, several backgrounds or several lightings.
 
 From a working copy there is a command line as well, which takes those same
 files as `--scene saved:<name>`:
@@ -712,12 +713,14 @@ you are editing pt-lab and cv-lab-2 together.
 | option | default | |
 |---|---|---|
 | `--out <dir>` | — | required |
-| `--scene <name>` | `helmet` | `helmet` \| `cube` |
+| `--scene <name>` | `helmet` | `helmet` \| `cube` \| `saved:<name>` |
 | `--size <px>` | 512 | square |
 | `--samples <n>` | 96 | path-tracing samples per image |
 | `--positions <n>` | 3 | camera positions |
 | `--lighting <n>` | 2 | light intensities |
 | `--room <kind>` | the scene's own | `room` \| `room-emissive` \| `room-arealight` \| `none` |
+| `--light <spec>` | the scene's own | add a light; repeatable; replaces the scene's lights — see below |
+| `--no-lights` | off | render without the scene's own lights |
 | `--aovs` | off | also write depth, normal and albedo passes |
 | `--truth` | off | also write `<name>.gt.json` |
 | `--crease-angle <d>` | 20° | how sharp a fold counts as an edge |
@@ -751,6 +754,51 @@ the same camera reports 3,045 visible edges at 256 px and 2,587 at 512 px —
 of a dense mesh. The total never changes; only the visible fraction does. So a
 **recall number is only comparable within one render size**, and nothing in the
 scoring output says so.
+
+### Lights
+
+pt-lab's editor can add point, spot and area lights to a scene, **on top of**
+the room's own lamp or environment — never instead of it. A scene saved with
+lights brings them along, in the pane and on the command line alike. From the
+command line, a light is `<type>[:<intensity>][@<x>,<y>,<z>][#<rrggbb>]`:
+
+```bash
+npm run generate -- --out generated/spot --scene saved:cube-1 \
+  --light 'spot:60@0.5,1.6,0.8#ffb060' --light point:10@-1,2,0
+```
+
+| part | | |
+|---|---|---|
+| type | `point` \| `spot` \| `area` | spot and area lights aim at the room centre; area is 0.5 m square. There is no directional light: a room's walls would occlude it from the path tracer while the raster preview still showed it |
+| `:intensity` | pt-lab's default | pt-lab's physical units — **candela** for point and spot, **nits** for area |
+| `@x,y,z` | 2.2 m above the room centre | metres |
+| `#rrggbb` | white | quote the whole spec — zsh with `EXTENDED_GLOB` reads `#` as a glob |
+
+**`--light` replaces the scene's lights; it does not add to them**, and
+`--no-lights` empties the set. Both mirror `--room`: nothing in the render that
+the command line did not say. Anything left out of a spec is pt-lab's default,
+and the ready line prints what pt-lab really applied — in the same form
+`--light` takes, so it can be pasted back. A malformed spec is refused before
+anything starts, because a typo read as *something* renders a plausible image
+lit wrongly.
+
+**`--lighting` scales every light by the same factor as the lamp.** pt-lab's own
+intensity lever reaches only the room lamp or environment, so with editor lights
+present each rung would have changed the *ratio* between sources — shadow
+strength, not just exposure. The ladder has always meant the same lighting at a
+different brightness, and scaling everything together keeps that. Checked on a
+render rather than assumed: at 0.5, a 120 cd spot lights its pool less than a 60
+cd spot does at 1.0, which only holds if it rendered at 60. Photometric ratios
+cannot show this — beauty renders go through ACES filmic tone mapping, under
+which the lamp alone brightens 2.8× in linear terms for a 2× step.
+
+Lights never reach ground truth or the AOV passes. That was checked, not
+assumed: the same view of `cube-1` with and without a spot and an area light
+gives a byte-identical `.gt.json` and byte-identical depth, normal and albedo
+passes, while the beauty render differs. What they change is **shading** — and shading is
+what 111 of 123 invented segments turned out to be on the clutter scene. A light
+is the lever for moving those shadow boundaries while every geometric edge stays
+put.
 
 **`--room none`** uses pt-lab's photographic HDR environment. It looks better
 and is a poor CV fixture — the blurred background and textured tabletop

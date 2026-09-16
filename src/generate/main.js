@@ -13,6 +13,13 @@ let lab = null;
 let lastStatus = null;
 
 /**
+ * The scene's lights as they were applied, before the lighting ladder scaled
+ * them. The ladder multiplies these rather than whatever pt-lab currently
+ * holds, so stepping 0.5 → 1 → 2 does not compound.
+ */
+let baseLights = [];
+
+/**
  * Resolve when the tracer reports it is ready.
  *
  * init() returns before the scene is usable: meshes load and a BVH is built
@@ -90,7 +97,7 @@ const api = {
    * almost no clean vertices; a cube has eight, in known places. Ground truth
    * needs a subject whose corners exist.
    */
-  applyScene({ room = 'room-arealight', objects = [], version, camera } = {}) {
+  applyScene({ room = 'room-arealight', objects = [], lights = [], version, camera } = {}) {
     /*
      * Two callers, one shape.
      *
@@ -106,11 +113,33 @@ const api = {
       version: 1,
       room,
       objects: fromEditor ? objects : objects.map((key) => ({ key, included: true })),
+      // Named explicitly for the same reason as everything else here: this
+      // object is rebuilt field by field, and a field left out is dropped
+      // without a word. Without this line a scene saved with lights would
+      // render without them, and test/groundtruth.js now checks the fields
+      // against pt-lab's own SceneData so the next one cannot slip past.
+      lights: fromEditor ? lights : [],
       // The camera is the driver's business: it plans a sweep, and a saved
       // camera is where that sweep starts rather than where it stays.
       camera: null,
     });
+    baseLights = lab.listLights();
     return lab.listObjects();
+  },
+
+  /**
+   * Replace every editor light with `list` — pt-lab LabLight fields, any of
+   * which may be absent and are then pt-lab's own defaults.
+   *
+   * Returns what pt-lab actually holds afterwards rather than echoing `list`,
+   * so an omitted intensity or position is reported as the value that was
+   * rendered rather than as a gap.
+   */
+  lights(list = []) {
+    for (const { id } of lab.listLights()) lab.removeLight(id);
+    for (const light of list) lab.addLight(light);
+    baseLights = lab.listLights();
+    return baseLights;
   },
 
   /**
@@ -137,9 +166,23 @@ const api = {
     return lab.groundTruthGeometry(size, opts);
   },
 
-  /** The two levers the plan asks to vary lighting with. */
+  /**
+   * The two levers the plan asks to vary lighting with.
+   *
+   * `intensity` scales the editor lights as well as the room's lamp or
+   * environment. pt-lab's own lever reaches only the latter, and with editor
+   * lights present that would change the RATIO between sources from one rung
+   * of the ladder to the next -- shadows shifting in strength, not just the
+   * exposure -- where the ladder has always meant the same lighting at a
+   * different brightness.
+   */
   lighting({ intensity, room } = {}) {
-    if (typeof intensity === 'number') lab.setEnvironmentIntensity(intensity);
+    if (typeof intensity === 'number') {
+      lab.setEnvironmentIntensity(intensity);
+      for (const { id, ...light } of baseLights) {
+        lab.setLight(id, { ...light, intensity: light.intensity * intensity });
+      }
+    }
     if (room) lab.setRoom(room);
   },
 

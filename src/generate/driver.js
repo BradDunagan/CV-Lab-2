@@ -236,9 +236,76 @@ function defaultOutputDir() {
 
 const DEFAULTS = {
   out: null, size: 512, samples: 96, positions: 3, lighting: 2,
-  room: undefined, scene: 'helmet', aovs: false, truth: false,
+  room: undefined, lights: undefined, scene: 'helmet', aovs: false, truth: false,
   creaseAngle: 20, denoise: false, show: false, dryRun: false,
 };
+
+/** pt-lab's editor light kinds. It has no directional light, on purpose. */
+const LIGHT_TYPES = ['point', 'spot', 'area'];
+
+/**
+ * One light from the command line: `<type>[:<intensity>][@<x>,<y>,<z>][#<rrggbb>]`.
+ *
+ *   point                     pt-lab's defaults: 20 cd, 2.2 m above the origin
+ *   spot:40@1,2.2,1           40 cd at (1, 2.2, 1), aimed at the room centre
+ *   'area:120@0,2.4,0#ffd8a8' 120 nt, warm -- quoted, see below
+ *
+ * Returns pt-lab's LabLight fields, with an absent part left ABSENT rather
+ * than filled in here: pt-lab owns the defaults, and a second copy of them
+ * here is a copy that drifts. What was actually rendered is reported back by
+ * the page after the lights are applied.
+ *
+ * The colour takes a `#` because that is what pt-lab stores and what a saved
+ * scene file says. zsh with EXTENDED_GLOB reads `#` as a glob operator, so the
+ * whole spec wants quoting whenever it has one.
+ *
+ * Strict on purpose. A typo that parsed as something -- `sopt` as a default
+ * point light, `@1,2` as a light on the floor -- would render a plausible image
+ * lit wrongly, and nothing downstream could tell.
+ */
+function parseLight(spec) {
+  const m = /^([a-z]+)(?::([^@#]*))?(?:@([^#]*))?(?:#(.*))?$/.exec(String(spec));
+  const bad = (why) => new Error(`light "${spec}": ${why}\n` +
+    `  expected <type>[:<intensity>][@<x>,<y>,<z>][#<rrggbb>], e.g. spot:40@1,2.2,1`);
+  if (!m) throw bad('not a light spec');
+
+  const [, type, intensity, position, color] = m;
+  if (!LIGHT_TYPES.includes(type)) throw bad(`the type must be one of ${LIGHT_TYPES.join(', ')}`);
+  const light = { type };
+
+  if (intensity !== undefined) {
+    const v = intensity.trim() === '' ? NaN : Number(intensity);
+    if (!Number.isFinite(v) || v < 0) throw bad(`the intensity must be a number >= 0, not "${intensity}"`);
+    light.intensity = v;
+  }
+  if (position !== undefined) {
+    const parts = position.split(',');
+    const xyz = parts.map((p) => (p.trim() === '' ? NaN : Number(p)));
+    if (xyz.length !== 3 || !xyz.every(Number.isFinite)) {
+      throw bad(`the position must be three numbers in metres, not "${position}"`);
+    }
+    light.position = xyz;
+  }
+  if (color !== undefined) {
+    if (!/^[0-9a-f]{6}$/i.test(color)) throw bad(`the colour must be six hex digits, not "#${color}"`);
+    light.color = `#${color.toLowerCase()}`;
+  }
+  return light;
+}
+
+/**
+ * The lights a run renders with.
+ *
+ * Three states, the same as `room`: `undefined` is the scene's own -- whatever
+ * a saved scene was composed with, and none for a built-in -- `[]` is none at
+ * all, and a list replaces the scene's rather than adding to it. Replacing is
+ * what makes `--light` the experiment `--room` already is: one subject, the
+ * lighting varied, and nothing in the result that the command line did not say.
+ */
+function resolveLights(opts, scene) {
+  if (opts.lights !== undefined) return opts.lights;
+  return scene.sceneData?.lights ?? [];
+}
 
 /*
  * Radius and height match the scene's default camera (2.2, 1.3, 2.6 looking at
@@ -683,9 +750,16 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
     } else if (scene.objects) {
       objects = await call(`applyScene(${JSON.stringify({ room, objects: scene.objects })})`);
     }
+    /*
+     * Always applied, even when they are the scene's own and applyScene has
+     * just built them: this is the one call that works for every scene --
+     * helmet has no applyScene at all -- and what it returns is what pt-lab
+     * really holds, defaults filled in, which is what the run should report.
+     */
+    const lights = await call(`lights(${JSON.stringify(resolveLights(opts, scene))})`);
     onProgress({
       type: 'ready', elapsedMs: Date.now() - started, status: info.status,
-      total: shots.length, scene: opts.scene, room, objects,
+      total: shots.length, scene: opts.scene, room, objects, lights,
     });
 
     await call(`quality(${JSON.stringify({ samples: opts.samples })})`);
@@ -764,6 +838,7 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
 
 module.exports = {
   generate, windowHost, plan, resolveScene, savedSceneNames, sceneFromData, readSavedScenes, registerScheme, checkPrerequisites, buildInputs,
-  DEFAULTS, SCENES, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS,
+  parseLight, resolveLights,
+  DEFAULTS, SCENES, LIGHT_TYPES, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS,
   assetsDir, defaultOutputDir, isPackaged,
 };

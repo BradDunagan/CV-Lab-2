@@ -701,6 +701,101 @@ test('every prerequisite message leads with a headline the pane can show', () =>
   assert.match(message, /Run: npm run build:generate|sibling pt-lab-workspace/);
 });
 
+test('a light spec parses to exactly what it says, and nothing it does not', () => {
+  /*
+   * Round trip rather than recorded output: write each light out in the form
+   * --light takes, parse it, and it must come back field for field. The
+   * absent parts must stay ABSENT -- pt-lab owns the defaults, and a parser
+   * that filled them in would be a second copy of them waiting to drift.
+   */
+  const { parseLight } = require('../src/generate/driver');
+  const lights = [
+    { type: 'point' },
+    { type: 'spot', intensity: 40 },
+    { type: 'area', position: [-1.5, 2.4, 0.25] },
+    { type: 'spot', intensity: 0, position: [1, 2.2, -1], color: '#ffd8a8' },
+    { type: 'point', color: '#00ff7f' },
+  ];
+  const spec = (l) => l.type
+    + (l.intensity !== undefined ? `:${l.intensity}` : '')
+    + (l.position ? `@${l.position.join(',')}` : '')
+    + (l.color ?? '');
+  for (const light of lights) {
+    assert.deepEqual(parseLight(spec(light)), light, `"${spec(light)}" did not round-trip`);
+  }
+  assert.equal(parseLight('point#FFD8A8').color, '#ffd8a8', 'colour is stored the way pt-lab writes it');
+
+  /*
+   * Each of these is a typo that a lenient parser would render as SOMETHING --
+   * a default point light, a light on the floor -- and an image lit wrongly
+   * looks exactly like an image lit rightly.
+   */
+  for (const bad of ['sopt', 'directional', 'spot:', 'spot:-5', 'spot:bright', 'point@1,2',
+                     'point@1,2,3,4', 'point@1,,3', 'point#fff', 'point#gggggg', 'spot@1,2,3:40', '']) {
+    assert.throws(() => parseLight(bad), (err) => err.message.includes(`"${bad}"`),
+      `"${bad}" should be refused, naming the spec`);
+  }
+});
+
+test('a run lights a scene with its own lights unless told otherwise', () => {
+  /*
+   * Three states, the same as --room. Collapsing `undefined` and `[]` would
+   * make --no-lights impossible to say, or make every saved scene's lights
+   * vanish; appending instead of replacing would make --light unable to
+   * describe the whole lighting of a render.
+   */
+  const { resolveLights, sceneFromData, SCENES } = require('../src/generate/driver');
+  const own = [{ name: 'Key', type: 'spot', color: '#ffffff', intensity: 30, position: [1, 2, 1] }];
+  const saved = sceneFromData('lit', {
+    version: 1, room: 'room-arealight', objects: [], lights: own,
+    camera: { position: [0, 1, 2], target: [0, 0, 0] },
+  });
+  const unlit = sceneFromData('unlit', {
+    version: 1, room: 'room-arealight', objects: [],
+    camera: { position: [0, 1, 2], target: [0, 0, 0] },
+  });
+  const given = [{ type: 'point' }];
+
+  assert.deepEqual(resolveLights({}, saved), own, 'a saved scene brings its lights');
+  assert.deepEqual(resolveLights({}, unlit), [], 'a scene saved before lights existed has none');
+  assert.deepEqual(resolveLights({}, SCENES.cube), [], 'a built-in has none of its own');
+  assert.deepEqual(resolveLights({ lights: given }, saved), given, '--light replaces, not adds');
+  assert.deepEqual(resolveLights({ lights: [] }, saved), [], '--no-lights empties the set');
+});
+
+test('the generator page forwards every field of a saved scene to pt-lab', () => {
+  /*
+   * The page rebuilds the SceneData it hands to lab.applyScene field by
+   * field, so a field pt-lab adds is dropped until someone names it -- with
+   * no error, because pt-lab reads an absent field as "none". That is how a
+   * scene saved with lights rendered without them. The list of fields is read
+   * from pt-lab's own interface rather than typed here, so the next field it
+   * grows fails this rather than a render.
+   *
+   * Needs the sibling checkout, which CI does not have; there is nothing to
+   * compare against without it.
+   */
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { PT_SRC } = require('../src/generate/driver');
+  const tracer = path.join(PT_SRC, 'lib', 'pathtracer.ts');
+  if (!fs.existsSync(tracer)) return;
+
+  const iface = /export interface SceneData \{([\s\S]*?)\n\}/.exec(fs.readFileSync(tracer, 'utf8'));
+  assert.ok(iface, `no SceneData interface in ${tracer} -- the check needs updating`);
+  const fields = [...iface[1].matchAll(/^\s*(\w+)\??:/gm)].map((m) => m[1]);
+  assert.ok(fields.includes('objects'), `read nonsense out of SceneData: ${fields.join(', ')}`);
+
+  const page = fs.readFileSync(path.join(__dirname, '..', 'src', 'generate', 'main.js'), 'utf8');
+  const call = /lab\.applyScene\(\{([\s\S]*?)\n\s*\}\);/.exec(page);
+  assert.ok(call, 'no lab.applyScene({...}) call in src/generate/main.js -- the check needs updating');
+  const forwarded = [...call[1].matchAll(/^\s*(\w+)\s*[:,]/gm)].map((m) => m[1]);
+  for (const field of fields) {
+    assert.ok(forwarded.includes(field),
+      `SceneData.${field} is never passed to lab.applyScene, so a saved scene loses it`);
+  }
+});
+
 console.log(failures === 0 ? '\nAll ground-truth tests passed.' : `\n${failures} failing.`);
   process.exit(failures === 0 ? 0 : 1);
 });

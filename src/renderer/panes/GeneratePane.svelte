@@ -108,7 +108,13 @@
         (s) => `${s.index + 1}/${s.total} ${s.name} ${(s.elapsedMs / 1000).toFixed(1)}s` +
           (s.truth ? ` gt ${s.truth.visibleEdges}/${s.truth.edges} edges` : '')
       );
-      return [`${shots.length} of ${ready.total} done`, '', ...recent].join('\n');
+      // What pt-lab reported holding once the scene was built, so a scene
+      // saved with lights can be seen to have brought them.
+      const lights = (ready.lights ?? []).map(
+        (l) => `light ${l.type} ${l.intensity} at ${l.position.join(',')}`
+      );
+      return [`${shots.length} of ${ready.total} done`,
+        lights.length ? lights.join('\n') : 'no editor lights', '', ...recent].join('\n');
     }
     if (running) return 'Loading the model and building its BVH...';
 
@@ -123,7 +129,8 @@
     }
     lines.push(`Roughly ${estimate}s for ${total} image${total === 1 ? '' : 's'}.`);
     lines.push('The scene comes from scenes/, composed in pt-lab, and carries ' +
-      'its own room and lighting. Ground truth is only as useful as the ' +
+      'its own room and lights; the lighting count scales all of them ' +
+      'together. Ground truth is only as useful as the ' +
       'subject: edges that are paint rather than geometry cannot be scored.');
     return lines.join('\n');
   };
