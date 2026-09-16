@@ -657,7 +657,10 @@ and its scenes live in `localStorage`, which is partitioned by ORIGIN — cv-lab
 cannot read it, and neither can another browser, another machine, or CI. As
 files they can be committed, hashed and replayed, which is what this project
 promises of everything else. `scenes/*.local.json` is gitignored, for a scene a
-working copy should have and a public repository should not.
+working copy should have and a public repository should not. The suffix is not
+part of the name — `scenes/lamp.local.json` is `saved:lamp` — so a private copy
+kept beside a committed scene of the same name is refused, naming both files,
+rather than one silently rendering as the other.
 
 **The pane has no room or light controls.** A scene records the room and the
 lights it was composed with, so a control here could only contradict the file.

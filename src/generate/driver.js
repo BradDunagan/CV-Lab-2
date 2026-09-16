@@ -461,6 +461,11 @@ function isSceneData(o) {
   return !!o && typeof o === 'object' && 'room' in o && Array.isArray(o.objects);
 }
 
+/** The scene a lone-scene file holds is called: its name, less `.local.json` or `.json`. */
+function sceneFileName(file) {
+  return file.replace(/(\.local)?\.json$/, '');
+}
+
 /**
  * Every scene under scenes/, by name.
  *
@@ -473,9 +478,16 @@ function isSceneData(o) {
  * pt-lab's localStorage has and pasting it in should work. The two are told
  * apart by the file's own contents, not by its name.
  *
+ * `.local.json` is not part of the name. The suffix decides what is SHARED --
+ * .gitignore keeps those files out of the repository -- and nothing else, so
+ * scenes/lamp.local.json is `lamp`, exactly as scenes/lamp.json would be. It
+ * used to come out as `lamp.local`, contradicting the pane's own advice to
+ * add one under that name.
+ *
  * A repeated name throws rather than letting one file quietly shadow another:
  * whichever lost would still be listed, and the wrong scene would render under
- * the right name.
+ * the right name. Both files are named, because the likeliest way to get there
+ * is now a private copy of a committed scene kept beside it.
  */
 function readSavedScenes(dir = SCENES_DIR) {
   let files;
@@ -486,6 +498,7 @@ function readSavedScenes(dir = SCENES_DIR) {
   }
 
   const out = {};
+  const from = {};
   for (const file of files) {
     const full = path.join(dir, file);
     let data;
@@ -495,11 +508,15 @@ function readSavedScenes(dir = SCENES_DIR) {
       throw new Error(`${full} is not valid JSON: ${err.message}`);
     }
     const entries = isSceneData(data)
-      ? [[path.basename(file, '.json'), data]]
+      ? [[sceneFileName(file), data]]
       : Object.entries(data).filter(([, v]) => isSceneData(v));
     for (const [name, scene] of entries) {
-      if (out[name]) throw new Error(`two scenes under ${dir} are both called "${name}"`);
+      if (out[name]) {
+        throw new Error(`two scenes under ${dir} are both called "${name}": ` +
+          (from[name] === file ? `twice in ${file}` : `${from[name]} and ${file}`));
+      }
       out[name] = scene;
+      from[name] = file;
     }
   }
   return out;

@@ -638,6 +638,42 @@ test('scenes are one file each, and a repeated name is refused', () => {
   assert.deepEqual(readSavedScenes(path.join(dir, 'nope')), {});
 });
 
+test('a .local scene is named without the suffix, and cannot shadow a shared one', () => {
+  /*
+   * `.local.json` decides what .gitignore keeps out of the repository and
+   * nothing else. It used to leak into the name -- lamp.local.json was asked
+   * for as `saved:lamp.local` -- while the pane told people to add a scene as
+   * scenes/<name>.local.json, which is a promise about the name.
+   *
+   * Stripping it makes a private copy beside a committed scene a collision,
+   * which is the right outcome: one of the two would otherwise render under a
+   * name that means the other. The refusal names both files, since which two
+   * is the thing to act on.
+   */
+  const { readSavedScenes } = require('../src/generate/driver');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cvlab-local-'));
+  const scene = (room) => ({ version: 1, room, objects: [], camera: { position: [0, 0, 1], target: [0, 0, 0] } });
+
+  fs.writeFileSync(path.join(dir, 'lamp.local.json'), JSON.stringify(scene('room-emissive')));
+  fs.writeFileSync(path.join(dir, 'shared.json'), JSON.stringify(scene('room')));
+  // Only the suffix is special: a dot elsewhere in the name is the name.
+  fs.writeFileSync(path.join(dir, 'v1.local.2.json'), JSON.stringify(scene('room')));
+  // A map's keys are its names whatever the file is called.
+  fs.writeFileSync(path.join(dir, 'private.local.json'), JSON.stringify({ 'desk.local': scene('room') }));
+
+  assert.deepEqual(Object.keys(readSavedScenes(dir)).sort(), ['desk.local', 'lamp', 'shared', 'v1.local.2']);
+  assert.equal(readSavedScenes(dir).lamp.room, 'room-emissive');
+
+  fs.writeFileSync(path.join(dir, 'lamp.json'), JSON.stringify(scene('room')));
+  assert.throws(() => readSavedScenes(dir),
+    (err) => /both called "lamp"/.test(err.message)
+      && err.message.includes('lamp.json') && err.message.includes('lamp.local.json'),
+    'a private copy beside a shared scene should be refused, naming both files');
+});
+
 test('a saved scene orbits the camera it was saved with', () => {
   /*
    * A scene composed in pt-lab's editor carries ONE camera; every built-in
