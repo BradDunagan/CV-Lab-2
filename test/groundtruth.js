@@ -808,8 +808,10 @@ test('the generator page forwards every field of a saved scene to pt-lab', () =>
    * from pt-lab's own interface rather than typed here, so the next field it
    * grows fails this rather than a render.
    *
-   * Needs the sibling checkout, which CI does not have; there is nothing to
-   * compare against without it.
+   * Needs the sibling checkout, and skips without one because there is nothing
+   * to compare against. CI has it -- build.yml checks pt-lab out beside
+   * cv-lab-2 before the lab tests run -- so this is checked on all three
+   * platforms, against whatever pt-lab commit the build packages.
    */
   const fs = require('node:fs');
   const path = require('node:path');
