@@ -128,6 +128,46 @@ const api = {
   },
 
   /**
+   * Register each imported model a scene includes, under the key the scene
+   * names it by, before applyScene looks for it.
+   *
+   * `list` is [{ key, name, url }], where url is a gen://lab/models/… file the
+   * driver has already found and hashed. Resolves with pt-lab's own hash of
+   * what it registered, so the driver can compare the bytes that will render,
+   * not just the bytes on disk.
+   *
+   * registerImport, not importGLB: importGLB mints a new key, which the scene
+   * would not match, and writes the model to this page's IndexedDB, which
+   * init() reloads on every later run.
+   */
+  async registerImports(list = []) {
+    const out = [];
+    for (const { key, name, url } of list) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${url}: ${res.status} ${res.statusText}`);
+      out.push({ key, sha256: await lab.registerImport(key, name, await res.arrayBuffer()) });
+    }
+    return out;
+  },
+
+  /**
+   * The library keys of the objects pt-lab actually built and included.
+   *
+   * Read back rather than assumed, because pt-lab rebuilds a scene by walking
+   * its OWN library and looking each entry up in the saved scene -- so a saved
+   * key with no library entry is never visited, and the object is simply not
+   * there. An `import-…` key is exactly that here: the model's bytes live in
+   * the IndexedDB of whichever origin imported it, and this page's is empty.
+   *
+   * serializeScene is the only public route to keys. It also omits an object
+   * with no material, which could make the driver refuse an object that was
+   * built -- the safe direction to be wrong in.
+   */
+  includedKeys() {
+    return lab.serializeScene().objects.filter((o) => o.included).map((o) => o.key);
+  },
+
+  /**
    * Replace every editor light with `list` — pt-lab LabLight fields, any of
    * which may be absent and are then pt-lab's own defaults.
    *

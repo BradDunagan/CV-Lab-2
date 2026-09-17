@@ -638,7 +638,7 @@ test('scenes are one file each, and a repeated name is refused', () => {
   assert.deepEqual(readSavedScenes(path.join(dir, 'nope')), {});
 });
 
-test('a .local scene is named without the suffix, and cannot shadow a shared one', () => {
+test('a .local or .pt-scene file is named without the suffix, and cannot shadow a shared one', () => {
   /*
    * `.local.json` decides what .gitignore keeps out of the repository and
    * nothing else. It used to leak into the name -- lamp.local.json was asked
@@ -663,8 +663,15 @@ test('a .local scene is named without the suffix, and cannot shadow a shared one
   fs.writeFileSync(path.join(dir, 'v1.local.2.json'), JSON.stringify(scene('room')));
   // A map's keys are its names whatever the file is called.
   fs.writeFileSync(path.join(dir, 'private.local.json'), JSON.stringify({ 'desk.local': scene('room') }));
+  // pt-lab's Export names every file <scene>.pt-scene.json; copied in as it
+  // is, or made private the only way .gitignore honours, it is still <scene>.
+  fs.writeFileSync(path.join(dir, 'nut.pt-scene.json'), JSON.stringify(scene('room')));
+  fs.writeFileSync(path.join(dir, 'bolt.pt-scene.local.json'), JSON.stringify(scene('room')));
+  // The other order is not ignored by git, so it must not look private.
+  fs.writeFileSync(path.join(dir, 'washer.local.pt-scene.json'), JSON.stringify(scene('room')));
 
-  assert.deepEqual(Object.keys(readSavedScenes(dir)).sort(), ['desk.local', 'lamp', 'shared', 'v1.local.2']);
+  assert.deepEqual(Object.keys(readSavedScenes(dir)).sort(),
+    ['bolt', 'desk.local', 'lamp', 'nut', 'shared', 'v1.local.2', 'washer.local']);
   assert.equal(readSavedScenes(dir).lamp.room, 'room-emissive');
 
   fs.writeFileSync(path.join(dir, 'lamp.json'), JSON.stringify(scene('room')));
@@ -797,6 +804,129 @@ test('a run lights a scene with its own lights unless told otherwise', () => {
   assert.deepEqual(resolveLights({}, SCENES.cube), [], 'a built-in has none of its own');
   assert.deepEqual(resolveLights({ lights: given }, saved), given, '--light replaces, not adds');
   assert.deepEqual(resolveLights({ lights: [] }, saved), [], '--no-lights empties the set');
+});
+
+test('a scene is refused when pt-lab did not build an object it includes', () => {
+  /*
+   * pt-lab rebuilds a scene from its own library and never looks at a saved
+   * key that is not in it, so an import that exists only in the editor's
+   * IndexedDB renders as nothing -- no error, and ground truth that agrees.
+   * The check compares what was asked for against what pt-lab reports it
+   * built; these are properties of that comparison, not of any one scene.
+   */
+  const { unbuiltObjects, requestedKeys, sceneFromData, SCENES } = require('../src/generate/driver');
+
+  // Asked for and built: nothing to say, whatever else pt-lab also built.
+  assert.equal(unbuiltObjects('s', ['Cube'], ['Cube', 'Ball']), null);
+  assert.equal(unbuiltObjects('s', [], []), null);
+
+  // Every missing key is named, once, and nothing that was built is.
+  const message = unbuiltObjects('nut', ['Cube', 'import-a-0', 'Ball', 'import-a-0'], ['Cube']);
+  assert.ok(message, 'a missing object must refuse the render');
+  const listed = [...message.matchAll(/^\s+- (\S+)$/gm)].map((m) => m[1]);
+  assert.deepEqual(listed.sort(), ['Ball', 'import-a-0']);
+
+  // A headline first, the way the pane shows failures.
+  const [headline] = message.split('\n');
+  assert.ok(/^[A-Z].*\.$/.test(headline), `not a headline: ${JSON.stringify(headline)}`);
+  assert.match(headline, /"nut"/);
+
+  // Only INCLUDED objects are asked for: cube-1 lists four imports, all
+  // excluded, and must not be refused over them.
+  const scene = sceneFromData('mixed', {
+    version: 1, room: 'room-arealight', camera: { position: [0, 1, 2], target: [0, 0, 0] },
+    objects: [
+      { key: 'Cube', included: true },
+      { key: 'import-x-1', included: false },
+      { key: 'import-y-2', included: true },
+    ],
+  });
+  assert.deepEqual(requestedKeys(scene), ['Cube', 'import-y-2']);
+  assert.deepEqual(requestedKeys(SCENES.cube), SCENES.cube.objects);
+  assert.deepEqual(requestedKeys(SCENES.helmet), [], "helmet names no library objects");
+});
+
+test('an imported model is rendered only from the file the scene recorded', () => {
+  /*
+   * A scene names an import by a key that means something only in the browser
+   * that imported it; pt-lab's Export adds the file (`glb`) and its hash. Each
+   * refusal below is a way the wrong model -- or no model -- would otherwise
+   * render under the right name. Bytes are arbitrary: hashing does not parse.
+   */
+  const { resolveModels, modelProblems } = require('../src/generate/driver');
+  const crypto = require('node:crypto');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cvlab-models-'));
+  const sha = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
+  const model = (name, bytes, suffix = '.glb') => {
+    const glb = `${name}-${sha(bytes).slice(0, 12)}.glb`;
+    fs.writeFileSync(path.join(dir, glb.replace(/\.glb$/, suffix)), bytes);
+    return { glb, sha256: sha(bytes) };
+  };
+  const scene = (...objects) => ({ objects });
+
+  const nut = model('Hex Nut', 'nut bytes');
+  const secret = model('Bracket', 'bracket bytes', '.local.glb');
+
+  // Found, checked, and named without the hash the file name carries. Built-ins
+  // and excluded objects ask for nothing.
+  const ok = resolveModels(scene(
+    { key: 'Cube', included: true },
+    { key: 'import-a-0', included: true, ...nut },
+    { key: 'import-b-1', included: true, ...secret },
+    { key: 'import-c-2', included: false, glb: 'absent-000000000000.glb', sha256: 'f'.repeat(64) },
+  ), dir);
+  assert.deepEqual(ok.problems, []);
+  assert.deepEqual(ok.models.map((m) => [m.key, m.name, path.basename(m.file)]), [
+    ['import-a-0', 'Hex Nut', nut.glb],
+    ['import-b-1', 'Bracket', secret.glb.replace(/\.glb$/, '.local.glb')],
+  ]);
+
+  // The same model under two keys is one file, registered twice.
+  const twice = resolveModels(scene(
+    { key: 'import-a-0', included: true, ...nut },
+    { key: 'import-a-1', included: true, ...nut },
+  ), dir);
+  assert.deepEqual(twice.problems, []);
+  assert.deepEqual(twice.models.map((m) => m.key), ['import-a-0', 'import-a-1']);
+
+  // Every way it can be wrong is refused, and all of them are named in one go.
+  fs.writeFileSync(path.join(dir, 'Imposter-000000000000.glb'), 'something else');
+  fs.writeFileSync(path.join(dir, nut.glb.replace(/\.glb$/, '.local.glb')), 'nut bytes');
+  const bad = resolveModels(scene(
+    { key: 'import-old-0', included: true },                                       // saved before Export wrote models
+    { key: 'import-missing', included: true, glb: 'Gone-000000000000.glb', sha256: 'a'.repeat(64) },
+    { key: 'import-wrong', included: true, glb: 'Imposter-000000000000.glb', sha256: 'b'.repeat(64) },
+    { key: 'import-escape', included: true, glb: '../escape.glb', sha256: 'c'.repeat(64) },
+    { key: 'import-nested', included: true, glb: 'sub/x.glb', sha256: 'c'.repeat(64) },
+    { key: 'import-unhashed', included: true, glb: nut.glb },
+    { key: 'import-both', included: true, ...nut },                                // shared and .local copy
+  ), dir);
+  assert.deepEqual(bad.models, [], 'nothing refused may still be rendered');
+  const named = (key) => bad.problems.some((p) => p.startsWith(`${key}:`));
+  for (const key of ['import-old-0', 'import-missing', 'import-wrong', 'import-escape',
+                     'import-nested', 'import-unhashed', 'import-both']) {
+    assert.ok(named(key), `${key} should be refused by name; got:\n${bad.problems.join('\n')}`);
+  }
+  assert.match(bad.problems.find((p) => p.startsWith('import-old-0')), /Re-export/);
+  assert.match(bad.problems.find((p) => p.startsWith('import-wrong')), /not the model/);
+
+  const message = modelProblems('saved:nut', bad.problems);
+  assert.ok(/^[A-Z].*\.$/.test(message.split('\n')[0]), 'a headline first, the way the pane shows it');
+  assert.equal(message.split('\n').length, 1 + bad.problems.length);
+
+  /*
+   * The name comes from pt-lab's own rule for the file name, `<name>-<12 hex>
+   * .glb`. If pt-lab changes that rule, names here go wrong quietly -- the hash
+   * still protects the bytes -- so read the rule from pt-lab where it exists.
+   */
+  const tracer = path.join(require('../src/generate/driver').PT_SRC, 'lib', 'pathtracer.ts');
+  if (fs.existsSync(tracer)) {
+    assert.match(fs.readFileSync(tracer, 'utf8'), /return `\$\{safe\}-\$\{sha256\.slice\(0, 12\)\}\.glb`;/,
+      "pt-lab's modelFileName no longer writes <name>-<12 hex>.glb; resolveModels' name needs updating");
+  }
 });
 
 test('the generator page forwards every field of a saved scene to pt-lab', () => {

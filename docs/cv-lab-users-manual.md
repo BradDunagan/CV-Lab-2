@@ -660,7 +660,50 @@ promises of everything else. `scenes/*.local.json` is gitignored, for a scene a
 working copy should have and a public repository should not. The suffix is not
 part of the name — `scenes/lamp.local.json` is `saved:lamp` — so a private copy
 kept beside a committed scene of the same name is refused, naming both files,
-rather than one silently rendering as the other.
+rather than one silently rendering as the other. Neither is `.pt-scene`, which
+pt-lab's Export puts on every file: `nut-1.pt-scene.json` is `saved:nut-1`
+copied in as it is, and `nut-1.pt-scene.local.json` keeps it private. The
+suffixes are only stripped in that order, because it is the order `.gitignore`
+honours — `nut-1.local.pt-scene.json` is committed, and is named
+`nut-1.local` so that it does not look private.
+
+**Imported models travel as files beside the scene.** pt-lab's editor stores
+a model imported into it in that browser's IndexedDB and names it in the scene
+by an `import-…` key, which nothing outside that browser can resolve — the hex
+nut and screw bundled with pt-lab included, since its demo imports them the
+same way. So pt-lab's **Export** writes, beside the scene's JSON, the `.glb` of
+every imported model the scene includes, and records in the scene each one's
+file name (`glb`) and the SHA-256 of its bytes (`sha256`):
+
+```
+scenes/nut-1.pt-scene.json
+scenes/models/90593A005_Black-Oxide Medium-Strength Steel Hex Nut-32a69b25ed49.glb
+```
+
+Copy the JSON into `scenes/` and the models into `scenes/models/`. The file
+name ends in the first 12 hex digits of the hash, so two different models that
+share a name cannot overwrite each other there, and a model several scenes use
+is one file. `<name>.local.glb` keeps a model out of the repository, as
+`.local.json` does a scene.
+
+Before anything renders — and under `--dry-run` — the generator finds each
+included model and hashes it, and **refuses the scene**, naming every problem at
+once, if a file is missing, its bytes are not the model the scene recorded,
+both a shared and a `.local` copy exist, or the recorded name is not a plain
+file name. A scene saved before Export wrote models has no `glb` for its imports
+and is refused with that said: re-export it. The models are then handed to
+pt-lab under the scene's own keys, in memory only — nothing is written to the
+generator's browser storage, which pt-lab reloads on every start and which
+would otherwise make one render depend on the last.
+
+As a last line, the generator compares what the scene includes with what pt-lab
+reports it built, and refuses any difference. pt-lab builds nothing for a key it
+does not have and says nothing about it, so without this a scene would render
+with its subject missing.
+
+**A model is only as good a ground-truth subject as its mesh.** pt-lab's hex nut
+has its threads modelled: one view at 256 px lists 6,672 truth edges, 2,548 of
+them visible — the helmet's problem, not the cube's.
 
 **The pane has no room or light controls.** A scene records the room and the
 lights it was composed with, so a control here could only contradict the file.

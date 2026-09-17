@@ -13,6 +13,7 @@
  */
 
 const { app, BrowserWindow, protocol, net, session } = require('electron');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const { MIN_VISIBLE } = require('../lab/match');
 const path = require('node:path');
@@ -69,10 +70,26 @@ function registerScheme() {
 }
 
 let handlerInstalled = false;
+
+/**
+ * The models this run may serve, by the file name the page asks for.
+ *
+ * A map filled per run rather than a directory served wholesale: the page can
+ * fetch exactly the files resolveModels found and verified, and a scene's `glb`
+ * string never becomes a path on its own.
+ */
+const servedModels = new Map();
+
 function installHandler() {
   if (handlerInstalled) return;
   protocol.handle(SCHEME, (request) => {
     const rel = decodeURIComponent(new URL(request.url).pathname).replace(/^\/+/, '');
+    if (rel.startsWith('models/')) {
+      const file = servedModels.get(rel.slice('models/'.length));
+      return file
+        ? net.fetch(pathToFileURL(file).toString())
+        : new Response('not a model this run verified', { status: 404 });
+    }
     // pt-lab's default model and environment URLs are ./assets/…, which the
     // build copies into the bundle; assetsDir() falls back to the checkout for
     // a bundle built before it did.
@@ -456,14 +473,32 @@ const CUBE_YAW_OFFSET = 0.35;
  */
 const SCENES_DIR = path.join(ROOT, 'scenes');
 
+/**
+ * Imported models, one .glb each, exported by pt-lab beside a scene.
+ *
+ * Shared by every scene rather than kept per scene: pt-lab names each file for
+ * the model plus the start of its hash, so the same model exported from two
+ * scenes is one file, and two different models that share a name are two.
+ */
+const MODELS_DIR = path.join(SCENES_DIR, 'models');
+
 /** Does this look like one SceneData, rather than a map of them? */
 function isSceneData(o) {
   return !!o && typeof o === 'object' && 'room' in o && Array.isArray(o.objects);
 }
 
-/** The scene a lone-scene file holds is called: its name, less `.local.json` or `.json`. */
+/**
+ * The name of the scene a lone-scene file holds: the file name less `.json`,
+ * then `.local`, then `.pt-scene` -- in that order and no other.
+ *
+ * The order is .gitignore's. Only a name ENDING in .local.json is kept out of
+ * the repository, so pt-lab's `nut-1.pt-scene.json` made private is
+ * `nut-1.pt-scene.local.json`, and both are `nut-1`. A file called
+ * `nut-1.local.pt-scene.json` is NOT ignored and will be committed, so it keeps
+ * `.local` in its name rather than wearing the name of a private scene.
+ */
 function sceneFileName(file) {
-  return file.replace(/(\.local)?\.json$/, '');
+  return file.replace(/(\.pt-scene)?(\.local)?\.json$/, '');
 }
 
 /**
@@ -482,7 +517,8 @@ function sceneFileName(file) {
  * .gitignore keeps those files out of the repository -- and nothing else, so
  * scenes/lamp.local.json is `lamp`, exactly as scenes/lamp.json would be. It
  * used to come out as `lamp.local`, contradicting the pane's own advice to
- * add one under that name.
+ * add one under that name. Nor is `.pt-scene`, which pt-lab's Export puts on
+ * every file, so an exported scene can be copied in without renaming it.
  *
  * A repeated name throws rather than letting one file quietly shadow another:
  * whichever lost would still be listed, and the wrong scene would render under
@@ -599,6 +635,129 @@ function sceneFromData(name, data) {
   };
 }
 
+/**
+ * The imported models a saved scene includes, found and checked -- or every
+ * reason they cannot be.
+ *
+ * pt-lab records an included import as `key` plus `glb`, the file its Export
+ * wrote the model to, plus `sha256` of those bytes. The key means something
+ * only in the browser that imported the model; the file and the hash are what
+ * let this side render it. So for each included object with a `glb`:
+ *
+ *   - the name must be a bare file name. It comes out of a JSON file and is
+ *     about to become a path.
+ *   - the file must be in scenes/models/, as <glb> or, to keep it out of the
+ *     repository, as the same name ending .local.glb. Both at once is refused:
+ *     which one rendered would be a matter of lookup order.
+ *   - its bytes must hash to `sha256`. The name carries only 12 hex digits of
+ *     it, and a file that merely has the right name is how the wrong model
+ *     renders under the right one.
+ *
+ * An included `import-…` object with no `glb` was saved before pt-lab exported
+ * models, and is refused with that said, rather than left for pt-lab to skip.
+ *
+ * Every problem is collected before any is reported, so one run names all of
+ * them. Nothing here needs Electron or a GPU, which is why it runs before
+ * either is started -- and under --dry-run.
+ */
+function resolveModels(sceneData, dir = MODELS_DIR) {
+  const models = [];
+  const problems = [];
+  const seen = new Map();
+  for (const o of sceneData?.objects ?? []) {
+    if (!o.included) continue;
+    if (!o.glb) {
+      if (String(o.key).startsWith('import-')) {
+        problems.push(`${o.key}: no model file recorded -- the scene was saved before pt-lab's ` +
+          `Export wrote models. Re-export it from pt-lab and copy the .glb files into ${dir}`);
+      }
+      continue;
+    }
+    if (path.basename(o.glb) !== o.glb || !o.glb.endsWith('.glb') || o.glb.startsWith('.')) {
+      problems.push(`${o.key}: "${o.glb}" is not a plain .glb file name`);
+      continue;
+    }
+    if (!/^[0-9a-f]{64}$/.test(o.sha256 ?? '')) {
+      problems.push(`${o.key}: ${o.glb} has no valid sha256 recorded, so it cannot be checked`);
+      continue;
+    }
+    if (seen.has(o.glb)) {
+      // One file, several objects: fine if they agree on what it is. If the
+      // file itself failed, that is already reported once.
+      const first = models.find((m) => m.glb === o.glb);
+      if (seen.get(o.glb) !== o.sha256) problems.push(`${o.glb} is recorded with two different hashes`);
+      else if (first) models.push({ ...first, key: o.key });
+      continue;
+    }
+    seen.set(o.glb, o.sha256);
+
+    const candidates = [o.glb, o.glb.replace(/\.glb$/, '.local.glb')]
+      .map((name) => path.join(dir, name))
+      .filter((file) => fs.existsSync(file));
+    if (candidates.length === 0) {
+      problems.push(`${o.key}: ${o.glb} is not in ${dir}`);
+      continue;
+    }
+    if (candidates.length > 1) {
+      problems.push(`${o.key}: both ${o.glb} and its .local.glb copy are in ${dir}; keep one`);
+      continue;
+    }
+    const actual = crypto.createHash('sha256').update(fs.readFileSync(candidates[0])).digest('hex');
+    if (actual !== o.sha256) {
+      problems.push(`${o.key}: ${path.basename(candidates[0])} is not the model the scene recorded ` +
+        `(sha256 ${actual.slice(0, 12)}…, expected ${o.sha256.slice(0, 12)}…)`);
+      continue;
+    }
+    models.push({
+      key: o.key,
+      glb: o.glb,
+      name: o.glb.replace(/-[0-9a-f]{12}\.glb$/, '').replace(/\.glb$/, ''),
+      file: candidates[0],
+      sha256: o.sha256,
+    });
+  }
+  return { models, problems };
+}
+
+/** The refusal for resolveModels' problems, headline first. */
+function modelProblems(sceneName, problems) {
+  return `Scene "${sceneName}" includes ${problems.length} imported model(s) that cannot be rendered.\n` +
+    problems.map((p) => `  - ${p}`).join('\n');
+}
+
+/**
+ * The library keys a scene asks pt-lab to include. Empty for helmet, which
+ * leaves pt-lab's default model alone and names nothing.
+ */
+function requestedKeys(scene) {
+  if (scene.sceneData) return scene.sceneData.objects.filter((o) => o.included).map((o) => o.key);
+  return scene.objects ?? [];
+}
+
+/**
+ * Why a render is refused rather than run, or null if it is not.
+ *
+ * pt-lab does not complain about an object it cannot build: it rebuilds a
+ * scene from its own library, and a saved key missing from that library is
+ * never looked at. The render then succeeds, minus the object -- and with
+ * `--truth` the ground truth is missing it too, so scoring agrees with the
+ * empty picture instead of flagging it. saved:nut-1-x-10, whose one included
+ * object is an import, rendered as an empty grey room with no error at all.
+ *
+ * The first line is a headline, as checkPrerequisites' are, because the pane
+ * shows a failure the same way.
+ */
+function unbuiltObjects(sceneName, requested, built) {
+  const have = new Set(built);
+  const missing = [...new Set(requested)].filter((key) => !have.has(key));
+  if (missing.length === 0) return null;
+  return `Scene "${sceneName}" includes ${missing.length} object(s) pt-lab could not build.\n` +
+    missing.map((key) => `  - ${key}`).join('\n') + '\n' +
+    `pt-lab has nothing in its library under ${missing.length === 1 ? 'that key' : 'those keys'}. ` +
+    `Rendering without ${missing.length === 1 ? 'it' : 'them'} would give an image ` +
+    `that is silently missing part of its subject, so nothing was rendered.`;
+}
+
 /** A built-in scene, or `saved:<name>` from pt-lab's editor. */
 function resolveScene(name) {
   if (typeof name === 'string' && name.startsWith('saved:')) {
@@ -656,6 +815,10 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
   const problem = checkPrerequisites();
   if (problem) throw new Error(problem);
   if (!opts.out) throw new Error('generate() needs an output directory');
+  // Before any window or GPU, and before --dry-run returns: a missing or
+  // mismatched model is a problem with files on disk, and says so for free.
+  const { models, problems } = resolveModels(scene.sceneData);
+  if (problems.length > 0) throw new Error(modelProblems(opts.scene, problems));
 
   /*
    * Three states, not two. `undefined` means the caller said nothing and the
@@ -759,6 +922,22 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
       width: opts.size, height: opts.size, room: rebuilds ? null : room,
     })})`);
     let objects = info.objects;
+    if (models.length > 0) {
+      servedModels.clear();
+      for (const m of models) servedModels.set(m.glb, m.file);
+      const registered = await call(`registerImports(${JSON.stringify(
+        models.map(({ key, name, glb }) => ({ key, name, url: `${SCHEME}://lab/models/${encodeURIComponent(glb)}` }))
+      )})`);
+      // resolveModels hashed the file on disk; this is what the page actually
+      // received and handed pt-lab, which is the thing that renders.
+      for (const m of models) {
+        const got = registered.find((r) => r.key === m.key)?.sha256;
+        if (got !== m.sha256) {
+          throw new Error(`pt-lab registered ${m.glb} with sha256 ${got ?? 'unknown'}, ` +
+            `not the ${m.sha256} the scene recorded and the file on disk has`);
+        }
+      }
+    }
     if (scene.sceneData) {
       // A saved scene is already a SceneData -- room, per-object material and
       // transform, the lot. It goes through as it is, with only the room
@@ -766,6 +945,13 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
       objects = await call(`applyScene(${JSON.stringify({ ...scene.sceneData, room })})`);
     } else if (scene.objects) {
       objects = await call(`applyScene(${JSON.stringify({ room, objects: scene.objects })})`);
+    }
+    // Before any light or pixel: a scene missing an object is refused, not
+    // rendered without it. The comparison is against what pt-lab reports it
+    // built, so nothing here has to know which keys pt-lab can build.
+    if (requestedKeys(scene).length > 0) {
+      const refused = unbuiltObjects(opts.scene, requestedKeys(scene), await call('includedKeys()'));
+      if (refused) throw new Error(refused);
     }
     /*
      * Always applied, even when they are the scene's own and applyScene has
@@ -855,7 +1041,7 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
 
 module.exports = {
   generate, windowHost, plan, resolveScene, savedSceneNames, sceneFromData, readSavedScenes, registerScheme, checkPrerequisites, buildInputs,
-  parseLight, resolveLights,
-  DEFAULTS, SCENES, LIGHT_TYPES, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS,
+  parseLight, resolveLights, requestedKeys, unbuiltObjects, resolveModels, modelProblems,
+  DEFAULTS, SCENES, LIGHT_TYPES, MODELS_DIR, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS,
   assetsDir, defaultOutputDir, isPackaged,
 };
