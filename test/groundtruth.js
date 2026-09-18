@@ -44,6 +44,22 @@ function test(name, fn) {
   }
 }
 
+/**
+ * Wait for every async test declared so far, including ones declared while
+ * waiting.
+ *
+ * Draining rather than one Promise.all, because this file waits in the middle:
+ * the checks after that point are declared inside a .then, and an async test
+ * among them would settle after the summary had already been printed and the
+ * process had exited -- reported as neither ok nor FAIL, which is exactly the
+ * silence the harness above exists to prevent. The first async test written
+ * down there duly counted for nothing.
+ */
+function drain() {
+  if (pending.length === 0) return Promise.resolve();
+  return Promise.all(pending.splice(0)).then(drain);
+}
+
 /* --- fixtures ---------------------------------------------------------- */
 
 /** One ground-truth edge, as the renderer writes them. */
@@ -353,7 +369,7 @@ test('match refuses two feature lists measured in different images', () => {
   );
 });
 
-Promise.all(pending).then(() => {
+drain().then(() => {
   /* --- the generator's prerequisite checks ------------------------------- */
 
 test('a stale generator build is caught, and named', () => {
@@ -806,6 +822,160 @@ test('a run lights a scene with its own lights unless told otherwise', () => {
   assert.deepEqual(resolveLights({ lights: [] }, saved), [], '--no-lights empties the set');
 });
 
+test('a tile draws each feature as what it is, and truth only where it is visible', async () => {
+  /*
+   * The slot overlay asked one question -- "is this a corner?" -- and drew
+   * everything else as a red line from x0,y0 to x1,y1. Three consequences, all
+   * silent:
+   *
+   *   - gt-edge has those fields, so GROUND TRUTH was drawn in the detections'
+   *     colour and could not be told from them.
+   *   - `visible` was never read, so the hidden far side of a mesh was drawn
+   *     over the image it is hidden in -- ~4,100 of the nut's 6,672 edges.
+   *   - gt-vertex and edge-match have x,y and no x0: moveTo(NaN, NaN), which
+   *     canvas discards without a word.
+   *
+   * Pure decision, no canvas. Run from here rather than the renderer suite
+   * because it needs neither Electron nor a DOM -- and because what counts as
+   * visible is this suite's subject.
+   */
+  const { overlayRole, isDetection, isVisibleTruth } =
+    await import('../src/renderer/overlay-features.mjs');
+  const { MIN_VISIBLE } = require('../src/lab/match');
+
+  /*
+   * Every feature type the lab produces, and what a tile does with it. A new
+   * type added to the lab and not to the overlay comes out 'unknown', which is
+   * reported rather than drawn -- the guess is what caused all three failures
+   * above.
+   */
+  assert.deepEqual({
+    segment: overlayRole({ type: 'edge-segment' }),
+    corner: overlayRole({ type: 'edge-corner' }),
+    edge: overlayRole({ type: 'gt-edge' }),
+    vertex: overlayRole({ type: 'gt-vertex' }),
+    match: overlayRole({ type: 'edge-match' }),
+  }, {
+    segment: 'segment', corner: 'corner',
+    edge: 'truth-edge', vertex: 'truth-vertex',
+    // A verdict about a feature, carrying a midpoint and no extent: drawing it
+    // as a segment would be drawing a geometry nothing measured.
+    match: 'none',
+  });
+  for (const unknown of [{ type: 'edge-region' }, { type: undefined }, {}, null]) {
+    assert.equal(overlayRole(unknown), 'unknown', `${JSON.stringify(unknown)} should not be drawn`);
+  }
+
+  // The two a pipeline finds are detections; what is really there is not.
+  assert.deepEqual(
+    ['edge-segment', 'edge-corner', 'gt-edge', 'gt-vertex', 'edge-match']
+      .map((type) => isDetection({ type })),
+    [true, true, false, false, false]
+  );
+
+  /*
+   * Visibility is the matcher's threshold, not a number of the overlay's own,
+   * so a tile draws exactly the truth edges the score is computed over. An
+   * edge occluded by its own object still reports a percent or two from its
+   * endpoints, which is why `> 0` is not the test.
+   */
+  const edge = (visible) => ({ type: 'gt-edge', visible });
+  assert.equal(isVisibleTruth(edge(MIN_VISIBLE), MIN_VISIBLE), true, 'the threshold itself counts');
+  assert.equal(isVisibleTruth(edge(MIN_VISIBLE - 0.01), MIN_VISIBLE), false);
+  assert.equal(isVisibleTruth(edge(0.02), MIN_VISIBLE), false, 'an endpoint peeking out is not visible');
+  assert.equal(isVisibleTruth(edge(undefined), MIN_VISIBLE), false);
+
+  // A vertex's `visible` is a FLAG, not a fraction -- the distinction that
+  // made a cube report 12/12 edges over a score computed from nine.
+  assert.equal(isVisibleTruth({ type: 'gt-vertex', visible: true }, MIN_VISIBLE), true);
+  assert.equal(isVisibleTruth({ type: 'gt-vertex', visible: false }, MIN_VISIBLE), false);
+  assert.equal(isVisibleTruth({ type: 'gt-vertex', visible: 0.9 }, MIN_VISIBLE), false,
+    'a fraction on a vertex is not the flag it needs');
+
+  // Detections are never filtered by a truth field they do not have.
+  assert.equal(isVisibleTruth({ type: 'edge-segment', visible: 1 }, MIN_VISIBLE), false);
+});
+
+test('a label map fill steps aside for lines drawn over it, and nothing else', async () => {
+  /*
+   * `mask` draws every label one light grey -- lines, in the same places the
+   * fitted segments and the truth edges are drawn as lines. Two sets of lines
+   * a pixel apart hides the comparison the overlay exists for, so the fill
+   * gives way. Only for mask, and only for LINES: the image in `A` is the
+   * thing being detected on and must stay, and crosses sit on top of anything.
+   */
+  const { hidesLabelFill } = await import('../src/renderer/overlay-features.mjs');
+  const on = (...roles) => Object.fromEntries(roles.map((r) => [r, true]));
+
+  assert.equal(hidesLabelFill('mask', on('segment')), true);
+  assert.equal(hidesLabelFill('mask', on('truth-edge')), true);
+  assert.equal(hidesLabelFill('mask', on('segment', 'corner', 'truth-vertex')), true);
+
+  // Crosses and circles are not lines; nothing on draws nothing away.
+  assert.equal(hidesLabelFill('mask', on('corner')), false);
+  assert.equal(hidesLabelFill('mask', on('truth-vertex')), false);
+  assert.equal(hidesLabelFill('mask', {}), false);
+
+  // Every other colormap keeps its image, whatever is drawn over it.
+  for (const map of ['gray', 'viridis', 'turbo', 'diverging', 'categorical', 'cyclic']) {
+    assert.equal(hidesLabelFill(map, on('segment', 'truth-edge')), false,
+      `${map} is not a label fill and must not be suppressed`);
+  }
+  assert.equal(hidesLabelFill(undefined, on('segment')), false);
+  assert.equal(hidesLabelFill('mask', null), false);
+});
+
+test('a slot offers one checkbox per drawable overlay, counting what it would draw', async () => {
+  /*
+   * The count beside a checkbox is what the tile DRAWS, not what the slot
+   * holds -- otherwise a ticked box reading "6672 truth edges" over a picture
+   * with 2548 of them is a number that invites exactly the wrong conclusion
+   * about recall.
+   */
+  const { OVERLAY_KINDS, overlayCounts, overlayRole } =
+    await import('../src/renderer/overlay-features.mjs');
+  const { MIN_VISIBLE } = require('../src/lab/match');
+
+  // Every kind that can be drawn is offered, once, and explains itself.
+  const roles = OVERLAY_KINDS.map((k) => k.role);
+  assert.deepEqual([...roles].sort(), ['corner', 'segment', 'truth-edge', 'truth-vertex']);
+  assert.equal(new Set(roles).size, roles.length, 'a kind offered twice is two checkboxes');
+  for (const kind of OVERLAY_KINDS) {
+    assert.ok(kind.label && kind.tip && kind.swatch, `${kind.role} is missing label, tip or swatch`);
+    // What the marks MEAN. A tip that only says what the checkbox does tells
+    // the reader what they can already see.
+    assert.ok(kind.tip.length > 60, `${kind.role}'s tip is too short to explain anything`);
+  }
+  assert.equal(new Set(OVERLAY_KINDS.map((k) => k.tip)).size, OVERLAY_KINDS.length);
+
+  const lists = [{
+    features: [
+      { type: 'edge-segment' }, { type: 'edge-segment' },
+      { type: 'edge-corner' },
+      { type: 'gt-edge', visible: 0.9 },
+      { type: 'gt-edge', visible: 0.1 },            // occluded: not drawn, not counted
+      { type: 'gt-vertex', visible: true },
+      { type: 'gt-vertex', visible: false },
+      { type: 'edge-match', role: 'hit' },          // a verdict, not a mark
+      { type: 'edge-region' },                      // a kind this does not know
+    ],
+  }];
+  assert.deepEqual(overlayCounts(lists, MIN_VISIBLE),
+    { 'truth-edge': 1, 'truth-vertex': 1, segment: 2, corner: 1 });
+
+  // Nothing bound, nothing offered: every count is zero rather than absent, so
+  // the column asks one question -- is this kind's count above zero?
+  assert.deepEqual(overlayCounts([], MIN_VISIBLE),
+    { 'truth-edge': 0, 'truth-vertex': 0, segment: 0, corner: 0 });
+
+  // The kinds and the drawing rules cannot drift apart: each offered kind is
+  // a role something can actually be drawn as.
+  for (const role of roles) {
+    assert.ok(['segment', 'corner', 'truth-edge', 'truth-vertex'].includes(role));
+  }
+  assert.equal(overlayRole({ type: 'edge-region' }), 'unknown');
+});
+
 test('a scene is refused when pt-lab did not build an object it includes', () => {
   /*
    * pt-lab rebuilds a scene from its own library and never looks at a saved
@@ -964,6 +1134,8 @@ test('the generator page forwards every field of a saved scene to pt-lab', () =>
   }
 });
 
-console.log(failures === 0 ? '\nAll ground-truth tests passed.' : `\n${failures} failing.`);
+return drain();
+}).then(() => {
+  console.log(failures === 0 ? '\nAll ground-truth tests passed.' : `\n${failures} failing.`);
   process.exit(failures === 0 ? 0 : 1);
 });

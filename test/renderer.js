@@ -38,6 +38,16 @@ const { parseStatement } = require('../src/lab/parser');
 
 const ROOT = path.join(__dirname, '..');
 
+/**
+ * The overlay checkboxes a slot column offers, in sorted order.
+ *
+ * Spelt out rather than imported: src/renderer/ is ESM built by Vite, and this
+ * is the list the UI is asserted against — a kind added there has to be looked
+ * at here on purpose.
+ */
+const OVERLAY_NAMES =
+  ['overlay:corner', 'overlay:segment', 'overlay:truth-edge', 'overlay:truth-vertex'];
+
 let failures = 0;
 function test(name, fn) {
   try { fn(); console.log(`  ok   ${name}`); }
@@ -164,6 +174,8 @@ async function collect(win, swatch, linearPng) {
      * as it was.
      */
     const lab2 = () => window.__cvlab;
+    const OVERLAY_NAMES =
+      ['overlay:corner', 'overlay:segment', 'overlay:truth-edge', 'overlay:truth-vertex'];
     const showSlot = async (name) => {
       const ids = lab2().slotPaneIds();
       const already = ids.find(id => lab2().paneStore.getPane(id)?.name === name);
@@ -557,13 +569,123 @@ async function collect(win, swatch, linearPng) {
       .find(i => i.id === 'slot').items.every(i => !i.label.includes('PF'));
 
     // Does the overlay actually draw? Compare a tile with it on and off.
+    // Slots come up with every overlay OFF, so this starts from nothing drawn.
     await showSlot('PB');
     const snapshot = () => ink(canvasFor('PB'));
     const toggleOverlay = async () => { menu('toggle-overlay'); await sleep(80); };
-    await toggleOverlay();                 // off
-    r.withoutOverlay = snapshot();
-    await toggleOverlay();                 // on again
+    r.withoutOverlay = snapshot();         // as the slot arrived
+    await toggleOverlay();                 // on
     r.withOverlay = snapshot();
+    await toggleOverlay();                 // off again
+    r.overlayOffAgain = snapshot();
+
+    /*
+     * The slot column's overlay checkboxes: one per kind this tile can draw,
+     * with the count it would draw and a tip explaining what the marks are.
+     * Driven through controlEvents the way the dropdowns above are -- clicking
+     * the SVG would be testing paneless's hit-testing.
+     */
+    r.overlayBoxes = (() => {
+      const paneId = controlsPaneFor('PB');
+      const data = lab2().controlStore.getPaneData(paneId);
+      return Object.values(data?.byId ?? {})
+        .filter((c) => c.type === 'checkbox' && c.name?.startsWith('overlay:'))
+        .map((c) => ({
+          name: c.name, text: c.text, visible: c.visible, checked: c.checked,
+          tip: (lab2().controlTips.get(c.id) ?? '').slice(0, 40),
+        }));
+    })();
+
+    // Turning one kind off must change the tile, and only that kind: corners
+    // off still leaves the segments drawn.
+    const setCheckbox = async (slotName, controlName, checked) => {
+      const paneId = controlsPaneFor(slotName);
+      const control = controlNamed(paneId, controlName);
+      lab2().controlEvents.emit({
+        type: 'controlValueChanged', paneId, controlId: control.id, value: checked,
+      });
+      await sleep(90);
+    };
+    /*
+     * A second tile, the same size, showing the same feature lists. Its
+     * overlays must not follow PB's: the two panes are different stages of one
+     * pipeline, and comparing them is the whole reason there are two.
+     */
+    await showSlot('PM');
+    const otherSnapshot = () => ink(canvasFor('PM'));
+
+    /*
+     * Nothing is drawn until a box is ticked, so this block turns them on
+     * first -- and that is the thing to check before anything else.
+     */
+    r.boxesStartUnchecked = (() => {
+      const paneId = controlsPaneFor('PB');
+      return OVERLAY_NAMES.map((n) => controlNamed(paneId, n)?.checked);
+    })();
+    await setCheckbox('PB', 'overlay:segment', true);
+    await setCheckbox('PB', 'overlay:corner', true);
+    r.withOverlay = snapshot();
+    r.otherBefore = otherSnapshot();
+
+    await setCheckbox('PB', 'overlay:corner', false);
+    r.withoutCorners = snapshot();
+    r.otherAfter = otherSnapshot();
+    r.otherBoxChecked = (() => {
+      const paneId = controlsPaneFor('PM');
+      return controlNamed(paneId, 'overlay:corner')?.checked;
+    })();
+    await setCheckbox('PB', 'overlay:segment', false);
+    r.withoutEither = snapshot();
+    await setCheckbox('PB', 'overlay:corner', true);
+    await setCheckbox('PB', 'overlay:segment', true);
+    r.restored = snapshot();
+
+    // The menu is the one control that speaks for every slot: it must reach
+    // both tiles, and leave them where it found them when toggled back.
+    menu('toggle-overlay');
+    await sleep(90);
+    r.menuOff = { pb: snapshot(), pm: otherSnapshot() };
+    menu('toggle-overlay');
+    await sleep(90);
+    r.menuOn = { pb: snapshot(), pm: otherSnapshot() };
+
+    /*
+     * A label map under the mask colormap is a field of light grey lines, and
+     * the fitted segments are drawn as lines too. With segments on, the fill
+     * must step aside: no grey left, only the overlay on black.
+     *
+     * No backticks in here, ever: this whole block is a template literal
+     * handed to executeJavaScript, and one in a COMMENT ends it -- the file
+     * then fails to parse, which Electron reports as a dialog from the main
+     * process rather than as a failing test.
+     */
+    await showSlot('PR');
+    /*
+     * Set what this measures rather than inheriting it. The menu toggles above
+     * turned every slot's overlays on, including the defaults a slot bound
+     * afterwards starts from -- so PR arrives with segments on, and the first
+     * reading was of a tile whose fill had already stepped aside.
+     */
+    await setCheckbox('PR', 'overlay:segment', false);
+    await setCheckbox('PR', 'overlay:corner', false);
+    const greyPixels = () => {
+      const c = canvasFor('PR');
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i] === d[i + 1] && d[i + 1] === d[i + 2] && d[i] >= 170 && d[i] <= 225) n += 1;
+      }
+      return n;
+    };
+    r.maskGreyAlone = greyPixels();
+    r.maskReadout = readoutFor('PR');
+    await setCheckbox('PR', 'overlay:segment', true);
+    r.maskGreyWithSegments = greyPixels();
+    r.maskInkWithSegments = ink(canvasFor('PR'));
+    await setCheckbox('PR', 'overlay:segment', false);
+    await setCheckbox('PR', 'overlay:corner', true);
+    r.maskGreyWithCorners = greyPixels();
+    await setCheckbox('PR', 'overlay:corner', false);
 
     try { window.lab.draw(canvasFor('PB').id, 'PF', {}); r.drawOnFeatures = 'accepted'; }
     catch (e) { r.drawOnFeatures = e.message; }
@@ -762,8 +884,8 @@ app.whenReady().then(async () => {
      * returns pixels.
      */
     assert.deepEqual(r.bridge, ['basename', 'confirmReset', 'draw', 'features',
-      'generate', 'histogram', 'log', 'onMenuCommand', 'openImage', 'ops',
-      'pipeline', 'probeAll', 'quote', 'reset', 'run', 'saveSession',
+      'generate', 'histogram', 'log', 'minVisible', 'onMenuCommand', 'openImage',
+      'ops', 'pipeline', 'probeAll', 'quote', 'reset', 'run', 'saveSession',
       'sessionJSON', 'setMenuState', 'slots', 'thumbnail', 'versions']);
   });
 
@@ -893,6 +1015,20 @@ app.whenReady().then(async () => {
     assert.equal(overlay.type, 'checkbox');
     assert.equal(overlay.checked, false, 'the checkbox should follow the state it was built with');
 
+    /*
+     * Ground truth is a separate toggle, because it is what the fits are being
+     * compared against rather than more of them -- and it is off in the state
+     * the renderer starts with.
+     */
+    const truth = byLabel('Draw ground truth over tiles');
+    assert.equal(truth.type, 'checkbox');
+    assert.equal(truth.checked, false, 'unset state must not tick the box');
+    assert.ok(flatten(buildMenu({
+      state: { scaling: 'pixels', overlay: false, truth: true, viewIsReset: false },
+      send: () => {},
+    }).items).find((i) => i.label === 'Draw ground truth over tiles').checked,
+    'the checkbox should follow the state it was built with');
+
     assert.equal(byLabel('Reset View').enabled, true, 'enabled while the view is zoomed');
     const whole = flatten(buildMenu({
       state: { scaling: 'smooth', overlay: true, viewIsReset: true }, send: () => {},
@@ -958,7 +1094,12 @@ app.whenReady().then(async () => {
 
   test('display defaults follow the data kind', () => {
     assert.match(r.readoutE, /diverging/, 'a signed gradient should default to diverging');
-    assert.match(r.readoutM, /categorical/, 'a label map should default to categorical');
+    /*
+     * mask, not categorical: a segment map is normally read under the overlay
+     * drawn over it, and a dozen competing hues make both harder to see.
+     * Identity is one dropdown away when WHICH label matters.
+     */
+    assert.match(r.readoutM, /mask/, 'a label map should default to the mask colormap');
     assert.match(r.readoutP, /gray/, 'plain intensity should default to gray');
   });
 
@@ -1183,6 +1324,88 @@ app.whenReady().then(async () => {
   test('feature slots report what kind of features they hold', () => {
     assert.deepEqual(r.featureTypes.PF && Object.keys(r.featureTypes.PF), ['edge-segment']);
     assert.deepEqual(r.featureTypes.PC && Object.keys(r.featureTypes.PC), ['edge-corner']);
+  });
+
+  test('a slot draws no overlay until asked', () => {
+    /*
+     * A pipeline binds a dozen slots at once. Every one of them arriving under
+     * red lines and green crosses buries the images the marks are drawn on --
+     * which is the thing they are meant to be compared against.
+     */
+    assert.deepEqual(r.boxesStartUnchecked, [false, false, false, false],
+      'a slot came up with an overlay already ticked');
+    assert.notEqual(r.withOverlay, r.withoutOverlay, 'the overlay drew nothing');
+    assert.equal(r.overlayOffAgain, r.withoutOverlay,
+      'turning the overlay off should give back the tile the slot arrived with');
+  });
+
+  test('a label map gets out of the way of the lines drawn over it', () => {
+    /*
+     * `mask` draws every label one light grey, and a fitted segment is a line
+     * in nearly the same place. Both at once is two sets of lines a pixel
+     * apart, which hides the comparison the overlay exists for.
+     */
+    assert.match(r.maskReadout, /mask/, 'this check needs a slot drawn with the mask colormap');
+    assert.ok(r.maskGreyAlone > 100,
+      `a label map should be mostly grey lines, got ${r.maskGreyAlone} grey pixels`);
+    assert.equal(r.maskGreyWithSegments, 0,
+      'the grey fill should not be drawn under the segments');
+    assert.ok(r.maskInkWithSegments > 0, 'the segments themselves should still be drawn');
+    /*
+     * Corners are crosses, not lines, so the fill stays: they cover some of it
+     * -- a cross and its uncertainty circle are drawn over the grey, not
+     * instead of it -- but the label map is still there, which is the
+     * difference from the segments case above, where nothing grey survives.
+     */
+    assert.ok(r.maskGreyWithCorners > 1000,
+      `corners should leave the label map drawn, got ${r.maskGreyWithCorners} grey pixels`);
+  });
+
+  test('a slot offers a checkbox per overlay it can draw, and each one draws', () => {
+    /*
+     * The column is where a kind is turned on alone -- the menu only toggles
+     * detections or truth as a pair. Each box carries the COUNT it would draw,
+     * so a ticked box with nothing on the tile is never a mystery, and a tip
+     * saying what the marks mean rather than what the control does.
+     */
+    const byName = Object.fromEntries(r.overlayBoxes.map((b) => [b.name, b]));
+    assert.deepEqual(Object.keys(byName).sort(), OVERLAY_NAMES);
+
+    // This session fitted segments and corners and has no ground truth, so
+    // only those two are offered -- a checkbox for nothing would read as a
+    // pipeline that found nothing.
+    assert.equal(byName['overlay:segment'].visible, true);
+    assert.equal(byName['overlay:corner'].visible, true);
+    assert.equal(byName['overlay:truth-edge'].visible, false,
+      'a kind with nothing to draw should not be offered');
+    assert.match(byName['overlay:segment'].text, /^segments \([1-9][0-9]*\)$/,
+      `the count should be what the tile draws, got ${byName['overlay:segment'].text}`);
+    for (const box of Object.values(byName)) {
+      assert.ok(box.tip.length > 20, `${box.name} has no tooltip`);
+    }
+
+    // Each kind draws something of its own: turning corners off changes the
+    // tile, and turning segments off changes it again.
+    assert.notEqual(r.withoutCorners, r.withOverlay, 'corners drew nothing');
+    assert.notEqual(r.withoutEither, r.withoutCorners, 'segments drew nothing');
+    assert.equal(r.restored, r.withOverlay, 'ticking both back on should restore the tile');
+  });
+
+  test('an overlay checkbox applies to its own slot and no other', () => {
+    /*
+     * The flags are per SLOT. One switch for every tile at once cannot express
+     * the comparison the panes exist for -- corners over the label map while
+     * they are off over the image beside it.
+     */
+    assert.equal(r.otherAfter, r.otherBefore,
+      'unticking corners on one slot changed another slot\'s tile');
+    assert.equal(r.otherBoxChecked, false,
+      'the other slot\'s checkbox followed changes made in a different column');
+
+    // ...while the menu still speaks for all of them.
+    assert.notEqual(r.menuOff.pb, r.menuOn.pb, 'the menu left one tile alone');
+    assert.notEqual(r.menuOff.pm, r.menuOn.pm, 'the menu reached only the focused slot');
+    assert.equal(r.menuOn.pb, r.restored, 'toggling twice should restore the tile');
   });
 
   test('the overlay actually changes the tile', () => {

@@ -372,6 +372,37 @@ test('every script under scripts/ is syntactically valid', () => {
   }
 });
 
+test('every suite under test/ is syntactically valid', () => {
+  /*
+   * The same guard, for the same reason, one directory over -- and it has now
+   * been paid for twice.
+   *
+   * test/renderer.js hands a large block of page script to executeJavaScript
+   * as a TEMPLATE LITERAL, so a backtick anywhere inside it ends the literal
+   * and turns the rest of the file into something that does not parse. Written
+   * in a COMMENT inside that block, around a colormap name, it looks entirely
+   * harmless. Electron then reports it as an "Uncaught Exception" DIALOG from
+   * the main process, which no runner reads and which hangs the suite waiting
+   * for someone to click OK -- rather than as a failing test.
+   *
+   * Parsing needs no Electron and no display, so this is the cheap version of
+   * that discovery.
+   */
+  const vm = require('node:vm');
+  const dir = __dirname;
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.js')).sort();
+  assert.ok(files.length > 10, `only found ${files.length} suites -- wrong directory?`);
+
+  for (const file of files) {
+    const src = fs.readFileSync(path.join(dir, file), 'utf8');
+    try {
+      new vm.Script(src, { filename: file });
+    } catch (err) {
+      assert.fail(`test/${file} does not parse: ${err.message}`);
+    }
+  }
+});
+
 /* ------------------------------------------------------------------- */
 
 fs.rmSync(tmp, { recursive: true, force: true });

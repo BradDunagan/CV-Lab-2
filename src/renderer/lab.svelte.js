@@ -72,7 +72,82 @@ export function panBy(dxFraction, dyFraction) {
  *   pixels  fit the pane; nearest when magnifying, so pixel edges stay crisp
  *   actual  never magnify — a 128x128 slot simply appears small
  */
-export const display = $state({ scaling: 'smooth', overlay: true });
+/**
+ * What each tile draws, PER SLOT.
+ *
+ * Per slot rather than one setting for the app, and not as a preference: the
+ * tiles show different stages of one pipeline, so an overlay that is the point
+ * on the beauty image is noise on the gradient beside it. Corners drawn over
+ * `R`'s label map while they are off over `A` is a comparison; one switch for
+ * every tile at once cannot express it.
+ *
+ * Keyed by slot name, the way `views` is, and dropped by refreshSlots when the
+ * slot goes -- for the same reason: the name is the identity a pane binds to.
+ */
+const overlays = $state({ byName: {} });
+
+/**
+ * What a slot starts with, and what the menu's two items set.
+ *
+ * Nothing, and that is the point: a slot shows what the operation produced
+ * until someone asks for more. A pipeline binds a dozen slots at once, and
+ * every one of them coming up under red lines and green crosses buries the
+ * images they are drawn on -- which is what the marks are FOR being compared
+ * against. Each overlay is one checkbox away, per slot.
+ */
+export const display = $state({
+  scaling: 'smooth',
+  defaults: { 'truth-edge': false, 'truth-vertex': false, segment: false, corner: false },
+});
+
+/** The two groups the application menu toggles, together, everywhere. */
+export const DETECTION_KINDS = ['segment', 'corner'];
+export const TRUTH_KINDS = ['truth-edge', 'truth-vertex'];
+
+/**
+ * The overlay flags for one slot, created from the defaults on first ask.
+ *
+ * Lazily rather than in refreshSlots, so a slot REBOUND while a pipeline runs
+ * -- same name, new version -- keeps what was chosen for it. Null for no slot,
+ * which is what a pane shows before it is bound.
+ */
+export function kindsFor(slotName) {
+  if (!slotName) return null;
+  if (!overlays.byName[slotName]) overlays.byName[slotName] = { ...display.defaults };
+  return overlays.byName[slotName];
+}
+
+/** Is any kind in `group` drawn anywhere, or set to be? The menu ticks on that. */
+export const anyDrawn = (group) =>
+  group.some((role) => display.defaults[role]) ||
+  Object.values(overlays.byName).some((kinds) => group.some((role) => kinds[role]));
+
+/**
+ * Turn a whole group on everywhere, or off everywhere if any of it is on.
+ *
+ * The menu is the only thing that speaks for every slot at once, so it writes
+ * to all of them AND to the defaults -- otherwise a slot bound afterwards
+ * would arrive with the setting the menu had just cleared.
+ */
+export function toggleKinds(group) {
+  const on = anyDrawn(group);
+  for (const role of group) {
+    display.defaults[role] = !on;
+    for (const kinds of Object.values(overlays.byName)) kinds[role] = !on;
+  }
+  return !on;
+}
+
+/**
+ * The tooltip a control asked for, and where to draw it.
+ *
+ * paneless renders its controls as SVG from metadata and has no tooltip of its
+ * own, so the text lives here, keyed by the control id it put in the DOM, and
+ * App.svelte watches the pointer. Registered by whoever built the control and
+ * dropped when that column goes away.
+ */
+export const controlTips = new Map();
+export const tooltip = $state({ text: '', x: 0, y: 0, visible: false });
 
 /* ------------------------------------------------------------------ */
 /* slots                                                              */
@@ -90,8 +165,15 @@ const views = $state({ byName: {} });
  */
 function defaultView(info) {
   if (info.dtype === 'i32') {
-    // A label map is an identity, not a measurement: never interpolate it.
-    return { type: 'image', colormap: 'categorical', range: 'auto', curve: 'linear', channel: -1 };
+    /*
+     * A label map is an identity, not a measurement: never interpolate it.
+     *
+     * `mask` rather than `categorical`, because the question a segment map is
+     * usually asked is "where is there a segment" -- and a dozen hues answer
+     * "which segment is this one" loudly, over the top of the overlay drawn on
+     * the same tile. Identity is one dropdown away when it is what is wanted.
+     */
+    return { type: 'image', colormap: 'mask', range: 'auto', curve: 'linear', channel: -1 };
   }
   if (info.space === 'none') {
     // Signed data — gradients. Symmetric about zero, diverging colormap.
@@ -127,6 +209,9 @@ export function refreshSlots() {
   }
   for (const name of Object.keys(views.byName)) {
     if (!slots.list.some((s) => s.name === name)) delete views.byName[name];
+  }
+  for (const name of Object.keys(overlays.byName)) {
+    if (!slots.list.some((s) => s.name === name)) delete overlays.byName[name];
   }
 }
 

@@ -73,6 +73,15 @@ function buildMenu({ state, send }) {
           click: command('toggle-overlay'),
         },
         {
+          // Off by default and separate from the fits: a truth set is the
+          // thing being compared against, not another detection, and a dense
+          // mesh has thousands of edges a view.
+          label: 'Draw ground truth over tiles',
+          type: 'checkbox',
+          checked: state.truth,
+          click: command('toggle-truth'),
+        },
+        {
           label: 'Reset View',
           accelerator: 'CmdOrCtrl+0',
           enabled: !state.viewIsReset,

@@ -71,12 +71,26 @@ static Rgb sample_stops(const Rgb *stops, size_t count, double t) {
   return out;
 }
 
+/*
+ * What `mask` draws a label as. Light enough to read against the black
+ * background a label map has everywhere else, and deliberately ONE colour: the
+ * question a segment map usually answers is "where is there a segment", and
+ * twelve hues answer a different one loudly.
+ */
+static const Rgb MASK_LABEL = {0.780f, 0.780f, 0.780f};
+
 static Rgb apply_colormap(CvColormap map, double t, double raw) {
   switch (map) {
     case CV_MAP_VIRIDIS:   return sample_stops(VIRIDIS, sizeof(VIRIDIS)/sizeof(Rgb), t);
     case CV_MAP_TURBO:     return sample_stops(TURBO, sizeof(TURBO)/sizeof(Rgb), t);
     case CV_MAP_DIVERGING: return sample_stops(DIVERGING, sizeof(DIVERGING)/sizeof(Rgb), t);
     case CV_MAP_CYCLIC:    return sample_stops(CYCLIC, sizeof(CYCLIC)/sizeof(Rgb), t);
+    case CV_MAP_MASK: {
+      /* Presence, not identity: every label the same, background black. */
+      int64_t label = (int64_t)llround(raw);
+      if (label <= 0) return CATEGORICAL[0];
+      return MASK_LABEL;
+    }
     case CV_MAP_CATEGORICAL: {
       /* Labels are names, not magnitudes: index by value, never interpolate. */
       const size_t count = sizeof(CATEGORICAL) / sizeof(Rgb);
@@ -290,11 +304,14 @@ CvStatus cv_render(const CvBuffer *src, const CvRenderSpec *spec,
   const double span = hi - lo;
 
   /*
-   * Labels must never be interpolated (§6), so a categorical map or an i32
-   * buffer samples nearest-neighbour. Continuous data is box-averaged, which
+   * Labels must never be interpolated (§6), so a label map -- categorical or
+   * mask -- or an i32 buffer samples nearest-neighbour. Averaging a mask would
+   * be worse than averaging a categorical one, not better: the greys it
+   * invented at every boundary would read as labels of their own. Continuous data is box-averaged, which
    * matters a great deal when a 12 MP slot is shown in an 800 px tile.
    */
-  const bool nearest = (spec->colormap == CV_MAP_CATEGORICAL) || (src->dtype == CV_DTYPE_I32);
+  const bool nearest = (spec->colormap == CV_MAP_CATEGORICAL) ||
+      (spec->colormap == CV_MAP_MASK) || (src->dtype == CV_DTYPE_I32);
 
   /*
    * Three sampling regimes, and the choice matters more than it looks:

@@ -20,6 +20,7 @@ const path = require('node:path');
 
 const native = require('../native');
 const { createRegistry } = require('./lab/ops');
+const { MIN_VISIBLE } = require('./lab/match');
 const { readPngColour } = require('../scripts/png');
 const { Session } = require('./lab/session');
 const { quoteString } = require('./lab/parser');
@@ -328,6 +329,16 @@ contextBridge.exposeInMainWorld('lab', {
       return () => ipcRenderer.removeListener('generate:progress', listener);
     },
   },
+
+  /**
+   * The fraction of an edge that has to be visible for the matcher to hold the
+   * pipeline responsible for finding it.
+   *
+   * Exposed rather than retyped in the renderer so the overlay draws exactly
+   * the truth edges the score is computed over. A second copy of this number
+   * is how a cube once reported "12/12 edges" over a score computed from nine.
+   */
+  minVisible: MIN_VISIBLE,
 
   /**
    * Every feature list currently bound, with the coordinate space it belongs

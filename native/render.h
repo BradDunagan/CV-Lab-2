@@ -37,7 +37,8 @@ typedef enum {
   CV_MAP_TURBO,          /* more discriminable, NOT lightness-monotonic */
   CV_MAP_DIVERGING,      /* two hues meeting at a neutral midpoint */
   CV_MAP_CATEGORICAL,    /* labels: distinct, unordered, never interpolated */
-  CV_MAP_CYCLIC          /* angles: wraps, so the two ends meet */
+  CV_MAP_CYCLIC,         /* angles: wraps, so the two ends meet */
+  CV_MAP_MASK            /* labels: one colour for all of them, black behind */
 } CvColormap;
 
 typedef struct {

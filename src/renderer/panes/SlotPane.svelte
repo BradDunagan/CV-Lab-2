@@ -22,9 +22,12 @@
   import { onMount, tick } from 'svelte';
   import { paneStore } from 'paneless';
   import {
-    lab, viewport, display, slots, viewOf, slotNamed, bufferSlots,
+    lab, viewport, display, slots, viewOf, slotNamed, bufferSlots, kindsFor,
     zoomAt, panBy, showProbe, hideProbe, fmt,
   } from '../lab.svelte.js';
+  import {
+    overlayRole, isDetection, isVisibleTruth, hidesLabelFill,
+  } from '../overlay-features.mjs';
 
   let { paneId } = $props();
 
@@ -123,7 +126,11 @@
     const s = slot;
     // Read these so the effect depends on them even when unused below.
     void viewport.x; void viewport.y; void viewport.w; void viewport.h;
-    void display.scaling; void display.overlay;
+    void display.scaling;
+    // This slot's own overlay choices, not the app's: read each one so the
+    // effect re-runs when a checkbox in THIS column changes.
+    const mine = kindsFor(s?.name);
+    for (const role of Object.keys(mine ?? {})) void mine[role];
     void s?.version;
 
     if (!c || !s || !v || size.width === 0) return;
@@ -142,6 +149,17 @@
           viewport: { x: viewport.x, y: viewport.y, w: viewport.w, h: viewport.h },
           interpolate: display.scaling !== 'pixels',
         });
+        /*
+         * The label fill gets out of the way of the lines drawn over it. The
+         * tile is still rendered -- it is what the readout and the zoom are
+         * computed from, and skipping it would make those lie -- and then
+         * painted out, which costs one fill of a tile-sized canvas.
+         */
+        if (hidesLabelFill(v.colormap, kindsFor(s.name))) {
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(0, 0, c.width, c.height);
+        }
         readout = `${fmt(lo)} … ${fmt(hi)}  ${v.colormap}`;
         // Screen pixels per image pixel — the number actually worth showing.
         const perPixel = c.width / (viewport.w * info.width);
@@ -164,7 +182,8 @@
    * label map.
    */
   function drawOverlays(c, s) {
-    if (!display.overlay) return;
+    const kinds = kindsFor(s.name) ?? {};
+    if (!Object.values(kinds).some(Boolean)) return;
     const lists = lab.features().filter((f) => f.width === s.width && f.height === s.height);
     if (lists.length === 0) return;
 
@@ -175,14 +194,28 @@
     const toY = (y) => (y - viewport.y * s.height) * sy;
 
     ctx.save();
-    for (const list of lists) {
-      for (const f of list.features) {
-        // By type. Assuming every feature was a line segment is what made
-        // corners — which have x,y rather than x0,y0,x1,y1 — produce NaN
-        // coordinates that canvas silently discarded: computed, logged,
-        // and invisible.
-        if (f.type === 'edge-corner') drawCorner(ctx, f, toX, toY, sx);
-        else drawSegment(ctx, f, toX, toY);
+    /*
+     * Truth first, so a detection is drawn OVER the edge it is meant to sit
+     * on rather than under it — which is the comparison being looked at.
+     */
+    for (const pass of ['truth', 'detection']) {
+      const wanted = pass === 'detection';
+      for (const list of lists) {
+        for (const f of list.features) {
+          const role = overlayRole(f);
+          if (role === 'unknown') { reportUnknown(f.type); continue; }
+          if (role === 'none' || isDetection(f) !== wanted) continue;
+          if (!kinds[role]) continue;
+          // Only what the camera can see. Drawing the hidden far side of a
+          // mesh over the image it is hidden in is a picture of something
+          // that was never in it.
+          if (!wanted && !isVisibleTruth(f, lab.minVisible)) continue;
+
+          if (role === 'corner') drawCorner(ctx, f, toX, toY, sx);
+          else if (role === 'segment') drawSegment(ctx, f, toX, toY);
+          else if (role === 'truth-edge') drawTruthEdge(ctx, f, toX, toY);
+          else drawTruthVertex(ctx, f, toX, toY);
+        }
       }
     }
     ctx.restore();
@@ -201,6 +234,42 @@
       ctx.arc(toX(px), toY(py), 2.5, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  /**
+   * A ground-truth edge: what the renderer says is really there.
+   *
+   * White and thin, the colour `npm run overlay` gives visible truth, so the
+   * two pictures of the same thing agree — and nothing like the detections'
+   * red, which is the whole point of separating them.
+   */
+  function drawTruthEdge(ctx, f, toX, toY) {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.beginPath();
+    ctx.moveTo(toX(f.x0), toY(f.y0));
+    ctx.lineTo(toX(f.x1), toY(f.y1));
+    ctx.stroke();
+  }
+
+  /** A ground-truth vertex — where edges really meet. */
+  function drawTruthVertex(ctx, f, toX, toY) {
+    ctx.strokeStyle = '#6eaaff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(toX(f.x), toY(f.y), 3.5, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  /*
+   * A type nothing here knows how to draw is said once, rather than guessed
+   * at. Guessing is what drew ground truth as a detection.
+   */
+  const reportedTypes = new Set();
+  function reportUnknown(type) {
+    if (reportedTypes.has(type)) return;
+    reportedTypes.add(type);
+    console.warn(`slot overlay: no drawing for feature type ${JSON.stringify(type)}`);
   }
 
   function drawCorner(ctx, f, toX, toY, scale) {

@@ -995,7 +995,7 @@ never what it contains:
 |---|---|
 | Range | auto min/max · fixed `[lo, hi]` · percentile (2–98%) · **symmetric about zero** |
 | Curve | linear · log · abs · sqrt |
-| Colormap | gray · viridis · turbo · diverging · categorical · **cyclic** |
+| Colormap | gray · viridis · turbo · diverging · categorical · **cyclic** · mask |
 | Channel | 0 · 1 · 2 · all |
 
 Sensible defaults by data kind:
@@ -1004,7 +1004,7 @@ Sensible defaults by data kind:
 |---|---|
 | Intensity, 0–1 | linear, gray |
 | Signed (gradients) | **symmetric about zero, diverging colormap** — negatives one hue, positives the other, zero neutral |
-| Label map (`i32`) | categorical colormap, nearest-neighbour, no interpolation |
+| Label map (`i32`) | **mask** colormap, nearest-neighbour, no interpolation. Written here as `categorical` and changed once there were overlays: twelve hues under a red-and-green overlay answer "which segment is this" while the reader is asking "where are the segments". `categorical` is one dropdown away |
 | FFT magnitude | log scale |
 
 The signed default matters: it is what makes a Sobel result immediately

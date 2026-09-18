@@ -21,7 +21,8 @@
  * strip.
  */
 import { controlStore, controlEvents, paneStore } from 'paneless';
-import { viewOf, slotNamed, bufferSlots } from '../lab.svelte.js';
+import { viewOf, slotNamed, bufferSlots, kindsFor, display, controlTips, lab } from '../lab.svelte.js';
+import { OVERLAY_KINDS, overlayCounts } from '../overlay-features.mjs';
 
 /* --- geometry ------------------------------------------------------- */
 
@@ -86,7 +87,7 @@ const ROWS = [
   {
     key: 'colormap',
     label: 'colormap',
-    options: () => ['gray', 'viridis', 'turbo', 'diverging', 'categorical', 'cyclic'],
+    options: () => ['gray', 'viridis', 'turbo', 'diverging', 'categorical', 'cyclic', 'mask'],
   },
   {
     key: 'range',
@@ -126,6 +127,17 @@ const FIELD_W = Math.max(
   ...ROWS.map((r) => textWidth(Math.max(...r.options({ channels: 4 }).map((v) => labelOf(r, v).length)))),
   textWidth(SLOT_ITEM_CHARS)
 ) + TEXT_INSET * 2 + ARROW_W;
+
+/**
+ * The overlay checkboxes sit under the view controls, with a heading.
+ *
+ * Built once and shown or hidden per slot, rather than created and destroyed
+ * as feature lists come and go: paneless re-renders a control on every write,
+ * and a column that rebuilds itself mid-pipeline takes the checkbox out from
+ * under the pointer. `visible` is a property, so hiding is a write like any
+ * other.
+ */
+const OVERLAY_HEAD = 'overlays';
 
 /** What a slot frame should give the column before the user touches it. */
 export const CONTROLS_WIDTH = PAD + LABEL_W + LABEL_GAP + FIELD_W + PAD;
@@ -204,6 +216,33 @@ function build(paneId) {
     y += ROW_H + ROW_GAP;
   }
 
+  /*
+   * The overlays this tile could draw. Hidden until there is something to
+   * draw: most slots in a session have no feature list their size, and a
+   * column of permanently empty checkboxes would say the pipeline produced
+   * nothing rather than that this stage has nothing to show.
+   */
+  y += ROW_GAP;
+  ids.overlayHead = addLabel(paneId, root, OVERLAY_HEAD, PAD, y, 200, 'left');
+  controlStore.updateControl(paneId, ids.overlayHead, { width: `100% -${PAD * 2}`, fontSize: 10 });
+  y += ROW_H;
+
+  ids.kinds = {};
+  for (const kind of OVERLAY_KINDS) {
+    ids.kinds[kind.role] = controlStore.addControl(paneId, root, 'checkbox', PAD, y, FIELD_W, ROW_H, {
+      name: `overlay:${kind.role}`,
+      text: kind.label,
+      checked: !!display.defaults[kind.role],
+      fontFamily: FONT,
+      fontSize: FONT_SIZE,
+    });
+    controlStore.updateControl(paneId, ids.kinds[kind.role], { width: `100% -${PAD * 2}` });
+    // What the marks MEAN, shown when the pointer rests on the box. App.svelte
+    // watches the pointer; paneless controls are SVG and carry no title.
+    controlTips.set(ids.kinds[kind.role], kind.tip);
+    y += ROW_H + ROW_GAP;
+  }
+
   return ids;
 }
 
@@ -232,6 +271,14 @@ function syncDropdown(paneId, controlId, items, selectedId, enabled = true) {
 function syncLabel(paneId, controlId, text) {
   const current = controlStore.getControl(paneId, controlId);
   if (current && current.text !== text) controlStore.updateControl(paneId, controlId, { text });
+}
+
+/** Write only the properties that actually differ — see syncDropdown. */
+function syncControl(paneId, controlId, updates) {
+  const current = controlStore.getControl(paneId, controlId);
+  if (!current) return;
+  const changed = Object.entries(updates).filter(([k, v]) => current[k] !== v);
+  if (changed.length > 0) controlStore.updateControl(paneId, controlId, Object.fromEntries(changed));
 }
 
 /* --- attaching ------------------------------------------------------- */
@@ -271,6 +318,33 @@ export function attachSlotControls(controlsPaneId, imagePaneId) {
         slot ? `${slot.width}×${slot.height}×${slot.channels} ${slot.dtype} ${slot.space}` : ''
       );
 
+      /*
+       * A feature list has the size of the image it was measured in and none
+       * of its own, so the ones that belong over THIS tile are the ones whose
+       * size matches -- the same rule SlotPane draws by.
+       */
+      const counts = slot
+        ? overlayCounts(
+          lab.features().filter((f) => f.width === slot.width && f.height === slot.height),
+          lab.minVisible
+        )
+        : {};
+      const anyOverlay = Object.values(counts).some((n) => n > 0);
+      syncControl(controlsPaneId, ids.overlayHead, { visible: anyOverlay });
+      // This column speaks for ITS slot alone -- the boxes show and set that
+      // slot's choices, not the app's.
+      const kinds = kindsFor(name) ?? display.defaults;
+      for (const kind of OVERLAY_KINDS) {
+        const count = counts[kind.role] ?? 0;
+        syncControl(controlsPaneId, ids.kinds[kind.role], {
+          visible: anyOverlay && count > 0,
+          // The count is what the tile would draw, so a box ticked with
+          // nothing visible is never a mystery.
+          text: `${kind.label} (${count})`,
+          checked: !!kinds[kind.role],
+        });
+      }
+
       for (const row of ROWS) {
         const values = row.options(slot);
         // Disabled rather than hidden when nothing is bound: the column keeps
@@ -299,6 +373,16 @@ export function attachSlotControls(controlsPaneId, imagePaneId) {
       return;
     }
 
+    const kind = OVERLAY_KINDS.find((k) => ids.kinds[k.role] === event.controlId);
+    if (kind) {
+      // A checkbox reports the new state without storing it. It is stored
+      // against THIS column's slot, and the column re-reads it on the next
+      // sync; a pane showing another slot is unaffected.
+      const kinds = kindsFor(name);
+      if (kinds) kinds[kind.role] = !!event.value;
+      return;
+    }
+
     const row = ROWS.find((r) => ids.rows[r.key].field === event.controlId);
     if (!row || !name) return;
     const view = viewOf(name);
@@ -310,6 +394,7 @@ export function attachSlotControls(controlsPaneId, imagePaneId) {
     unsubscribePanes();
     unsubscribeEvents();
     stopEffects();
+    for (const id of Object.values(ids.kinds)) controlTips.delete(id);
     controlStore.clear(controlsPaneId);
   };
 }

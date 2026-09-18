@@ -33,7 +33,8 @@
   import {
     lab, viewport, display, slots, probe, status, setStatus, actions,
     refreshSlots, resetViewport, isViewReset, clearSession, hideProbe, bufferSlots,
-    runCommand, pipelineRun,
+    runCommand, pipelineRun, controlTips, tooltip, anyDrawn, toggleKinds,
+    DETECTION_KINDS, TRUTH_KINDS,
   } from './lab.svelte.js';
 
   /* ------------------------------------------------------------------ */
@@ -690,6 +691,10 @@
       // would be testing paneless's hit-testing, not this app's wiring.
       controlStore,
       controlEvents,
+      // The tips those controls carry. paneless has no tooltip of its own, so
+      // the text lives in this map keyed by control id and App watches the
+      // pointer -- a test needs the map to check a control explains itself.
+      controlTips,
       newSlotPane,
       bindSlotPane,
       slotPaneIds,
@@ -755,13 +760,19 @@
   function publishMenuState() {
     lab.setMenuState({
       scaling: display.scaling,
-      overlay: display.overlay,
+      // The menu shows a group as ticked when any of its kinds is drawn; the
+      // slot columns are where one is turned on alone.
+      overlay: anyDrawn(DETECTION_KINDS),
+      truth: anyDrawn(TRUTH_KINDS),
       viewIsReset: isViewReset(),
     });
   }
 
   $effect(() => {
-    void display.scaling; void display.overlay;
+    void display.scaling;
+    // Reading the groups is what makes this re-run when a slot column ticks a
+    // box: anyDrawn walks every slot's flags, so the menu follows them.
+    void anyDrawn(DETECTION_KINDS); void anyDrawn(TRUTH_KINDS);
     void viewport.x; void viewport.y; void viewport.w; void viewport.h;
     publishMenuState();
   });
@@ -777,8 +788,12 @@
       case 'save-session': saveSession(); break;
       case 'reset-session': resetSession(); break;
       case 'toggle-overlay':
-        display.overlay = !display.overlay;
-        setStatus(`Fits ${display.overlay ? 'drawn over' : 'hidden on'} matching tiles`);
+        setStatus(`Fits ${toggleKinds(DETECTION_KINDS) ? 'drawn over' : 'hidden on'} matching tiles`);
+        break;
+      case 'toggle-truth':
+        setStatus(toggleKinds(TRUTH_KINDS)
+          ? 'Ground truth drawn over matching tiles — visible edges and vertices only'
+          : 'Ground truth hidden on matching tiles');
         break;
       case 'reset-view':
         resetViewport();
@@ -808,6 +823,63 @@
   $effect(() => {
     void slots.list;
     showNewSlots();
+  });
+
+  /* --- tooltips over paneless's controls ----------------------------- */
+
+  /*
+   * paneless draws its controls as SVG from metadata, so there is no element
+   * to hang a `title` on and no hover event to subscribe to -- but every
+   * control's group carries `data-control-id`, which is enough to do this from
+   * out here. One listener on the window rather than per control: controls are
+   * created and destroyed as slots come and go, and a listener per control
+   * would have to be torn down exactly right.
+   */
+  const TOOLTIP_DELAY = 400;
+  let tipTimer = null;
+  let tipFor = null;
+
+  function onPointerMove(event) {
+    const el = event.target?.closest?.('[data-control-id]');
+    const id = el?.getAttribute('data-control-id') ?? null;
+    const text = id ? controlTips.get(id) : null;
+
+    if (!text) {
+      tipFor = null;
+      clearTimeout(tipTimer);
+      tooltip.visible = false;
+      return;
+    }
+    // Follow the pointer while it stays on the same control, so the box does
+    // not sit where the pointer no longer is.
+    tooltip.x = event.clientX;
+    tooltip.y = event.clientY;
+    if (id === tipFor) return;
+
+    tipFor = id;
+    tooltip.visible = false;
+    clearTimeout(tipTimer);
+    // A delay, because these sit in a column a pointer crosses on its way
+    // somewhere else, and a box that appears instantly is in the way.
+    tipTimer = setTimeout(() => {
+      tooltip.text = text;
+      tooltip.visible = true;
+    }, TOOLTIP_DELAY);
+  }
+
+  /** @type {HTMLElement|undefined} */
+  let tipEl = $state();
+  let tipStyle = $state('');
+  $effect(() => {
+    if (!tooltip.visible || !tipEl) return;
+    void tooltip.x; void tooltip.y; void tooltip.text;
+    const pad = 14;
+    const box = tipEl.getBoundingClientRect();
+    const left = tooltip.x + pad + box.width > window.innerWidth
+      ? tooltip.x - pad - box.width : tooltip.x + pad;
+    const top = tooltip.y + pad + box.height > window.innerHeight
+      ? tooltip.y - pad - box.height : tooltip.y + pad;
+    tipStyle = `left:${Math.max(0, left)}px; top:${Math.max(0, top)}px`;
   });
 
   /* --- the probe overlay, positioned in viewport coordinates --------- */
@@ -845,6 +917,14 @@
   });
 </script>
 
+<!--
+  Hover, for controls that are SVG rather than DOM. paneless renders them from
+  metadata, so there is nothing to put a `title` on: one window listener reads
+  `data-control-id` off whatever is under the pointer. Cheap, and it survives
+  controls being created and destroyed as slots come and go.
+-->
+<svelte:window onpointermove={onPointerMove} />
+
 <div class="shell">
   <div class="stage">
     <!--
@@ -875,6 +955,14 @@
   than per pane, because it deliberately reports across all of them — that is
   the whole affordance, and it exists only because slots are uniform.
 -->
+<!--
+  What an overlay checkbox in a slot column means. paneless has no tooltip of
+  its own, so this is drawn here and positioned from the pointer.
+-->
+{#if tooltip.visible}
+  <div class="tip" bind:this={tipEl} style={tipStyle}>{tooltip.text}</div>
+{/if}
+
 {#if probe.visible && probeLines.length > 0}
   <!--
     No pointer handler here, deliberately. The probe sets pointer-events:none
@@ -936,4 +1024,19 @@
     white-space: pre;
   }
   .probe .pk { color: var(--cv-accent, #2a7edf); }
+
+  .tip {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+    /* Wider than the column it explains, and wrapped: these are sentences. */
+    max-width: 320px;
+    background: rgba(255, 255, 255, 0.97);
+    border: 1px solid var(--cv-border, #cccccc);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    padding: 6px 8px;
+    color: var(--cv-text, #333333);
+    font: 11px/1.45 ui-monospace, Menlo, Consolas, monospace;
+  }
 </style>

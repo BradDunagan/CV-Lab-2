@@ -337,7 +337,7 @@ one.
 |---|---|---|
 | **Sequential** | data runs low → high with no special middle | `gray`, `viridis`, `turbo` |
 | **Diverging** | a midpoint is meaningful, and deviation either side matters | `diverging` |
-| **Categorical** | values are labels, not quantities | `categorical` |
+| **Categorical** | values are labels, not quantities | `categorical`, `mask` |
 
 ### The individual options
 
@@ -388,6 +388,14 @@ This is why `design-lab-model.md` §6 makes it the default for gradients: a Sobe
 result is signed, and
 a diverging map shows negative one colour, positive the other, and zero as
 neutral. Under `gray` the same data is an undifferentiated smear.
+
+**`mask`** — one light grey for every label, black for the background.
+
+For the question a label map is usually asked: *where is there a region at
+all*. It is the default for `i32` slots, because a segment map is normally read
+under the overlay drawn over it, and a dozen competing hues make both harder to
+see. It is never interpolated, for the same reason `categorical` is not — the
+greys invented at a boundary would read as labels of their own.
 
 **`categorical`** — a set of visually distinct colours in no particular order.
 

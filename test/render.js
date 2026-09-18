@@ -94,6 +94,47 @@ test('magnifying a label map still refuses to interpolate', () => {
   assert.ok(unique.size <= 4, `interpolated labels: ${unique.size} colours`);
 });
 
+test('the mask colormap draws every label alike, and the background black', () => {
+  /*
+   * What a segment map is usually asked is "where is there a segment", and the
+   * categorical map answers "which one is this" in a dozen hues -- over the
+   * top of the overlay drawn on the same tile. `mask` is the other question.
+   *
+   * A property, not a recorded colour: every label the SAME, whatever it is,
+   * and distinct from the background. The exact grey is a decision the C file
+   * owns and may retune.
+   */
+  const buf = native.createBuffer({ width: 6, height: 1, channels: 1, dtype: 'i32' });
+  native.bufferWrite(buf, Int32Array.from([0, 1, 2, 7, 1000, 0]));
+  const tile = native.renderTile(buf, { width: 6, height: 1, colormap: 'mask' });
+
+  const background = px(tile, 0);
+  assert.deepEqual(background, [0, 0, 0], 'label 0 is background and must stay black');
+  assert.deepEqual(px(tile, 5), background, 'every background pixel is the same');
+
+  const labels = [1, 2, 3, 4].map((i) => px(tile, i));
+  for (const colour of labels) {
+    assert.deepEqual(colour, labels[0], 'two labels were drawn in different colours');
+  }
+  assert.notDeepEqual(labels[0], background, 'a label must be visible against the background');
+  // Light: these tiles are mostly background, and the overlay is drawn over it.
+  assert.ok(labels[0][0] > 150, `a label should read as light grey, got ${labels[0]}`);
+  assert.equal(new Set(labels[0]).size, 1, 'grey means the three channels agree');
+});
+
+test('a mask is never interpolated either', () => {
+  /*
+   * Averaging a mask would be worse than averaging a categorical map, not
+   * better: the greys invented at every boundary would read as labels of their
+   * own rather than as the edge of one.
+   */
+  const buf = native.createBuffer({ width: 4, height: 1, channels: 1, dtype: 'i32' });
+  native.bufferWrite(buf, Int32Array.from([0, 3, 0, 9]));
+  const tile = native.renderTile(buf, { width: 32, height: 1, colormap: 'mask' });
+  const unique = new Set(Array.from({ length: 32 }, (_, i) => px(tile, i).join(',')));
+  assert.equal(unique.size, 2, `a mask has two colours; got ${[...unique].join(' | ')}`);
+});
+
 test('minifying still box-averages', () => {
   const ramp = run('pattern', [], { kind: 'ramp', width: 64, height: 1 });
   const tile = native.renderTile(ramp, { width: 8, height: 1, colormap: 'gray' });

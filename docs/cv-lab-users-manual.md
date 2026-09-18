@@ -525,7 +525,7 @@ what it contains. The next operation in the pipeline sees the real numbers.
 | control | options |
 |---|---|
 | view | `image`, `histogram` |
-| colormap | `gray`, `viridis`, `turbo`, `diverging`, `categorical`, `cyclic` |
+| colormap | `gray`, `viridis`, `turbo`, `diverging`, `categorical`, `cyclic`, `mask` |
 | range | `auto`, `percentile`, `symmetric` |
 | curve | `linear`, `log`, `abs`, `sqrt` |
 | channel | `all`, or one |
@@ -535,7 +535,7 @@ readable rather than a grey smear:**
 
 | data | default |
 |---|---|
-| `i32` label map | categorical, auto — never interpolated, because a label is a name and the average of region 3 and region 9 is not region 6 |
+| `i32` label map | **mask**, auto — every label the same light grey on black, never interpolated, because a label is a name and the average of region 3 and region 9 is not region 6. `categorical` gives each label its own colour when *which* one matters; the default answers the question a segment map is usually asked, which is *where*, and leaves the tile legible under the overlay drawn on top of it |
 | `space: none` (gradients, signed) | **diverging + symmetric about zero** — negatives one hue, positives the other, zero neutral |
 | everything else | gray, auto |
 

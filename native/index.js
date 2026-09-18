@@ -151,7 +151,7 @@ module.exports = {
    * @param {{width:number, height:number, x?:number, y?:number, w?:number, h?:number,
    *          range?:'auto'|'fixed'|'percentile'|'symmetric', lo?:number, hi?:number,
    *          percentile?:number, curve?:'linear'|'log'|'abs'|'sqrt',
-   *          colormap?:'gray'|'viridis'|'turbo'|'diverging'|'categorical'|'cyclic',
+   *          colormap?:'gray'|'viridis'|'turbo'|'diverging'|'categorical'|'cyclic'|'mask',
    *          channel?:number}} spec
    * @returns {{pixels:Uint8ClampedArray, width:number, height:number, lo:number, hi:number}}
    */
