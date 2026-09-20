@@ -1300,6 +1300,44 @@ which is the fit whose residuals these are.
 
 ---
 
+## Sagitta
+
+**How far an arc bows away from its own chord**, measured at the middle, in
+the same units as the chord. Latin for *arrow*: the chord is the bowstring and
+the sagitta is the arrow laid across it.
+
+For a circle of radius *r* and a chord of length *L*:
+
+```
+sagitta = r − √(r² − (L/2)²)          ≈  L² / (8r)   for L ≪ r
+```
+
+**Why this lab uses it rather than the radius.** `chain` and `fitArcs` both
+have to answer "is this a curve or a line", and a radius cannot answer it. A
+radius of 500 px is nearly straight across a 30 px piece and a pronounced bend
+across a 900 px one, so any threshold on radius means something different at
+every image size and every detection length. A sagitta is the departure from
+straightness *over the extent there is evidence for*, so one number — bow by at
+least a pixel — means the same thing everywhere.
+
+It is also the quantity that explains why `segments` cannot grow along a
+curve. A region is kept while every pixel sits within `maxResidual` of its own
+fitted line, and the largest departure of an arc from its TLS line is
+`L²/(12r)` — the sagitta redistributed either side of the best-fit line rather
+than measured from the chord. Setting that equal to the tolerance gives the
+longest piece a curve can produce: `L ≤ √(12·r·maxResidual)`. Measured on a
+real subject, pieces land at about 0.86 of that, or of the competing cap
+`angleTol` imposes, whichever is smaller.
+
+**Elsewhere**: the same quantity in optics (the depth of a lens surface),
+railway and road engineering (versine, used to measure how far a track departs
+from straight), and archery, where the name comes from.
+
+See also [residual](#residual), which measures departure from a fit rather
+than from a chord.
+
+---
+
 ## Sidecar (sidecar file)
 
 **A separate file stored next to a main file, holding information *about* it,
@@ -1464,8 +1502,11 @@ against.
 **A line fit that minimises each point's *perpendicular* distance to the line,
 rather than its vertical distance.**
 
-What `segments`, `merge` and `fit` all use, and the reason the endpoints this
-lab reports are sub-pixel.
+What `segments`, `merge`, `chain` and `fit` all use, and the reason the
+endpoints this lab reports are sub-pixel. `chain` and `fitArcs` fit a *circle*
+by the same approach — running sums, one closed-form solve, no iteration — but
+minimising an algebraic distance rather than a perpendicular one; see
+[sagitta](#sagitta) for what they do with the result.
 
 Ordinary least squares treats x as an input and y as a measurement, and
 minimises the vertical offsets. In an image neither axis is privileged — an

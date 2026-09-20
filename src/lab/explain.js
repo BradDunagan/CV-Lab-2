@@ -100,6 +100,38 @@ function angleBetween(a, b) {
 }
 
 /**
+ * Sample pairs across a circular arc, along its radius at each point.
+ *
+ * Inset from both ends for the same reason a segment's samples are: the
+ * extreme samples are the ones most likely to have overshot the real extent.
+ *
+ * An arc narrower than the offset gets no pairs at all, so it comes back
+ * `unknown` rather than measured. The inner sample of such an arc would sit
+ * past the centre and read the FAR side of the same curve, which is a number
+ * with nothing wrong with it and no relationship to the question.
+ */
+function arcCrossings(feature, { offset, samples }) {
+  const pairs = [];
+  const { cx, cy, r } = feature;
+  if (!Number.isFinite(r) || !(r > offset)) return pairs;
+
+  const a0 = (feature.angle0 * Math.PI) / 180;
+  const sweep = (feature.sweep * Math.PI) / 180;
+  for (let i = 0; i < samples; i++) {
+    const t = (i + 1) / (samples + 1);
+    const a = a0 + sweep * t;
+    // The radial unit vector IS the arc's normal at this point.
+    const nx = Math.cos(a), ny = Math.sin(a);
+    const px = cx + r * nx, py = cy + r * ny;
+    pairs.push([
+      { x: px - nx * offset, y: py - ny * offset },
+      { x: px + nx * offset, y: py + ny * offset },
+    ]);
+  }
+  return pairs;
+}
+
+/**
  * The points to sample across one feature: pairs either side of it.
  *
  * A segment is crossed perpendicular at several places along its length, and
@@ -109,9 +141,16 @@ function angleBetween(a, b) {
  * entirely; a mean lets those decide the answer and a median does not.
  *
  * A corner is a point, so it is crossed along both axes instead.
+ *
+ * An arc is crossed RADIALLY — its normal turns with it, which is the only
+ * thing that differs from a segment. Everything downstream of here works on
+ * pairs of points and needs no notion of what shape produced them, so nothing
+ * else in this file changes for a curve.
  */
 function crossings(feature, { offset, samples }) {
   const pairs = [];
+
+  if (feature.type === 'edge-arc') return arcCrossings(feature, { offset, samples });
 
   if (feature.type === 'edge-corner') {
     for (const [dx, dy] of [[1, 0], [0, 1], [0.707, 0.707], [0.707, -0.707]]) {

@@ -199,6 +199,15 @@ for (const file of files) {
   for (const features of slots.values()) {
     for (const f of features) {
       if (f.type === 'edge-match' || typeof f.cause !== 'string') continue;
+      /*
+       * Arcs are explained and not scored, so they have a cause and no verdict
+       * to attach it to -- and skipping them is not tidiness. `fit` and
+       * `fitArcs` read the SAME label map, so an arc and a segment describing
+       * one label share its id. Filing an explained arc under "segment:7"
+       * would overwrite the explanation of the segment that actually was
+       * scored, with a cause measured across a different geometry.
+       */
+      if (f.type === 'edge-arc') continue;
       const kind = f.type === 'edge-corner' ? 'corner' : 'segment';
       explained.set(`${kind}:${f.id}`, f.cause);
     }

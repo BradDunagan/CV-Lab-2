@@ -147,6 +147,11 @@ const COLOURS = {
   unmatched: [255, 70, 70],
   truthCorner: [110, 170, 255],
   matchedCorner: [255, 220, 60],
+  /* Arcs are not scored -- `match` has no arc branch, because ground truth
+   * lists straight chords off a tessellated mesh and an arc crosses a fan of
+   * them. So they are drawn in one colour rather than green-or-red: a verdict
+   * colour here would be inventing a verdict nothing computed. */
+  arc: [255, 166, 87],
 };
 
 function makeCanvas(src, scale, dim) {
@@ -189,6 +194,23 @@ function line(canvas, x0, y0, x1, y1, colour, radius = 0) {
   const steps = Math.max(2, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2));
   for (let i = 0; i <= steps; i++) {
     dot(canvas, x0 + ((x1 - x0) * i) / steps, y0 + ((y1 - y0) * i) / steps, colour, radius);
+  }
+}
+
+/**
+ * An arc, over its own sweep and no further.
+ *
+ * Drawing the whole circle would put three hundred pixels of curve across the
+ * picture for a thirty-degree detection, which is the mistake 2026-09-20's
+ * probe made and then found with this same kind of overlay.
+ */
+function arc(canvas, cx, cy, r, a0Deg, sweepDeg, colour, radius = 0) {
+  const a0 = (a0Deg * Math.PI) / 180;
+  const sweep = (sweepDeg * Math.PI) / 180;
+  const steps = Math.max(8, Math.ceil(r * sweep * 2));   // two samples a pixel
+  for (let i = 0; i <= steps; i++) {
+    const a = a0 + (sweep * i) / steps;
+    dot(canvas, cx + Math.cos(a) * r, cy + Math.sin(a) * r, colour, radius);
   }
 }
 
@@ -299,6 +321,13 @@ for (const [, features] of slots) {
   }
 }
 
+for (const [, features] of slots) {
+  for (const f of features) {
+    if (f.type !== 'edge-arc') continue;
+    arc(canvas, f.cx * S, f.cy * S, f.r * S, f.angle0, f.sweep, COLOURS.arc, 1);
+  }
+}
+
 /*
  * Only the vertices a detector is answerable for. A smooth object's silhouette
  * is a polyline whose interior points are vertices of degree two running almost
@@ -329,6 +358,7 @@ console.log(
   `${outFile}\n` +
   `  white / grey       ground-truth edges: visible / hidden\n` +
   `  green / red        detected segments:  matched to geometry / not\n` +
+  `  orange             detected arcs:      not scored -- see fitArcs\n` +
   `  blue rings         ground-truth corners above ${opts.minAngle}°\n` +
   `  yellow / red dots  detected corners:   matched / invented`
 );

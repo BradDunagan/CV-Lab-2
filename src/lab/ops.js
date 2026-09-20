@@ -326,6 +326,41 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
     }),
 
     defineOp({
+      name: 'chain',
+      version: 1,
+      summary: 'Join segments that lie on one circle, so a curve is one label.',
+      // `merge` asks whether two pieces are the same line. This asks whether
+      // they are the same circle. Separate from `merge` for the reason `merge`
+      // is separate from `segments`: comparing the two label maps shows what
+      // was joined (§3).
+      //
+      // It exists because `segments` cannot produce a long curved piece --
+      // maxResidual and angleTol each cap the length an arc can reach, and on
+      // the nut that left 72 of 74 labels too short to prefer a circle to a
+      // line. The curves are in the image; they arrive in pieces.
+      inputs: [{ name: 'src', channels: [1], space: 'any' }],
+      params: [
+        // Tighter than merge's 6.0: pieces of one curve abut, where the
+        // collinear runs merge joins can be separated by a real occlusion.
+        { name: 'gap', type: 'number', default: 4.0, min: 0 },
+        { name: 'maxResidual', type: 'number', default: 1.0, min: 0.1 },
+        // Below minTurn the two pieces are collinear, which is `merge`'s
+        // question: without a floor, one very large circle holds every
+        // straight edge in the image and they all chain together.
+        { name: 'minTurn', type: 'number', default: 2.0, min: 0, max: 90 },
+        // Above maxTurn they meet at a corner. A hexagon turns 60° at every
+        // vertex, and chaining across those walks a curve round the whole nut.
+        { name: 'maxTurn', type: 'number', default: 40.0, min: 1, max: 90 },
+        // The scale-free half of the same question: how far the joined curve
+        // bows off its own chord. A radius cap would need a number that means
+        // something different at every image size; a sagitta does not.
+        { name: 'minSagitta', type: 'number', default: 1.0, min: 0 },
+      ],
+      output: { channels: 1, dtype: 'i32', space: 'none' },
+      kernel: nativeKernel('chain'),
+    }),
+
+    defineOp({
       name: 'fit',
       // v2: the whole record moved. cv_tls_line is algebraic now, and `angle`
       // and `length` come from cv_atan2 and cv_len2 rather than libm -- which
@@ -346,6 +381,64 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
           // A feature list has no dimensions of its own -- it lives in the
           // coordinate space of the image it came from. Carrying that here is
           // what lets a viewer draw it over the right tile.
+          width: info.width,
+          height: info.height,
+        };
+      },
+    }),
+
+    defineOp({
+      name: 'fitArcs',
+      version: 1,
+      summary: 'Describe each segment as a circular arc — where it earns it.',
+      // `fit` describes a label as a line and always can. This describes one
+      // as an arc and often should not.
+      //
+      // THE TRAP THESE PARAMETERS EXIST FOR. A circle has a parameter a line
+      // does not, and on a real edge it spends it on noise: three of the
+      // twelve largest STRAIGHT labels on the nut fit their own circle 7-21%
+      // better than their own line (2026-09-20). Nothing about those fits
+      // looks wrong one at a time -- a slightly better residual and a radius
+      // in the hundreds -- so selecting on residual alone would reclassify a
+      // third of the straight edges in an image and report it as an
+      // improvement. The three gates are what turn a comparison into a test:
+      // the fit must be better by a MARGIN that pays for the extra parameter,
+      // over an extent long enough to see, and by enough of a bend to be worth
+      // describing as one.
+      //
+      // The algebraic fit helps here by failing loudly rather than quietly: on
+      // a CLEAN straight run it collapses to a small circle rather than
+      // approximating the line, so `minGain` is not what catches those. It is
+      // the noisy near-straight labels it is for, which are the ones that
+      // occur.
+      //
+      // A label that fails them is not an error and produces no record. It is
+      // a line, and `fit` on the same map already says so.
+      inputs: [{ name: 'src', channels: [1], space: 'any' }],
+      params: [
+        { name: 'minGain', type: 'number', default: 1.5, min: 1 },
+        { name: 'minSweep', type: 'number', default: 8, min: 0, max: 360 },
+        // The same number `chain` gates a join on, for the same reason, so a
+        // chain this accepted is a chain this will describe.
+        { name: 'minSagitta', type: 'number', default: 1.0, min: 0 },
+      ],
+      output: { kind: 'features' },
+      kernel: ({ inputs, params }) => {
+        const native = require('../../native');
+        const info = native.bufferInfo(inputs[0].handle);
+        const candidates = native.fitArcs(inputs[0].handle);
+        return {
+          kind: 'features',
+          features: candidates.filter((a) => (
+            // A degenerate line fit makes the ratio meaningless rather than
+            // infinite: a label whose pixels are exactly collinear has
+            // lineRms 0, and no circle improves on that.
+            a.lineRms > 0 &&
+            a.rms > 0 &&
+            a.lineRms / a.rms >= params.minGain &&
+            a.sweep >= params.minSweep &&
+            a.sagitta >= params.minSagitta
+          )),
           width: info.width,
           height: info.height,
         };

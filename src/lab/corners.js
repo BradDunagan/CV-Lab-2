@@ -54,6 +54,29 @@ function findCorners(features, opts = {}) {
   const maxReachRatio = opts.maxReachRatio ?? 2; // of the segment's own length
   const clusterRadius = opts.cluster ?? 3;       // pixels
 
+  /*
+   * Straight segments only, and checked rather than assumed.
+   *
+   * An `edge-arc` carries x0, y0, x1, y1 exactly as a segment does, so every
+   * line of this file would run on one and describe its CHORD -- intersecting
+   * a curve where its two ends happen to point, which is a number and not an
+   * answer. It has no `length` either, so `sigma` would come back NaN and the
+   * record would look uncertain rather than wrong.
+   *
+   * This is the failure `overlay-features.mjs` was written to end: a type with
+   * the right field names being consumed as if it were a different type. Same
+   * rule here -- a list this cannot interpret is refused by name.
+   */
+  const kinds = new Set(features.map((f) => f.type));
+  kinds.delete('edge-segment');
+  if (kinds.size > 0) {
+    throw new Error(
+      `corners: expects edge-segment features from fit, got ` +
+        `${[...kinds].sort().map((k) => `"${k}"`).join(', ')}. ` +
+        `An arc is not a line and its endpoints are not the ends of one.`
+    );
+  }
+
   const lines = features.map(lineOf);
   const raw = [];
 

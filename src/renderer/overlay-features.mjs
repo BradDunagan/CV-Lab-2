@@ -24,6 +24,7 @@
 const ROLES = {
   // What a pipeline found.
   'edge-segment': 'segment',
+  'edge-arc': 'arc',
   'edge-corner': 'corner',
   // What is really there.
   'gt-edge': 'truth-edge',
@@ -38,18 +39,18 @@ const ROLES = {
 };
 
 /**
- * How to draw `feature`: 'segment', 'corner', 'truth-edge', 'truth-vertex',
- * 'none' for something with no geometry of its own, or 'unknown' for a type
- * this module has never heard of.
+ * How to draw `feature`: 'segment', 'arc', 'corner', 'truth-edge',
+ * 'truth-vertex', 'none' for something with no geometry of its own, or
+ * 'unknown' for a type this module has never heard of.
  */
 export function overlayRole(feature) {
   return ROLES[feature?.type] ?? 'unknown';
 }
 
-/** Is this feature one of the two a pipeline detects? */
+/** Is this feature one of the things a pipeline detects? */
 export function isDetection(feature) {
   const role = overlayRole(feature);
-  return role === 'segment' || role === 'corner';
+  return role === 'segment' || role === 'arc' || role === 'corner';
 }
 
 /**
@@ -100,6 +101,15 @@ export const OVERLAY_KINDS = [
       + 'not the same as what is there.',
   },
   {
+    role: 'arc',
+    label: 'arcs',
+    swatch: '#ffa657',
+    tip: 'Orange: curved edges the pipeline fitted, drawn only over the sweep '
+      + 'there is evidence for, with a yellow dot at each sub-pixel endpoint. '
+      + 'A label is only drawn as an arc where the circle beat its own line by '
+      + 'enough to pay for the extra parameter -- everything else is a segment.',
+  },
+  {
     role: 'corner',
     label: 'corners',
     swatch: '#7ee787',
@@ -145,5 +155,6 @@ export function overlayCounts(lists, minVisible) {
  * anything without competing with it.
  */
 export function hidesLabelFill(colormap, kinds) {
-  return colormap === 'mask' && (!!kinds?.segment || !!kinds?.['truth-edge']);
+  return colormap === 'mask'
+    && (!!kinds?.segment || !!kinds?.arc || !!kinds?.['truth-edge']);
 }

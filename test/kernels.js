@@ -40,7 +40,7 @@ console.log(`cv-lab-2 kernel tests (${runtime}, ${process.platform}/${process.ar
 test('every kernel is reachable by name', () => {
   assert.deepEqual(native.kernelNames(),
     ['pattern', 'gray', 'gaussian', 'sobel', 'threshold', 'stats', 'toLinear',
-     'toSrgb', 'nms', 'hysteresis', 'orient', 'segments', 'merge']);
+     'toSrgb', 'nms', 'hysteresis', 'orient', 'segments', 'merge', 'chain']);
 });
 
 test('an unknown kernel and a wrong input count are refused', () => {

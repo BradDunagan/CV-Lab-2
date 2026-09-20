@@ -938,7 +938,8 @@ test('a slot offers one checkbox per drawable overlay, counting what it would dr
 
   // Every kind that can be drawn is offered, once, and explains itself.
   const roles = OVERLAY_KINDS.map((k) => k.role);
-  assert.deepEqual([...roles].sort(), ['corner', 'segment', 'truth-edge', 'truth-vertex']);
+  assert.deepEqual([...roles].sort(),
+    ['arc', 'corner', 'segment', 'truth-edge', 'truth-vertex']);
   assert.equal(new Set(roles).size, roles.length, 'a kind offered twice is two checkboxes');
   for (const kind of OVERLAY_KINDS) {
     assert.ok(kind.label && kind.tip && kind.swatch, `${kind.role} is missing label, tip or swatch`);
@@ -951,6 +952,7 @@ test('a slot offers one checkbox per drawable overlay, counting what it would dr
   const lists = [{
     features: [
       { type: 'edge-segment' }, { type: 'edge-segment' },
+      { type: 'edge-arc' },
       { type: 'edge-corner' },
       { type: 'gt-edge', visible: 0.9 },
       { type: 'gt-edge', visible: 0.1 },            // occluded: not drawn, not counted
@@ -961,17 +963,17 @@ test('a slot offers one checkbox per drawable overlay, counting what it would dr
     ],
   }];
   assert.deepEqual(overlayCounts(lists, MIN_VISIBLE),
-    { 'truth-edge': 1, 'truth-vertex': 1, segment: 2, corner: 1 });
+    { 'truth-edge': 1, 'truth-vertex': 1, segment: 2, arc: 1, corner: 1 });
 
   // Nothing bound, nothing offered: every count is zero rather than absent, so
   // the column asks one question -- is this kind's count above zero?
   assert.deepEqual(overlayCounts([], MIN_VISIBLE),
-    { 'truth-edge': 0, 'truth-vertex': 0, segment: 0, corner: 0 });
+    { 'truth-edge': 0, 'truth-vertex': 0, segment: 0, arc: 0, corner: 0 });
 
   // The kinds and the drawing rules cannot drift apart: each offered kind is
   // a role something can actually be drawn as.
   for (const role of roles) {
-    assert.ok(['segment', 'corner', 'truth-edge', 'truth-vertex'].includes(role));
+    assert.ok(['segment', 'arc', 'corner', 'truth-edge', 'truth-vertex'].includes(role));
   }
   assert.equal(overlayRole({ type: 'edge-region' }), 'unknown');
 });

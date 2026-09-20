@@ -22,7 +22,10 @@ function test(name, fn) {
 /** A fitted segment, as `fit` would report one. */
 const seg = (id, x0, y0, x1, y1, { rms = 0.2, pixels = null } = {}) => {
   const length = Math.hypot(x1 - x0, y1 - y0);
-  return { id, x0, y0, x1, y1, length, rms, residual: rms * 2,
+  // Typed as `fit` types them: `corners` refuses anything else, because an
+  // edge-arc carries the same four coordinate fields and means something else
+  // by them.
+  return { type: 'edge-segment', id, x0, y0, x1, y1, length, rms, residual: rms * 2,
            pixels: pixels ?? Math.max(2, Math.round(length)),
            angle: 0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
 };
@@ -231,6 +234,28 @@ test('corners is deterministic and independent of input order', () => {
   const reversed = findCorners([...s].reverse());
   const key = (c) => `${c.x.toFixed(6)},${c.y.toFixed(6)},${c.support}`;
   assert.deepEqual(reversed.map(key).sort(), once.map(key).sort());
+});
+
+test('corners refuses features that are not straight segments', () => {
+  /*
+   * An edge-arc has x0, y0, x1, y1 and means its two ENDS by them, not a line
+   * through them. Consumed as a segment it would contribute the chord of a
+   * curve to an intersection, and -- having no `length` -- a NaN sigma, so the
+   * record would read uncertain rather than wrong. This is the failure
+   * overlay-features.mjs exists to prevent, one module along.
+   */
+  const arc = {
+    type: 'edge-arc', id: 1, pixels: 40, cx: 50, cy: 50, r: 20,
+    x0: 70, y0: 50, x1: 50, y1: 70, angle0: 0, angle1: 90, sweep: 90,
+    arcLength: 31.4, chord: 28.3, sagitta: 5.9, residual: 0.4, rms: 0.2, lineRms: 3,
+  };
+  assert.throws(() => findCorners([arc]), /expects edge-segment/);
+  // ...including where it is only part of the list.
+  assert.throws(() => findCorners([seg(1, 0, 0, 20, 0), arc]), /edge-arc/);
+  // An untyped record is refused too: nothing in the lab produces one, so it
+  // is a hand-built input whose meaning cannot be checked.
+  assert.throws(() => findCorners([{ id: 1, x0: 0, y0: 0, x1: 10, y1: 0 }]),
+    /expects edge-segment/);
 });
 
 console.log(failures === 0 ? '\nAll corner tests passed.' : `\n${failures} failing.`);

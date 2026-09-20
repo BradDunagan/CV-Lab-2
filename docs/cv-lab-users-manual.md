@@ -114,7 +114,7 @@ having tried.
 
 ## 3. Operation reference
 
-Nineteen operations. Every one is a single entry in `src/lab/ops.js`, declared
+Twenty-one operations. Every one is a single entry in `src/lab/ops.js`, declared
 against the schema in `src/lab/registry.js` — which is also what validates your
 arguments and generates the error messages.
 
@@ -321,6 +321,46 @@ Join segments that are collinear and nearly touching. `gap` 6 px,
 A separate operation rather than a flag on `segments`, so you can see what it
 joined by comparing the two label maps.
 
+#### `chain(src[1], gap, maxResidual, minTurn, maxTurn, minSagitta)` → i32 label map
+
+Join segments that lie on one **circle**. Where `merge` asks whether two pieces
+are the same line, this asks whether they are the same curve.
+
+| parameter | default | what it does |
+|---|---|---|
+| `gap` | 4.0 px | how far apart the nearest endpoints may be |
+| `maxResidual` | 1.0 px | how far any pixel of either piece may sit off the joined circle |
+| `minTurn` | 2° | below this the two pieces are collinear, which is `merge`'s question |
+| `maxTurn` | 40° | above this they meet at a corner |
+| `minSagitta` | 1.0 px | how far the joined curve must bow off its own chord |
+
+**Why it is needed at all.** `segments` grows a region under a *straight-line*
+residual, so it cannot produce a long curved piece. An arc of chord `L` on
+radius `r` departs from its own fitted line by `L²/(12r)`, and the gradient
+direction turns with the arc, so `maxResidual` and `angleTol` each cap how far
+a region can grow along a curve:
+
+| | the cap |
+|---|---|
+| straightness | `L ≤ √(12·r·maxResidual)` |
+| direction | `arc length ≤ r·angleTol` |
+
+Measured on the nut, pieces land at **0.86 of the smaller cap** (range
+0.72–1.08, over radii from 31 to 157 px), and `angleTol` is the binding one in
+9 of 12 cases — not `maxResidual`, which is the intuitive guess and wrong below
+about r = 90 at the defaults. The consequence is that after `merge`, 72 of 74
+labels on a subject that is mostly curves were still too short to prefer a
+circle to a line. Nothing was missing from the image; the curves arrive in
+pieces, and this is what puts them back together.
+
+**Both ends of the turn window matter.** Without the floor, one enormous circle
+holds any two straight runs within a pixel and every straight edge in the image
+chains into a single flat arc. Without the ceiling, a hexagon's 60° vertices
+chain and a fitted curve walks around the whole subject.
+
+Like `merge`, it is separate so you can see what it did: compare the two label
+maps.
+
 #### `fit(src[1] i32)` → features (`edge-segment`)
 
 The point in the pipeline where pixels stop. Everything up to `merge` answers
@@ -371,6 +411,52 @@ a guarantee about the worst pixel, the RMS is what `corners` extrapolates with.
 pixels. That is where sub-pixel accuracy comes from — the line is an average
 over every pixel in the segment, so it localises better than any single pixel
 centre can.
+
+#### `fitArcs(src[1] i32, minGain, minSweep, minSagitta)` → features (`edge-arc`)
+
+The same label map described as circular arcs instead of lines — for the labels
+that earn it.
+
+| parameter | default | what it does |
+|---|---|---|
+| `minGain` | 1.5 | the circle's RMS must beat the line's by this factor |
+| `minSweep` | 8° | shorter arcs are not enough of a curve to see |
+| `minSagitta` | 1.0 px | and must bow at least this far off their own chord |
+
+Per arc: `id`, `pixels`, the circle `cx cy r`, endpoints `x0 y0` and `x1 y1`,
+`angle0` and `angle1`, `sweep`, `arcLength`, `chord`, `sagitta`, `residual`,
+`rms`, `lineRms`, and the centroid `mx my`.
+
+**A label that fails the gates produces no record.** It is not an error: it is a
+line, and `fit` on the same map already says so. The two operations are two
+descriptions of one label map, and running both is the comparison.
+
+**Why there are gates at all, rather than a residual test.** A circle has a
+parameter a line does not, and on a real edge it spends it on noise: three of
+the twelve largest **straight** labels on the nut fit their own circle 7–21%
+better than their own line. Nothing about one of those fits looks wrong on its
+own — a slightly better residual, a radius in the hundreds — so comparing
+residuals alone reclassifies a third of the straight edges in an image and
+reports it as an improvement.
+
+`angle0` and `angle1` use the same convention `fit`'s `angle` does — from
+horizontal, in image coordinates where y increases **downward** — but over
+[0, 360) rather than [0, 180), because an arc does have a direction. The arc
+runs from `angle0` in the direction of increasing angle by `sweep`, so
+`angle0 + sweep ≡ angle1`.
+
+**Endpoints are projected onto the fitted circle**, radially, for the same
+reason `fit` projects onto the line: the circle is an average over every pixel
+in the label, so it localises the end better than that pixel's centre can.
+
+**`sagitta` is how far the arc bows off its own chord**, in pixels, and it is
+the scale-free way to ask whether something is curved. A radius means something
+different on every image; "this does not depart from its chord by a pixel over
+its whole length" does not.
+
+Arcs are **not scored**. `match` has no arc branch, because ground truth lists
+straight chords off a tessellated mesh and one arc crosses a fan of them — see
+§11.
 
 #### `corners(src features, …)` → features (`edge-corner`)
 
@@ -599,6 +685,14 @@ numbers.
 ```bash
 npm run lab -- --script pipelines/geometry.lab --as linear --out results/ generated/*.png
 ```
+
+Three scripts ship in `pipelines/`:
+
+| | |
+|---|---|
+| `geometry.lab` | the straight-edge pipeline, all the way to scored corners |
+| `explained.lab` | the same, plus `explain` over the renderer's AOV passes |
+| `curves.lab` | the curve branch — `chain` and `fitArcs` beside `fit`. Needs no ground truth, because arcs are not scored |
 
 | option | |
 |---|---|
@@ -1150,6 +1244,7 @@ complaint.
 | type | from | fields |
 |---|---|---|
 | `edge-segment` | `fit` | `id`, `pixels`, `x0 y0 x1 y1`, `length`, `angle`, `residual`, `rms`, `cx cy` |
+| `edge-arc` | `fitArcs` | `id`, `pixels`, `cx cy r`, `x0 y0 x1 y1`, `angle0`, `angle1`, `sweep`, `arcLength`, `chord`, `sagitta`, `residual`, `rms`, `lineRms`, `mx my` |
 | `edge-corner` | `corners` | `id`, `x y`, `support`, `segments`, `sigma`, `reach`, `endpointGap`, `angle` |
 | `gt-edge` | `groundTruth` | `id`, `cause`, `objects`, `x0 y0 x1 y1`, `z0 z1`, `length`, `angle`, `dihedral`, `visible`, `clipped`, `v0 v1` |
 | `gt-vertex` | `groundTruth` | `id`, `x y z`, `degree`, `visibleDegree`, `onFrame`, `visible`, `angle`, `objects` |
@@ -1158,6 +1253,11 @@ complaint.
 `role` is `hit`, `false-positive` or `miss`. Join a match record back to the
 feature it judged by `detected` — that is how the evidence and the verdict come
 together.
+
+**`id` is the label's, not the record's.** `fit` and `fitArcs` read the same
+label map, so a segment and an arc describing one label carry the same `id`.
+Join on the type as well as the id, or two different descriptions of one edge
+will collide.
 
 ---
 
@@ -1292,6 +1392,12 @@ Stated plainly, so you do not go looking:
 - **An ICC-profiled PNG loads silently under the sRGB convention.** The profile
   is detected and then discarded; only explicit `sRGB` and `gAMA` declarations
   cause a refusal. Same for a `gAMA` value that is neither sRGB nor linear.
+- **Arcs are detected but never scored.** `fitArcs` finds them and `explain`
+  can say what put them there, but `match` refuses a list of them by name.
+  Ground truth records straight chords off a tessellated mesh, so one arc
+  crosses a fan of truth edges and matches none of them in particular — and
+  the matcher's modal vote would report a perfect detection as one hit in
+  twelve. See `design-lab-model.md` §11.
 - **Ground truth models geometry, so an image-space T-junction is scored as an
   invention.** Where two real occluding contours cross, the picture has a
   corner and the scene has no vertex — nothing touches there. `explain` makes

@@ -1,0 +1,44 @@
+// The curve branch: the same edge pixels, described as arcs instead of lines.
+//
+// Run it over any directory of images -- no ground truth needed, because arcs
+// are not scored (design-lab-model.md §11):
+//
+//   npm run lab -- --script pipelines/curves.lab --as linear \
+//                  --out results/nut/ generated/nut/*.png
+//   npm run overlay -- generated/nut/p0-l0.png results/nut/
+//
+// A is prepended by the runner, one per image:
+//   A = load("<image>", from=srgb, as=linear)
+//
+// --as linear matters here for the same reason it does in geometry.lab:
+// `gray` computes luminance, and the coefficients are only valid on linear
+// values.
+
+G  = gray(A)
+B  = gaussian(G, sigma=1.4)
+Gx = sobel(B, axis=x)
+Gy = sobel(B, axis=y)
+M  = sobel(B, axis=mag)
+N  = nms(M, Gx, Gy)
+S  = segments(N, Gx, Gy)
+R  = merge(S)
+
+// Everything above is geometry.lab unchanged. The branch is here.
+//
+// `merge` joins pieces that are the same LINE; `chain` joins pieces that are
+// the same CIRCLE. A curve needs it because `segments` cannot grow along one:
+// its straightness and direction tests each cap how long a piece can be, so a
+// curve arrives in pieces short enough that a circle does not yet beat a line.
+// On the nut, 72 of 74 labels after `merge` were still too short to prefer
+// one -- on a subject that is mostly curves.
+K  = chain(R)
+
+// Two descriptions of the SAME label map, and running both is the comparison.
+// `fit` describes every label as a line, because every label has one.
+// `fitArcs` describes only the labels whose circle earned the extra
+// parameter, and is silent about the rest -- those are the lines.
+F  = fit(K)
+AR = fitArcs(K)
+
+// Compare K against R in the app, or with `npm run overlay`, to see what
+// `chain` joined. That is why it is a separate operation rather than a flag.

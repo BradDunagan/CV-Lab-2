@@ -306,12 +306,14 @@ All three are explained in `docs/electron-guide.md`.
 ## Status
 
 Working: the buffer type, the operation registry, the command language, the
-session log with provenance and replay, the display path, and the UI. Sixteen
-operations — `load`, `pattern`, `gray`, `gaussian`, `sobel`, `threshold`,
-`stats`, `toLinear`, `toSrgb`, `nms`, `hysteresis`, `orient`, `segments`,
-`merge`, `fit`, `corners` — enough for Canny end to end, for straight edges
-with sub-pixel endpoints, and for corner hypotheses carrying their own
-uncertainty. Three-platform CI produces unsigned installers.
+session log with provenance and replay, the display path, and the UI.
+Twenty-one operations — `load`, `pattern`, `gray`, `gaussian`, `sobel`,
+`threshold`, `stats`, `toLinear`, `toSrgb`, `nms`, `hysteresis`, `orient`,
+`segments`, `merge`, `chain`, `fit`, `fitArcs`, `corners`, `groundTruth`,
+`match`, `explain` — enough for Canny end to end, for straight edges with
+sub-pixel endpoints, for curved ones with sub-pixel endpoints of their own,
+and for corner hypotheses carrying their own uncertainty. Three-platform CI
+produces unsigned installers.
 
 Outstanding, in rough order:
 

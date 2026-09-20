@@ -159,6 +159,74 @@ void cv_tls_line(const CvTls *t, double *nx, double *ny, double *c);
 /** Perpendicular distance from a point to that line, in pixels. */
 double cv_tls_distance(double nx, double ny, double c, double x, double y);
 
+/* --- circular regression -------------------------------------------- */
+
+/*
+ * Running sums for an algebraic circle fit, with the same two properties that
+ * make CvTls useful: adding a point is O(1), and the circle comes back in
+ * closed form. It is also ADDITIVE -- the sums of a union are the sums of the
+ * parts -- which is what lets `chain` test a candidate join without rescanning
+ * either side's pixels, exactly as `merge` does with CvTls.
+ *
+ * WHY A CIRCLE AND NOT A CONIC. A nut's curves are circles seen obliquely, so
+ * an ellipse is the honest primitive for the subject and a circle is not. It
+ * is still the right thing to DECIDE with, for two reasons measured on
+ * 2026-09-20: over the 26-50 degrees of sweep a chain candidate spans, a
+ * conic's extra parameters are not identifiable -- it won on 6 of 12 chains by
+ * a median of 0.001 px, and returned a hyperbola on 4 of them -- and a
+ * conic needs an eigenvector of a 3x3, whose textbook solution is acos and
+ * cbrt. That is the determinism failure cv_tls_line's comment describes, in a
+ * function every geometry stage would depend on. Everything below is
+ * multiplication, addition and sqrt.
+ *
+ * Kasa's fit (minimising the algebraic distance x^2+y^2+Dx+Ey+F) rather than a
+ * geometric one: closed form, no iteration, no starting guess. It is biased
+ * towards small radii on short arcs, which matters for a published radius and
+ * does not for "do these two pieces lie on one circle within a pixel".
+ */
+typedef struct {
+  double n, sx, sy, sxx, syy, sxy, sxxx, syyy, sxyy, sxxy;
+} CvCircle;
+
+/**
+ * Add one point, in coordinates RELATIVE TO A FIXED ORIGIN.
+ *
+ * The origin has to be shared by every accumulator that might later be added
+ * together, and the kernels use the image centre. It is not cosmetic: the
+ * third moments here are cubic in the coordinate, and centring them at solve
+ * time subtracts numbers of order n*mx^3 from numbers of order n*sigma^3. With
+ * raw pixel coordinates on a 1024-wide image that is 1e13 against 1e7, which
+ * spends five of a double's sixteen digits before the fit starts; about the
+ * image centre it is 1e12, and the sums partly cancel as they accumulate
+ * rather than only at the end.
+ */
+void cv_circle_add(CvCircle *c, double x, double y);
+
+/**
+ * Centre and radius, in the same coordinates the points were added in.
+ *
+ * @returns false when there is no circle to report: fewer than three points,
+ * points exactly collinear (the 2x2 is singular), or a solve that ran away to
+ * infinity. A NEARLY collinear run returns true with an enormous radius, which
+ * is a true statement about the fit and a useless description of the pixels --
+ * callers gate on sagitta rather than trusting the radius.
+ */
+bool cv_circle_solve(const CvCircle *c, double *cx, double *cy, double *r);
+
+/** Distance from a point to that circle, in pixels. Always non-negative. */
+double cv_circle_distance(double cx, double cy, double r, double x, double y);
+
+/**
+ * How far a chord of this length bows away from its own circle, in pixels.
+ *
+ * The scale-free test for "is this an arc or a line": a curve that does not
+ * depart from its chord by about a pixel over its whole length is one a line
+ * already describes, whatever its radius says. Exact for the circular segment
+ * rather than the L^2/(8r) approximation, and saturating at r for a chord that
+ * spans the diameter, so a half circle does not come back as a straight line.
+ */
+double cv_circle_sagitta(double r, double chord);
+
 /* --- label maps ----------------------------------------------------- */
 
 /*

@@ -171,4 +171,22 @@ module.exports = {
    *   residual:number, rms:number, cx:number, cy:number}>}
    */
   fitSegments: addon.fitSegments,
+
+  /**
+   * The same label map described as circular arcs instead of lines.
+   *
+   * One candidate per label, whether or not the label is curved — the gates
+   * that decide which of them are arcs live in `src/lab/ops.js`, because a
+   * circle fits any run of pixels at least as well as a line does and the
+   * decision is a policy rather than a measurement. `rms` against `lineRms`
+   * and `sagitta` are the evidence it decides on.
+   *
+   * @param {object} handle an i32 label map
+   * @returns {Array<{type:'edge-arc', id:number, pixels:number,
+   *   cx:number, cy:number, r:number, x0:number, y0:number, x1:number,
+   *   y1:number, angle0:number, angle1:number, sweep:number,
+   *   arcLength:number, chord:number, sagitta:number, residual:number,
+   *   rms:number, lineRms:number, mx:number, my:number}>}
+   */
+  fitArcs: addon.fitArcs,
 };

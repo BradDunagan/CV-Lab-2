@@ -515,6 +515,43 @@ The number was wrong and nobody re-measured it, which is how a fix applied to
 `cv_label_index`, one shared function, so a third consumer of a label map
 cannot repeat it. Measured after: 39 ms, and linear in segment count.
 
+#### The curve stages
+
+`chain` and `fitArcs` were added later and measured on a different machine, so
+they get their own table rather than a column in the one above. `merge` is
+repeated in it as the scale factor — this machine runs it about 2.5× faster,
+so the two tables are comparable by ratio and not by absolute figure. Same
+pipeline, `merge` output in, defaults throughout.
+
+| image | merged → chained | `merge` | `chain` | `fitArcs` |
+|---|---|---|---|---|
+| 256² | 1,518 → 1,038 | 13 ms | 3 ms | 4 ms |
+| 512² | 6,110 → 4,126 | 204 ms | 38 ms | 14 ms |
+| 768² | 13,774 → 9,262 | 1,042 ms | 184 ms | 33 ms |
+| 1024² | 24,510 → 16,446 | 3,301 ms | 565 ms | 64 ms |
+
+`chain` is quadratic in segments and about 6× cheaper than `merge` at every
+size — same candidate scan, but the turn window rejects most pairs before the
+endpoint distance is computed, and far fewer survive to the pixel test.
+`fitArcs` is linear in labels, like `fit`, and for the same reason: both call
+`cv_label_index`.
+
+**What a checkerboard says about `chain`, which is the useful part.** A
+checkerboard has no curves, and `chain` still joined 480 pairs of the 1,518
+labels at 256². That looks wrong and is not. Running `fit` either side of it:
+
+| | labels | line residual, median | p90 | over 1 px |
+|---|---|---|---|---|
+| after `merge` | 1,518 | 0.294 | 0.733 | 0 |
+| after `chain` | 1,038 | 0.555 | 0.733 | **15** |
+
+465 of the 480 joins produce a label a straight line still describes within a
+pixel — fragments of one block boundary that `merge` declined because no single
+line held them, which a slightly bent one does. The 15 that a line no longer
+describes are **exactly** the 15 `fitArcs` reports as arcs. So the two stages
+agree about which joins were curves, and the disagreement rate on a subject
+with no curves in it is 15 of 1,038.
+
 `corners` is now unambiguously the wall, and this table used to understate it
 by roughly 45×. It is quadratic in segments and its clustering pass is
 quadratic again in candidates, which is what the 4× rise in segments costing
@@ -925,10 +962,30 @@ the output where this lab claims *sub-pixel* accuracy.
   `Math.acos` in pure JS and reintroduced the same exposure by a different
   door — a `cv_acos`-shaped answer exists, and the JS path has no route to it
   today.
-- `segments` and `merge` emit `i32` label maps, so a last-bit difference only
-  shows up if it flips a threshold comparison. They agree today. A pixel
-  sitting exactly at `maxResidual` would not, and then whole segments would
-  differ rather than last bits.
+- `segments`, `merge` and `chain` emit `i32` label maps, so a last-bit
+  difference only shows up if it flips a threshold comparison. They agree
+  today. A pixel sitting exactly at `maxResidual` would not, and then whole
+  segments would differ rather than last bits.
+
+**The curve stages were built to this rule rather than corrected into it.**
+`cv_circle_solve` is Kåsa's algebraic fit: centred moments, one 2×2 solve and
+one square root, so it is `+ − × ÷ sqrt` throughout and correctly rounded
+everywhere by IEEE 754. That is also the argument against the primitive the
+*subject* deserves — a nut's curves are circles seen obliquely, so an ellipse
+describes them and a circle does not, but a conic needs an eigenvector of a
+3×3 and the textbook route to one is `acos` and `cbrt`. Putting those in the
+function every curve stage depends on is the failure above, repeated
+knowingly. Measurement said the trade costs little: over the 26–50° of sweep a
+chain candidate spans, a conic beat the circle on 6 of 12 chains by a median
+of **0.001 px** and returned a hyperbola on 4 of them, because its extra
+parameters are not identifiable over that short an arc (2026-09-20).
+
+`fitArcs` has the same exposure `fit` had and avoids it the same way. An arc's
+endpoints are the two extreme pixels projected radially onto the fitted circle
+— `c + r·(p − c)/|p − c|` — rather than the circle evaluated at the endpoint
+angle, which would be `sin` and `cos`. Both reach the same point, since the
+projection lies on the ray the angle names; only one of them is reproducible.
+`angle0` and `angle1` come from `cv_atan2`.
 
 All three are recorded rather than fixed, because the first two would mean
 replacing `exp` and `pow` in the per-pixel path and none has been observed to
@@ -1281,6 +1338,27 @@ item genuinely deferrable.
   reports it as though it were a property of the detector. Either document it
   as a per-size figure or rasterise visibility at a fixed resolution
   independent of the render.
+
+- **Arcs are detected and not scored.** `chain` and `fitArcs` put a curve back
+  together and describe it, and `explain` samples across one radially, so the
+  question "what put this curve in the picture" is answerable. "Is it really
+  there" is not. `match` has no arc branch because the truth model cannot hold
+  the answer: `gt-edge` records are straight 2D chords off a tessellated mesh,
+  so a fitted arc crosses a fan of them and matches none in particular.
+  `nearestAlong` already samples a detection per pixel and takes a median,
+  which transfers unchanged — its **modal vote** does not. An arc spanning
+  twelve chords would report one match in twelve and read as catastrophic
+  recall on a perfect detection, so an arc needs a *coverage set* rather than
+  one best truth edge, and `score.js` needs to tally coverage rather than
+  count hits.
+
+  Underneath that is the same problem T-junctions have, and worse. The
+  silhouette of a smooth surface is where **n·v = 0**: not a mesh feature, not
+  on mesh edges, and moving with the camera. On a curved subject that is not
+  an occasional artefact, it is the majority case — every point of the
+  contour. Emitting analytic `gt-arc` records from the generator would fix the
+  chord problem and not this one, and only for surfaces known to be analytic,
+  which a thread is not.
 
 - **Multi-image operations.** Stereo pairs, image stacks and frame sequences
   all want more than "two inputs". Does a slot ever hold a *stack*, or is that

@@ -213,6 +213,7 @@
 
           if (role === 'corner') drawCorner(ctx, f, toX, toY, sx);
           else if (role === 'segment') drawSegment(ctx, f, toX, toY);
+          else if (role === 'arc') drawArc(ctx, f, toX, toY);
           else if (role === 'truth-edge') drawTruthEdge(ctx, f, toX, toY);
           else drawTruthVertex(ctx, f, toX, toY);
         }
@@ -229,6 +230,48 @@
     ctx.moveTo(toX(f.x0), toY(f.y0));
     ctx.lineTo(toX(f.x1), toY(f.y1));
     ctx.stroke();
+    for (const [px, py] of [[f.x0, f.y0], [f.x1, f.y1]]) {
+      ctx.beginPath();
+      ctx.arc(toX(px), toY(py), 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /**
+   * A fitted arc, drawn over its own sweep and no further.
+   *
+   * Only between angle0 and angle1. Drawing the whole circle is the obvious
+   * thing and it is wrong: a 30-degree arc becomes three hundred pixels of
+   * curve that no pixel in the image supports, laid over whatever else is
+   * there. 2026-09-20's probe hid a chaining bug behind exactly that for a
+   * run.
+   *
+   * Sampled into a polyline in IMAGE space and mapped point by point, rather
+   * than handed to ctx.arc. A tile's two axes do not have to be scaled
+   * equally -- toX and toY are separate for that reason -- and a canvas arc
+   * takes one radius and one angle frame, so under an uneven zoom it would
+   * draw a circle where the image has an ellipse and start it at the wrong
+   * place. A polyline is correct under any mapping toX and toY can express.
+   */
+  function drawArc(ctx, f, toX, toY) {
+    const a0 = (f.angle0 * Math.PI) / 180;
+    const sweep = (f.sweep * Math.PI) / 180;
+    // One step per screen pixel of arc, within reason: enough that the
+    // polyline reads as a curve, bounded so a huge radius cannot stall a draw.
+    const steps = Math.min(512, Math.max(8, Math.ceil(f.r * sweep)));
+
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#ffa657';
+    ctx.fillStyle = '#ffd166';
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const a = a0 + (sweep * i) / steps;
+      const x = toX(f.cx + f.r * Math.cos(a));
+      const y = toY(f.cy + f.r * Math.sin(a));
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
     for (const [px, py] of [[f.x0, f.y0], [f.x1, f.y1]]) {
       ctx.beginPath();
       ctx.arc(toX(px), toY(py), 2.5, 0, Math.PI * 2);

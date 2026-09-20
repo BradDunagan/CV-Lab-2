@@ -507,6 +507,234 @@ static napi_value FitSegments(napi_env env, napi_callback_info info) {
   return list;
 }
 
+/* ------------------------------------------------------------------ */
+/* fitArcs(labels) -- the same, for labels that are curved             */
+/*                                                                      */
+/* `fit` describes a label as a line and always can. This describes one  */
+/* as a circular arc and often should not, so it reports the evidence    */
+/* for the description alongside it -- `rms` against `lineRms`, the      */
+/* sweep, and the sagitta -- and leaves the decision to the operation.   */
+/* The C emits a candidate per label; src/lab/ops.js applies the gates,  */
+/* where they are testable under plain node and visible in a provenance  */
+/* record as the parameters they are.                                    */
+/*                                                                      */
+/* THE MODEL-SELECTION TRAP, which is why the gates exist at all: a      */
+/* circle has a parameter a line does not, and on a real edge it spends  */
+/* it on noise. Three of the twelve largest STRAIGHT labels on the nut   */
+/* fit their own circle 7-21% better than their own line, and nothing    */
+/* about one of those fits looks wrong on its own. A residual comparison */
+/* alone therefore reclassifies a third of the straight edges in an      */
+/* image and reports it as an improvement.                               */
+/*                                                                      */
+/* Angles are measured from +x through +y in IMAGE coordinates, where y  */
+/* increases DOWNWARD -- the same convention `fit` documents -- and the  */
+/* arc runs from `angle0` in that direction by `sweep`.                  */
+/* ------------------------------------------------------------------ */
+
+/** One member pixel's angle about the fitted centre, for sorting. */
+typedef struct { double angle; int64_t index; } CvArcPoint;
+
+/* Total order, so the sort cannot depend on qsort's tie handling: two pixels
+ * at the same angle are ordered by their raster index, which is unique. */
+static int arc_point_compare(const void *p, const void *q) {
+  const CvArcPoint *a = (const CvArcPoint *)p;
+  const CvArcPoint *b = (const CvArcPoint *)q;
+  if (a->angle < b->angle) return -1;
+  if (a->angle > b->angle) return 1;
+  return (a->index < b->index) ? -1 : (a->index > b->index);
+}
+
+static napi_value FitArcs(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argv[1];
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 1) {
+    THROW_RETURN(env, "fitArcs(handle) requires a buffer handle");
+  }
+  CvBuffer *src = handle_arg(env, argv[0]);
+  if (src == NULL) return NULL;
+  if (src->dtype != CV_DTYPE_I32) THROW_RETURN(env, "fitArcs: expects an i32 label map");
+  if (src->channels != 1) THROW_RETURN(env, "fitArcs: expects 1 channel");
+
+  const int64_t cols = src->width, rows = src->height;
+  const int32_t *in = (const int32_t *)src->data;
+  const size_t n = (size_t)rows * (size_t)cols;
+
+  int32_t count = 0;
+  for (size_t i = 0; i < n; i++) if (in[i] > count) count = in[i];
+
+  napi_value list;
+  if (napi_create_array(env, &list) != napi_ok) THROW_RETURN(env, "out of memory");
+  if (count <= 0) return list;
+
+  /* The same fixed origin k_chain uses, so a circle fitted here is the circle
+   * that kernel accepted rather than a differently-conditioned one. */
+  const double ox = (double)cols * 0.5, oy = (double)rows * 0.5;
+
+  CvCircle *circles = (CvCircle *)calloc((size_t)count + 1, sizeof(CvCircle));
+  CvTls *lines = (CvTls *)calloc((size_t)count + 1, sizeof(CvTls));
+  if (circles == NULL || lines == NULL) {
+    free(circles); free(lines);
+    THROW_RETURN(env, "out of memory");
+  }
+  for (size_t i = 0; i < n; i++) {
+    const int32_t id = in[i];
+    if (id <= 0) continue;
+    const double x = (double)(i % (size_t)cols), y = (double)(i / (size_t)cols);
+    cv_circle_add(&circles[id], x - ox, y - oy);
+    cv_tls_add(&lines[id], x, y);
+  }
+
+  size_t *offset = NULL;
+  int64_t *member_px = NULL;
+  {
+    const CvStatus indexed = cv_label_index(in, n, count, &offset, &member_px);
+    if (indexed != CV_OK) {
+      free(circles); free(lines);
+      THROW_RETURN(env, cv_status_str(indexed));
+    }
+  }
+
+  size_t scratch = 0;
+  for (int32_t id = 1; id <= count; id++) {
+    const size_t size = offset[id + 1] - offset[id];
+    if (size > scratch) scratch = size;
+  }
+  CvArcPoint *points = scratch > 0
+      ? (CvArcPoint *)malloc(scratch * sizeof(CvArcPoint)) : NULL;
+  if (scratch > 0 && points == NULL) {
+    free(member_px); free(offset); free(circles); free(lines);
+    THROW_RETURN(env, "out of memory");
+  }
+
+  uint32_t emitted = 0;
+  for (int32_t id = 1; id <= count; id++) {
+    if (circles[id].n < 3.0) continue;
+
+    double cx, cy, radius;
+    if (!cv_circle_solve(&circles[id], &cx, &cy, &radius)) continue;
+    cx += ox; cy += oy;
+
+    /* Radial residuals, and the line's for comparison. */
+    double nx, ny, lc;
+    cv_tls_line(&lines[id], &nx, &ny, &lc);
+
+    double worst = 0.0, sum_sq = 0.0, line_sq = 0.0;
+    size_t written = 0;
+    for (size_t k = offset[id]; k < offset[id + 1]; k++) {
+      const size_t i = (size_t)member_px[k];
+      const double x = (double)(i % (size_t)cols), y = (double)(i / (size_t)cols);
+      const double d = cv_circle_distance(cx, cy, radius, x, y);
+      if (d > worst) worst = d;
+      sum_sq += d * d;
+      const double dl = cv_tls_distance(nx, ny, lc, x, y);
+      line_sq += dl * dl;
+      points[written].angle = cv_atan2(y - cy, x - cx);
+      points[written].index = (int64_t)i;
+      written++;
+    }
+    if (written == 0) continue;
+
+    /*
+     * The arc's extent, by the LARGEST-GAP construction.
+     *
+     * Min and max of the angle is wrong for any arc straddling the branch cut
+     * at +/-pi: it returns the two ends of the empty side. So the arc is
+     * everything except the largest angular gap, which also gives the sweep
+     * for free and degrades honestly on a closed circle -- there the largest
+     * gap is the mean spacing and the sweep comes back near 360.
+     */
+    qsort(points, written, sizeof(CvArcPoint), arc_point_compare);
+    double gap = points[0].angle + 2.0 * CV_PI - points[written - 1].angle;
+    size_t before = written - 1;
+    for (size_t k = 1; k < written; k++) {
+      const double g = points[k].angle - points[k - 1].angle;
+      if (g > gap) { gap = g; before = k - 1; }
+    }
+    const size_t start = (before + 1) % written;
+    const double a0 = points[start].angle;
+    const double a1 = points[before].angle;
+    const size_t ends[2] = { (size_t)points[start].index, (size_t)points[before].index };
+    double sweep = a1 - a0;
+    while (sweep < 0.0) sweep += 2.0 * CV_PI;
+
+    /*
+     * Endpoints projected ONTO the fitted circle, radially, rather than
+     * reported as the extreme pixels themselves -- the same reasoning as
+     * `fit`, one dimension round. The circle is an average over every pixel in
+     * the label, so it localises the end better than that pixel's centre can.
+     *
+     * By projecting the extreme PIXEL along its own radius rather than
+     * evaluating the circle at a0, this needs no sine or cosine. That is not
+     * tidiness: libm's trigonometry is not required to be correctly rounded,
+     * and cv_tls_line's comment records what three platforms did to `fit` when
+     * geometry went through it. The result is the same point -- the projection
+     * lies on the ray the angle names -- reached with multiplication, addition
+     * and one square root.
+     */
+    const double e0x = (double)(ends[0] % (size_t)cols), e0y = (double)(ends[0] / (size_t)cols);
+    const double e1x = (double)(ends[1] % (size_t)cols), e1y = (double)(ends[1] / (size_t)cols);
+    double px0 = e0x, py0 = e0y, px1 = e1x, py1 = e1y;
+    {
+      const double d0 = cv_len2(e0x - cx, e0y - cy);
+      if (d0 > 0.0) { px0 = cx + (e0x - cx) * radius / d0; py0 = cy + (e0y - cy) * radius / d0; }
+      const double d1 = cv_len2(e1x - cx, e1y - cy);
+      if (d1 > 0.0) { px1 = cx + (e1x - cx) * radius / d1; py1 = cy + (e1y - cy) * radius / d1; }
+    }
+    const double chord = cv_len2(px1 - px0, py1 - py0);
+
+    const double rms = sqrt(sum_sq / (double)written);
+    const double line_rms = sqrt(line_sq / (double)written);
+
+    napi_value entry, v;
+    napi_create_object(env, &entry);
+    napi_create_string_utf8(env, "edge-arc", NAPI_AUTO_LENGTH, &v);
+    napi_set_named_property(env, entry, "type", v);
+    napi_create_int32(env, id, &v);                   napi_set_named_property(env, entry, "id", v);
+    napi_create_int64(env, (int64_t)written, &v);     napi_set_named_property(env, entry, "pixels", v);
+    napi_create_double(env, cx, &v);                  napi_set_named_property(env, entry, "cx", v);
+    napi_create_double(env, cy, &v);                  napi_set_named_property(env, entry, "cy", v);
+    napi_create_double(env, radius, &v);              napi_set_named_property(env, entry, "r", v);
+    napi_create_double(env, px0, &v);                 napi_set_named_property(env, entry, "x0", v);
+    napi_create_double(env, py0, &v);                 napi_set_named_property(env, entry, "y0", v);
+    napi_create_double(env, px1, &v);                 napi_set_named_property(env, entry, "x1", v);
+    napi_create_double(env, py1, &v);                 napi_set_named_property(env, entry, "y1", v);
+    /* cv_atan2 returns (-pi, pi]; arcs are reported over [0, 360) because an
+     * arc, unlike a line, does have a direction and a start. */
+    double d0 = a0 * (180.0 / CV_PI), d1 = a1 * (180.0 / CV_PI);
+    if (d0 < 0.0) d0 += 360.0;
+    if (d1 < 0.0) d1 += 360.0;
+    napi_create_double(env, d0, &v);                  napi_set_named_property(env, entry, "angle0", v);
+    napi_create_double(env, d1, &v);                  napi_set_named_property(env, entry, "angle1", v);
+    napi_create_double(env, sweep * (180.0 / CV_PI), &v);
+    napi_set_named_property(env, entry, "sweep", v);
+    napi_create_double(env, radius * sweep, &v);
+    napi_set_named_property(env, entry, "arcLength", v);
+    napi_create_double(env, chord, &v);               napi_set_named_property(env, entry, "chord", v);
+    /* How far the arc bows off its own chord: the scale-free statement of
+     * "this is curved", and what the operation gates on. */
+    napi_create_double(env, cv_circle_sagitta(radius, chord), &v);
+    napi_set_named_property(env, entry, "sagitta", v);
+    napi_create_double(env, worst, &v);               napi_set_named_property(env, entry, "residual", v);
+    napi_create_double(env, rms, &v);                 napi_set_named_property(env, entry, "rms", v);
+    /* The line this label would have been described as, so the operation can
+     * ask whether the arc earned the extra parameter rather than assuming it. */
+    napi_create_double(env, line_rms, &v);            napi_set_named_property(env, entry, "lineRms", v);
+    napi_create_double(env, circles[id].sx / circles[id].n + ox, &v);
+    napi_set_named_property(env, entry, "mx", v);
+    napi_create_double(env, circles[id].sy / circles[id].n + oy, &v);
+    napi_set_named_property(env, entry, "my", v);
+
+    napi_set_element(env, list, emitted++, entry);
+  }
+
+  free(points);
+  free(member_px);
+  free(offset);
+  free(circles);
+  free(lines);
+  return list;
+}
+
 static napi_value KernelNames(napi_env env, napi_callback_info info) {
   (void)info;
   napi_value out;
@@ -550,5 +778,10 @@ napi_status cv_register_kernel_api(napi_env env, napi_value exports) {
 
   status = napi_create_function(env, "fitSegments", NAPI_AUTO_LENGTH, FitSegments, NULL, &fn);
   if (status != napi_ok) return status;
-  return napi_set_named_property(env, exports, "fitSegments", fn);
+  status = napi_set_named_property(env, exports, "fitSegments", fn);
+  if (status != napi_ok) return status;
+
+  status = napi_create_function(env, "fitArcs", NAPI_AUTO_LENGTH, FitArcs, NULL, &fn);
+  if (status != napi_ok) return status;
+  return napi_set_named_property(env, exports, "fitArcs", fn);
 }

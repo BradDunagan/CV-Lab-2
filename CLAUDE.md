@@ -1,8 +1,8 @@
 # cv-lab-2
 
 An Electron + native C computer-vision lab. Images in, described geometry out —
-straight edges with sub-pixel endpoints, and corner hypotheses carrying their
-own uncertainty.
+straight edges and curved ones, both with sub-pixel endpoints, and corner
+hypotheses carrying their own uncertainty.
 
 Two requirements shape almost every decision: it handles **non-8-bit data**, and
 every result is **reproducible** from a replayable log.
@@ -30,7 +30,7 @@ native/buffer.*      the buffer type: allocation, dtypes, overflow-checked sizin
 native/kernels.*     the compute kernels, behind one uniform C signature
 native/render.*      display transforms and downsampling, done in C
 native/addon_*.c     the Node-API surface
-src/lab/ops.js       the nineteen operations themselves: inputs, params,
+src/lab/ops.js       the twenty-one operations themselves: inputs, params,
                      defaults, and the kernel each one binds to
 src/lab/registry.js  the schema they are declared against — validation,
                      error messages, provenance records
@@ -53,7 +53,7 @@ src/menu.js          the application menu — global commands live here, not in 
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
-test/                fourteen suites; thirteen run under plain node
+test/                fifteen suites; fourteen run under plain node
 pipelines/           .lab scripts for the batch runner
 ```
 
@@ -64,7 +64,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — fourteen suites, ~347 tests
+npm test                # everything — fifteen suites, ~422 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless

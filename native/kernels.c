@@ -527,6 +527,9 @@ static CvStatus k_segments(const CvBuffer *const *inputs, size_t n_inputs,
 static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
                         const CvParams *params, CvBuffer *out,
                         CvScalars *scalars, const CvKernelCtx *ctx);
+static CvStatus k_chain(const CvBuffer *const *inputs, size_t n_inputs,
+                        const CvParams *params, CvBuffer *out,
+                        CvScalars *scalars, const CvKernelCtx *ctx);
 
 /* ------------------------------------------------------------------ */
 /* the table                                                            */
@@ -546,6 +549,7 @@ static const CvKernelEntry KERNELS[] = {
   { "orient",     k_orient,     2, true },
   { "segments",   k_segments,   3, true },
   { "merge",      k_merge,      1, true },
+  { "chain",      k_chain,      1, true },
 };
 
 const CvKernelEntry *cv_kernel_lookup(const char *name) {
@@ -902,6 +906,88 @@ void cv_tls_line(const CvTls *t, double *nx, double *ny, double *c) {
 
 double cv_tls_distance(double nx, double ny, double c, double x, double y) {
   return fabs(nx * x + ny * y + c);
+}
+
+/* --- circular regression -------------------------------------------- */
+
+void cv_circle_add(CvCircle *c, double x, double y) {
+  const double xx = x * x, yy = y * y;
+  c->n += 1.0;
+  c->sx += x;     c->sy += y;
+  c->sxx += xx;   c->syy += yy;   c->sxy += x * y;
+  c->sxxx += xx * x;
+  c->syyy += yy * y;
+  c->sxyy += x * yy;
+  c->sxxy += y * xx;
+}
+
+/*
+ * Kasa, on moments centred at solve time.
+ *
+ * Minimising sum (u^2 + v^2 - 2au - 2bv - k)^2 over the centred points gives
+ * the normal equations
+ *
+ *     Suu * a + Suv * b = (Suuu + Suvv) / 2
+ *     Suv * a + Svv * b = (Svvv + Svuu) / 2
+ *
+ * which is a 2x2 solve, and then r^2 = a^2 + b^2 + (Suu + Svv)/n. The centred
+ * moments come from the raw ones by the usual expansions; the third-order ones
+ * are written out rather than derived in a comment because getting one of them
+ * wrong is silent -- it moves the centre and still returns a plausible circle.
+ *
+ *     Suuu = Sxxx - 3*mx*Sxx + 2*n*mx^3
+ *     Suvv = Sxyy - 2*my*Sxy - mx*Syy + 2*n*mx*my^2
+ *
+ * and the same two with x and y exchanged. test/kernels.js pins them against a
+ * circle whose centre and radius are known exactly.
+ */
+bool cv_circle_solve(const CvCircle *m, double *cx, double *cy, double *r) {
+  if (m == NULL || cx == NULL || cy == NULL || r == NULL) return false;
+  const double n = m->n;
+  if (n < 3.0) return false;
+
+  const double mx = m->sx / n, my = m->sy / n;
+
+  const double suu = m->sxx - n * mx * mx;
+  const double svv = m->syy - n * my * my;
+  const double suv = m->sxy - n * mx * my;
+
+  const double suuu = m->sxxx - 3.0 * mx * m->sxx + 2.0 * n * mx * mx * mx;
+  const double svvv = m->syyy - 3.0 * my * m->syy + 2.0 * n * my * my * my;
+  const double suvv = m->sxyy - 2.0 * my * m->sxy - mx * m->syy + 2.0 * n * mx * my * my;
+  const double svuu = m->sxxy - 2.0 * mx * m->sxy - my * m->sxx + 2.0 * n * my * mx * mx;
+
+  const double det = suu * svv - suv * suv;
+  if (det == 0.0) return false;             /* exactly collinear, or one point */
+
+  const double r1 = 0.5 * (suuu + suvv);
+  const double r2 = 0.5 * (svvv + svuu);
+  const double a = (r1 * svv - r2 * suv) / det;
+  const double b = (r2 * suu - r1 * suv) / det;
+
+  const double rr = a * a + b * b + (suu + svv) / n;
+  if (!(rr > 0.0)) return false;
+
+  const double radius = sqrt(rr);
+  const double ox = mx + a, oy = my + b;
+  /* A near-singular det runs away to inf rather than failing outright. */
+  if (!isfinite(ox) || !isfinite(oy) || !isfinite(radius)) return false;
+
+  *cx = ox; *cy = oy; *r = radius;
+  return true;
+}
+
+double cv_circle_distance(double cx, double cy, double r, double x, double y) {
+  return fabs(cv_len2(x - cx, y - cy) - r);
+}
+
+double cv_circle_sagitta(double r, double chord) {
+  if (!(r > 0.0) || !(chord > 0.0)) return 0.0;
+  const double half = 0.5 * chord;
+  /* A chord at or past the diameter spans a half circle or more; the bow is
+   * the radius and does not keep growing. Also keeps the sqrt real. */
+  if (half >= r) return r;
+  return r - sqrt(r * r - half * half);
 }
 
 /* Counts, then offsets, then one filling pass. See kernels.h for why this is
@@ -1376,6 +1462,318 @@ static CvStatus k_merge(const CvBuffer *const *inputs, size_t n_inputs,
   free(pairs);
   free(member_px);
   free(offset);
+  free(segs);
+  return CV_OK;
+}
+
+/* ------------------------------------------------------------------ */
+/* chain(labels) -- join segments that lie on one circle               */
+/*                                                                     */
+/* `merge` asks whether two pieces are the same LINE. This asks whether */
+/* they are the same CIRCLE, which is the operation a curve needs, and  */
+/* it is separate for the same reason merge is: comparing the two label */
+/* maps shows exactly what was joined (SS3, on operation granularity).  */
+/*                                                                     */
+/* WHY THIS EXISTS AT ALL. `segments` grows a region under a straight-  */
+/* line residual, so a curve cannot produce a long piece: an arc of     */
+/* chord L departs from its own line by L^2/(12r), and the gradient     */
+/* turns with the arc, so maxResidual and angleTol each cap the piece   */
+/* length. Measured on the nut on 2026-09-20, pieces land at 0.86 of    */
+/* the smaller cap, and 72 of 74 labels were then too short to prefer a */
+/* circle to a line -- 2 of 74, on a subject that is mostly curves.     */
+/* Nothing was missing from the image; the curves arrive in pieces, and */
+/* this is the operation that puts them back together.                  */
+/*                                                                     */
+/* Three tests, cheap first and the claim last, as k_merge orders them: */
+/* the two pieces turn through an angle in [minTurn, maxTurn], their    */
+/* nearest endpoints are within `gap`, and -- the one that decides it -- */
+/* one circle fitted to BOTH holds every pixel of both within           */
+/* maxResidual and bows by at least minSagitta over its own chord.      */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+  CvCircle fit;            /* additive, so a union costs ten additions */
+  int32_t next;            /* segments chained into this root, as a chain */
+  int32_t parent;
+  double ax, ay, bx, by;   /* the two extreme points along the fitted line */
+  double tx, ty;           /* the fitted line's direction, for the turn test */
+  bool alive;
+} CvChainSeg;
+
+static int32_t chain_root(CvChainSeg *segs, int32_t i) {
+  while (segs[i].parent != i) {
+    segs[i].parent = segs[segs[i].parent].parent;   /* path halving */
+    i = segs[i].parent;
+  }
+  return i;
+}
+
+/** The longest distance between any two of four endpoints. */
+static double chain_chord(const CvChainSeg *a, const CvChainSeg *b) {
+  const double xs[4] = { a->ax, a->bx, b->ax, b->bx };
+  const double ys[4] = { a->ay, a->by, b->ay, b->by };
+  double worst = 0.0;
+  for (int i = 0; i < 4; i++) {
+    for (int j = i + 1; j < 4; j++) {
+      const double d = cv_len2(xs[i] - xs[j], ys[i] - ys[j]);
+      if (d > worst) worst = d;
+    }
+  }
+  return worst;
+}
+
+static CvStatus k_chain(const CvBuffer *const *inputs, size_t n_inputs,
+                        const CvParams *params, CvBuffer *out,
+                        CvScalars *scalars, const CvKernelCtx *ctx) {
+  (void)n_inputs; (void)scalars;
+  const CvBuffer *src = inputs[0];
+  if (src->channels != 1) return CV_ERR_CHANNELS;
+  if (src->dtype != CV_DTYPE_I32) return CV_ERR_DTYPE;
+
+  const double gap = cv_param_num(params, "gap", 4.0);
+  const double max_residual = cv_param_num(params, "maxResidual", 1.0);
+  const double min_turn = cv_param_num(params, "minTurn", 2.0);
+  const double max_turn = cv_param_num(params, "maxTurn", 40.0);
+  const double min_sagitta = cv_param_num(params, "minSagitta", 1.0);
+  if (gap < 0.0 || max_residual <= 0.0 || min_sagitta < 0.0 ||
+      min_turn < 0.0 || min_turn > 90.0 ||
+      max_turn <= 0.0 || max_turn > 90.0 || min_turn >= max_turn) {
+    return CV_ERR_PARAM;
+  }
+
+  const int64_t rows = src->height, cols = src->width;
+  const int32_t *in = (const int32_t *)src->data;
+  const size_t n = (size_t)rows * (size_t)cols;
+
+  CvStatus status = cv_buffer_alloc(out, cols, rows, 1, CV_DTYPE_I32, CV_SPACE_NONE);
+  if (status != CV_OK) return status;
+  int32_t *dst = (int32_t *)out->data;
+
+  int32_t count = 0;
+  for (size_t i = 0; i < n; i++) if (in[i] > count) count = in[i];
+  if (count < 2) {
+    /*
+     * Nothing to chain -- but copy it through the same normalisation the loop
+     * at the end applies, rather than memcpy'ing the input verbatim. A label
+     * map is 0 for background and positive for a segment; a negative value is
+     * malformed, and `segments` never emits one. Passing it through here while
+     * zeroing it whenever there happen to be two labels would make the output
+     * invariant depend on the input's label count, which is the kind of
+     * conditional correctness that hides for years. (`merge` still does the
+     * memcpy; same latent difference, not changed here because changing it
+     * changes its output for an input nothing produces.)
+     */
+    for (size_t i = 0; i < n; i++) dst[i] = in[i] > 0 ? in[i] : 0;
+    return CV_OK;
+  }
+
+  CvChainSeg *segs = (CvChainSeg *)calloc((size_t)count + 1, sizeof(CvChainSeg));
+  CvTls *lines = (CvTls *)calloc((size_t)count + 1, sizeof(CvTls));
+  if (segs == NULL || lines == NULL) {
+    free(segs); free(lines); cv_buffer_free(out); return CV_ERR_ALLOC;
+  }
+
+  /* The origin the circle sums are taken about: one per buffer, so every
+   * accumulator here can be added to every other. See cv_circle_add. */
+  const double ox = (double)cols * 0.5, oy = (double)rows * 0.5;
+
+  for (int32_t i = 1; i <= count; i++) {
+    segs[i].parent = i;
+    segs[i].next = -1;
+    segs[i].alive = false;
+  }
+  for (size_t i = 0; i < n; i++) {
+    const int32_t id = in[i];
+    if (id <= 0) continue;
+    const double x = (double)(i % (size_t)cols), y = (double)(i / (size_t)cols);
+    segs[id].alive = true;
+    cv_circle_add(&segs[id].fit, x - ox, y - oy);
+    cv_tls_add(&lines[id], x, y);
+  }
+
+  size_t *offset = NULL;
+  int64_t *member_px = NULL;
+  {
+    const CvStatus indexed = cv_label_index(in, n, count, &offset, &member_px);
+    if (indexed != CV_OK) {
+      free(segs); free(lines); cv_buffer_free(out); return indexed;
+    }
+  }
+
+  /* Direction and extremes, from the straight fit. A piece short enough to
+   * have come out of `segments` is well described by a line, which is the
+   * whole reason it is short -- so its line is the right thing to measure a
+   * turn with, and its extremes along that line are its ends. */
+  for (int32_t i = 1; i <= count; i++) {
+    if (!segs[i].alive || lines[i].n < 2.0) { segs[i].alive = false; continue; }
+    double nx, ny, c;
+    cv_tls_line(&lines[i], &nx, &ny, &c);
+    segs[i].tx = -ny; segs[i].ty = nx;
+    double lo = 1e300, hi = -1e300;
+    for (size_t k = offset[i]; k < offset[i + 1]; k++) {
+      const size_t px = (size_t)member_px[k];
+      const double x = (double)(px % (size_t)cols), y = (double)(px / (size_t)cols);
+      const double t = segs[i].tx * x + segs[i].ty * y;
+      if (t < lo) { lo = t; segs[i].ax = x; segs[i].ay = y; }
+      if (t > hi) { hi = t; segs[i].bx = x; segs[i].by = y; }
+    }
+  }
+
+  /*
+   * Candidates: a turn, and near endpoints.
+   *
+   * The turn is bounded at BOTH ends and both bounds matter. Below minTurn the
+   * two pieces are collinear, which is `merge`'s question and not this one --
+   * without the floor, a circle fitted to two straight runs comes back with an
+   * enormous radius that still holds them, and every straight edge in the
+   * image chains into one flat arc. Above maxTurn they meet at a corner: a
+   * hexagon turns 60 degrees at every vertex, and chaining across those walks
+   * a fitted curve right around the nut, which is what the first version of
+   * this did before the sagitta and residual tests were added.
+   */
+  size_t capacity = 256, candidates = 0;
+  CvMergeCandidate *pairs = (CvMergeCandidate *)malloc(capacity * sizeof(CvMergeCandidate));
+  if (pairs == NULL) {
+    free(member_px); free(offset); free(segs); free(lines);
+    cv_buffer_free(out); return CV_ERR_ALLOC;
+  }
+
+  const double cos_min_turn = cv_cos_degrees(min_turn);
+  const double cos_max_turn = cv_cos_degrees(max_turn);
+  for (int32_t i = 1; i <= count; i++) {
+    if (!segs[i].alive) continue;
+    if (is_cancelled(ctx)) {
+      free(pairs); free(member_px); free(offset); free(segs); free(lines);
+      cv_buffer_free(out); return CV_ERR_CANCELLED;
+    }
+    for (int32_t j = i + 1; j <= count; j++) {
+      if (!segs[j].alive) continue;
+
+      /* Lines, not rays: |dot| folds the turn onto [0, 90], and a larger
+       * cosine is a smaller angle, so the test reads inverted. */
+      const double agreement =
+          fabs(segs[i].tx * segs[j].tx + segs[i].ty * segs[j].ty);
+      if (agreement > cos_min_turn) continue;    /* too straight: merge's job */
+      if (agreement < cos_max_turn) continue;    /* too sharp: a corner */
+
+      double best = 1e300;
+      const double ex[4] = { segs[i].ax, segs[i].ax, segs[i].bx, segs[i].bx };
+      const double ey[4] = { segs[i].ay, segs[i].ay, segs[i].by, segs[i].by };
+      const double fx[4] = { segs[j].ax, segs[j].bx, segs[j].ax, segs[j].bx };
+      const double fy[4] = { segs[j].ay, segs[j].by, segs[j].ay, segs[j].by };
+      for (int k = 0; k < 4; k++) {
+        const double d = cv_len2(ex[k] - fx[k], ey[k] - fy[k]);
+        if (d < best) best = d;
+      }
+      if (best > gap) continue;
+
+      if (candidates == capacity) {
+        capacity *= 2;
+        CvMergeCandidate *bigger =
+            (CvMergeCandidate *)realloc(pairs, capacity * sizeof(CvMergeCandidate));
+        if (bigger == NULL) {
+          free(pairs); free(member_px); free(offset); free(segs); free(lines);
+          cv_buffer_free(out); return CV_ERR_ALLOC;
+        }
+        pairs = bigger;
+      }
+      pairs[candidates].gap = best;
+      pairs[candidates].a = i;
+      pairs[candidates].b = j;
+      candidates++;
+    }
+  }
+
+  /* Closest first, ties broken by id: a total order, so the outcome does not
+   * depend on the sort implementation. */
+  qsort(pairs, candidates, sizeof(CvMergeCandidate), candidate_compare);
+
+  for (size_t p = 0; p < candidates; p++) {
+    const int32_t ra = chain_root(segs, pairs[p].a);
+    const int32_t rb = chain_root(segs, pairs[p].b);
+    if (ra == rb) continue;
+
+    CvCircle combined = segs[ra].fit;
+    combined.n += segs[rb].fit.n;
+    combined.sx += segs[rb].fit.sx;     combined.sy += segs[rb].fit.sy;
+    combined.sxx += segs[rb].fit.sxx;   combined.syy += segs[rb].fit.syy;
+    combined.sxy += segs[rb].fit.sxy;
+    combined.sxxx += segs[rb].fit.sxxx; combined.syyy += segs[rb].fit.syyy;
+    combined.sxyy += segs[rb].fit.sxyy; combined.sxxy += segs[rb].fit.sxxy;
+
+    double cx, cy, radius;
+    if (!cv_circle_solve(&combined, &cx, &cy, &radius)) continue;
+    cx += ox; cy += oy;
+
+    /* Flat enough that a line already describes it. Scale-free, unlike a
+     * radius cap: what matters is whether the bow is measurable over the
+     * extent there is evidence for, not how big the circle is. */
+    if (cv_circle_sagitta(radius, chain_chord(&segs[ra], &segs[rb])) < min_sagitta) {
+      continue;
+    }
+
+    /* The decisive test: does one circle still hold every pixel of both? */
+    bool ok = true;
+    for (int side = 0; side < 2 && ok; side++) {
+      for (int32_t member = (side == 0 ? ra : rb); member != -1 && ok;
+           member = segs[member].next) {
+        for (size_t k = offset[member]; k < offset[member + 1] && ok; k++) {
+          const size_t px = (size_t)member_px[k];
+          const double x = (double)(px % (size_t)cols), y = (double)(px / (size_t)cols);
+          if (cv_circle_distance(cx, cy, radius, x, y) > max_residual) ok = false;
+        }
+      }
+    }
+    if (!ok) continue;
+
+    /* Union, appending rb's chain to ra's. The extremes of the root become
+     * the outermost of the two, so the chord keeps growing with the chain
+     * rather than resetting to whichever pair joined last. */
+    int32_t tail = ra;
+    while (segs[tail].next != -1) tail = segs[tail].next;
+    segs[tail].next = rb;
+    segs[rb].parent = ra;
+    segs[ra].fit = combined;
+    {
+      const CvChainSeg a = segs[ra], b = segs[rb];
+      const double xs[4] = { a.ax, a.bx, b.ax, b.bx };
+      const double ys[4] = { a.ay, a.by, b.ay, b.by };
+      double worst = -1.0;
+      for (int i = 0; i < 4; i++) {
+        for (int j = i + 1; j < 4; j++) {
+          const double d = cv_len2(xs[i] - xs[j], ys[i] - ys[j]);
+          if (d > worst) {
+            worst = d;
+            segs[ra].ax = xs[i]; segs[ra].ay = ys[i];
+            segs[ra].bx = xs[j]; segs[ra].by = ys[j];
+          }
+        }
+      }
+    }
+  }
+
+  /* Renumber canonically -- raster order of each group's first pixel, exactly
+   * as `segments` and `merge` do, so the result is named by the image rather
+   * than by the order joins happened to occur. */
+  int32_t *renumber = (int32_t *)calloc((size_t)count + 1, sizeof(int32_t));
+  if (renumber == NULL) {
+    free(pairs); free(member_px); free(offset); free(segs); free(lines);
+    cv_buffer_free(out); return CV_ERR_ALLOC;
+  }
+  int32_t next_id = 0;
+  for (size_t i = 0; i < n; i++) {
+    const int32_t id = in[i];
+    if (id <= 0) { dst[i] = 0; continue; }
+    const int32_t root = chain_root(segs, id);
+    if (renumber[root] == 0) renumber[root] = ++next_id;
+    dst[i] = renumber[root];
+  }
+
+  free(renumber);
+  free(pairs);
+  free(member_px);
+  free(offset);
+  free(lines);
   free(segs);
   return CV_OK;
 }

@@ -46,7 +46,8 @@ const ROOT = path.join(__dirname, '..');
  * at here on purpose.
  */
 const OVERLAY_NAMES =
-  ['overlay:corner', 'overlay:segment', 'overlay:truth-edge', 'overlay:truth-vertex'];
+  ['overlay:arc', 'overlay:corner', 'overlay:segment',
+   'overlay:truth-edge', 'overlay:truth-vertex'];
 
 let failures = 0;
 function test(name, fn) {
@@ -175,7 +176,8 @@ async function collect(win, swatch, linearPng) {
      */
     const lab2 = () => window.__cvlab;
     const OVERLAY_NAMES =
-      ['overlay:corner', 'overlay:segment', 'overlay:truth-edge', 'overlay:truth-vertex'];
+      ['overlay:arc', 'overlay:corner', 'overlay:segment',
+       'overlay:truth-edge', 'overlay:truth-vertex'];
     const showSlot = async (name) => {
       const ids = lab2().slotPaneIds();
       const already = ids.find(id => lab2().paneStore.getPane(id)?.name === name);
@@ -1332,7 +1334,7 @@ app.whenReady().then(async () => {
      * red lines and green crosses buries the images the marks are drawn on --
      * which is the thing they are meant to be compared against.
      */
-    assert.deepEqual(r.boxesStartUnchecked, [false, false, false, false],
+    assert.deepEqual(r.boxesStartUnchecked, [false, false, false, false, false],
       'a slot came up with an overlay already ticked');
     assert.notEqual(r.withOverlay, r.withoutOverlay, 'the overlay drew nothing');
     assert.equal(r.overlayOffAgain, r.withoutOverlay,
