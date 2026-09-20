@@ -981,13 +981,16 @@ double cv_circle_distance(double cx, double cy, double r, double x, double y) {
   return fabs(cv_len2(x - cx, y - cy) - r);
 }
 
-double cv_circle_sagitta(double r, double chord) {
-  if (!(r > 0.0) || !(chord > 0.0)) return 0.0;
+double cv_circle_sagitta(double r, double chord, bool major) {
+  if (!(r > 0.0)) return 0.0;
+  if (!(chord > 0.0)) return major ? 2.0 * r : 0.0;   /* a closed circle */
   const double half = 0.5 * chord;
-  /* A chord at or past the diameter spans a half circle or more; the bow is
-   * the radius and does not keep growing. Also keeps the sqrt real. */
+  /* A chord at or past the diameter is the diameter, to within the rounding
+   * that produced it: the two arcs are both half circles and both bow by r.
+   * Also what keeps the sqrt real. */
   if (half >= r) return r;
-  return r - sqrt(r * r - half * half);
+  const double minor = r - sqrt(r * r - half * half);
+  return major ? 2.0 * r - minor : minor;
 }
 
 /* Counts, then offsets, then one filling pass. See kernels.h for why this is
@@ -1708,7 +1711,11 @@ static CvStatus k_chain(const CvBuffer *const *inputs, size_t n_inputs,
     /* Flat enough that a line already describes it. Scale-free, unlike a
      * radius cap: what matters is whether the bow is measurable over the
      * extent there is evidence for, not how big the circle is. */
-    if (cv_circle_sagitta(radius, chain_chord(&segs[ra], &segs[rb])) < min_sagitta) {
+    /* Which of the two arcs on that chord the pixels actually trace. A thinned
+     * curve runs about one pixel per unit of arc, so the member count is the
+     * arc length to within far less than the half circle this has to resolve. */
+    const bool major = combined.n > CV_PI * radius;
+    if (cv_circle_sagitta(radius, chain_chord(&segs[ra], &segs[rb]), major) < min_sagitta) {
       continue;
     }
 

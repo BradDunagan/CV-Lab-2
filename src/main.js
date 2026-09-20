@@ -212,6 +212,22 @@ function createWindow() {
    * and the whole claim of this project is that the GUI and a script cannot
    * diverge. Same file, same statements, one execution path.
    */
+  /*
+   * Which pipelines exist, so the Generate pane can offer them rather than
+   * naming one in its own source. A script added to pipelines/ appears in the
+   * app without a code change -- the same arrangement `generate:scenes` has
+   * with scenes/, and for the same reason.
+   */
+  ipcMain.removeHandler('lab:pipelines');
+  ipcMain.handle('lab:pipelines', () => {
+    const dir = path.join(__dirname, '..', 'pipelines');
+    if (!fsSync.existsSync(dir)) return [];
+    return fsSync.readdirSync(dir)
+      .filter((f) => f.endsWith('.lab'))
+      .map((f) => f.replace(/\.lab$/, ''))
+      .sort();
+  });
+
   ipcMain.removeHandler('lab:pipeline');
   ipcMain.handle('lab:pipeline', (_event, name) => {
     // Name only, never a path: this reads a file on the user's disk at the

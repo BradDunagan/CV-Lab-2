@@ -178,6 +178,9 @@ contextBridge.exposeInMainWorld('lab', {
    */
   pipeline: (name) => ipcRenderer.invoke('lab:pipeline', name),
 
+  /** The names of the pipelines in pipelines/, sorted. */
+  pipelines: () => ipcRenderer.invoke('lab:pipelines'),
+
   /**
    * Draw a file into a canvas, scaled to fit, for a contact sheet.
    *

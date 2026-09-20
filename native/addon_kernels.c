@@ -712,7 +712,7 @@ static napi_value FitArcs(napi_env env, napi_callback_info info) {
     napi_create_double(env, chord, &v);               napi_set_named_property(env, entry, "chord", v);
     /* How far the arc bows off its own chord: the scale-free statement of
      * "this is curved", and what the operation gates on. */
-    napi_create_double(env, cv_circle_sagitta(radius, chord), &v);
+    napi_create_double(env, cv_circle_sagitta(radius, chord, sweep > CV_PI), &v);
     napi_set_named_property(env, entry, "sagitta", v);
     napi_create_double(env, worst, &v);               napi_set_named_property(env, entry, "residual", v);
     napi_create_double(env, rms, &v);                 napi_set_named_property(env, entry, "rms", v);

@@ -390,6 +390,21 @@ async function main() {
         }
       }
 
+      /*
+       * And that the handler still takes a NAME and not a path. This is the
+       * only place that assertion can live honestly: the renderer suite
+       * registers its own stand-in for `lab:pipeline`, so asserting it there
+       * would test the stand-in. Here it is the real handler in the real
+       * artifact.
+       */
+      const escaped = await client.evaluate(
+        'window.lab.pipeline("../package").then(() => "accepted").catch(() => "refused")');
+      if (escaped !== 'refused') {
+        problems.push('lab:pipeline accepted a path, not a name');
+      } else {
+        console.log('  ok   a pipeline name containing a path is refused');
+      }
+
       const out = await client.evaluate('window.lab.generate.defaults().then((d) => d.out)');
       if (!out || !path.isAbsolute(out)) {
         problems.push(

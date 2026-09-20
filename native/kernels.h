@@ -217,15 +217,26 @@ bool cv_circle_solve(const CvCircle *c, double *cx, double *cy, double *r);
 double cv_circle_distance(double cx, double cy, double r, double x, double y);
 
 /**
- * How far a chord of this length bows away from its own circle, in pixels.
+ * How far an arc of this chord bows away from it, in pixels.
  *
  * The scale-free test for "is this an arc or a line": a curve that does not
  * depart from its chord by about a pixel over its whole length is one a line
  * already describes, whatever its radius says. Exact for the circular segment
- * rather than the L^2/(8r) approximation, and saturating at r for a chord that
- * spans the diameter, so a half circle does not come back as a straight line.
+ * rather than the L^2/(8r) approximation.
+ *
+ * `major` says which of the two arcs on that chord this is, and it is not a
+ * detail: past half a circle the chord starts SHRINKING again, and at 357
+ * degrees it is nearly zero. Asked without it, a disc's outline -- which
+ * `chain` joins into one almost closed label -- reports a bow of 0.01 px and
+ * is refused as a straight line. The major arc's bow is 2r minus the minor
+ * one's, which is still only arithmetic.
+ *
+ * Callers know which they have: `fitArcs` from the sweep it measured, and
+ * `chain` from the member pixel count, since a thinned curve runs about one
+ * pixel per unit of arc. Both are compared against pi*r, and a misjudgement
+ * can only happen near half a circle, where the two answers agree anyway.
  */
-double cv_circle_sagitta(double r, double chord);
+double cv_circle_sagitta(double r, double chord, bool major);
 
 /* --- label maps ----------------------------------------------------- */
 

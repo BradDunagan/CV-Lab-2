@@ -1309,8 +1309,15 @@ the sagitta is the arrow laid across it.
 For a circle of radius *r* and a chord of length *L*:
 
 ```
-sagitta = r − √(r² − (L/2)²)          ≈  L² / (8r)   for L ≪ r
+minor arc:  sagitta = r − √(r² − (L/2)²)     ≈  L² / (8r)   for L ≪ r
+major arc:  sagitta = r + √(r² − (L/2)²)     = 2r − the minor one
 ```
+
+**Two arcs share every chord, and which one you have matters.** Past half a
+circle the chord starts *shrinking* again, so a 357° arc has almost no chord at
+all. Asked for the minor answer it reports a bow of about zero — which is how
+a filled disc's outline, joined by `chain` into one nearly closed label at
+radius 30, came back as 0.01 px and was refused for being straight.
 
 **Why this lab uses it rather than the radius.** `chain` and `fitArcs` both
 have to answer "is this a curve or a line", and a radius cannot answer it. A

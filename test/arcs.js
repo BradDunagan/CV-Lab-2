@@ -136,10 +136,29 @@ test('sagitta is the bow off the chord, and saturates past the diameter', () => 
   const expected = arc.r - arc.r / Math.SQRT2;
   assert.ok(Math.abs(arc.sagitta - expected) < 0.2,
     `sagitta ${arc.sagitta} against ${expected}`);
-  // A full circle has no chord to speak of, and the bow must not come back
-  // as zero just because the two ends met.
+  /*
+   * Past half a circle the chord starts SHRINKING again, so a nearly closed
+   * arc has almost no chord at all and the minor-segment formula reports
+   * almost no bow. Found on a filled disc, whose outline `chain` joins into
+   * one 357-degree label: it came back with a sagitta of 0.01 px and was
+   * refused as a straight line, at a radius of 30 and a gain of 60.
+   *
+   * The major arc's bow is 2r minus the minor one's, and these are the cases
+   * either side of that.
+   */
+  for (const sweep of [200, 300, 357]) {
+    const [wide] = native.fitArcs(labelMap([arcPixels(80, 80, 40, 0, sweep)]));
+    assert.ok(wide.sagitta > wide.r,
+      `a ${sweep}° arc bows ${wide.sagitta.toFixed(2)}, less than its own radius`);
+    assert.ok(wide.sagitta <= 2 * wide.r + 1e-9, 'a bow larger than the diameter');
+  }
   const [full] = native.fitArcs(labelMap([arcPixels(80, 80, 40, 0, 359)]));
-  assert.ok(full.sagitta > 0, 'a closed circle reported no bow at all');
+  assert.ok(Math.abs(full.sagitta - 2 * full.r) < 1.0,
+    `a closed circle should bow by its diameter, got ${full.sagitta.toFixed(2)}`);
+
+  // ...and the gates must then accept it, which is the failure that mattered.
+  const disc = labelMap([arcPixels(80, 80, 40, 0, 357)]);
+  assert.equal(fitArcs(disc).length, 1, 'a nearly closed circle was refused as a line');
 });
 
 /* --- the branch cut ---------------------------------------------------- */

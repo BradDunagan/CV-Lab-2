@@ -454,6 +454,12 @@ the scale-free way to ask whether something is curved. A radius means something
 different on every image; "this does not depart from its chord by a pixel over
 its whole length" does not.
 
+Past half a circle it is measured to the *major* arc, so it keeps growing with
+the sweep and reaches `2r` for a closed one. Taking the minor answer everywhere
+is the obvious reading and it is wrong: a chord shrinks again past 180°, so a
+disc's outline — which `chain` joins into one nearly closed label — would
+report a bow of 0.01 px and be dismissed as a straight line.
+
 Arcs are **not scored**. `match` has no arc branch, because ground truth lists
 straight chords off a tessellated mesh and one arc crosses a fan of them — see
 §11.

@@ -567,16 +567,18 @@
    * second execution path. Every stage is logged, hashed and replayable
    * exactly as if it had been typed, which is §4's whole argument.
    *
-   * `A` and the ground truth are prepended here the way scripts/lab-cli.js
-   * prepends them, because a .lab script describes what to do with an image
-   * and not which image.
+   * `A`, the ground truth and the three AOV passes are prepended here the way
+   * scripts/lab-cli.js prepends them, because a .lab script describes what to
+   * do with an image and not which image. Which of them a given script
+   * actually uses is the script's business; supplying a slot nothing reads
+   * costs one `load` and keeps this from having to know what each one needs.
    */
-  async function runPipelineOn(file, truthFile) {
+  async function runPipelineOn(file, truthFile, name = 'geometry', aovFiles = null) {
     if (pipelineRun.busy) return;
     closeSlotFrames();
     dockSheet();
 
-    const source = await lab.pipeline('geometry');
+    const source = await lab.pipeline(name);
     const statements = source
       .split('\n')
       .map((line) => line.replace(/\/\/.*$/, '').trim())
@@ -584,6 +586,16 @@
 
     const prefix = [`A = load(${lab.quote(file)}, from=srgb, as=linear)`];
     if (truthFile) prefix.push(`T = groundTruth(${lab.quote(truthFile)})`);
+    /*
+     * The passes are linear data wearing a PNG, so from=linear as=linear --
+     * reading them as sRGB would apply a transfer function to a depth, which
+     * §2 exists to prevent. Named by pass rather than by position, because
+     * the generator writes them under those stems.
+     */
+    for (const [slot, pass] of [['D', 'depth'], ['NM', 'normal'], ['AL', 'albedo']]) {
+      const found = (aovFiles ?? []).find((f) => f.endsWith(`-${pass}.png`));
+      if (found) prefix.push(`${slot} = load(${lab.quote(found)}, from=linear, as=linear)`);
+    }
     const lines = [...prefix, ...statements];
 
     pipelineRun.busy = true;
@@ -709,7 +721,7 @@
       // The contact sheet's click, without the sheet. Generating one needs a
       // GPU that CI does not have; running a pipeline over an image does not,
       // and the closing-and-opening of panes is the part worth checking.
-      runPipelineOn: (file, truth) => runPipelineOn(file, truth),
+      runPipelineOn: (file, truth, name, aovs) => runPipelineOn(file, truth, name, aovs),
       paneMenu: (paneId) => paneMenuProvider(paneId, []),
     };
   }

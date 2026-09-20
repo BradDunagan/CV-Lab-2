@@ -103,13 +103,43 @@ function writeSwatch() {
   return file;
 }
 
-async function collect(win, swatch, linearPng) {
+/**
+ * A picture with geometry in it, for the pipeline runs.
+ *
+ * The 2x2 swatch above is right for `load` and the pixel probe and useless
+ * here: `segments` works on interior pixels and a 2x2 image has none, so every
+ * pipeline run in this file used to stop at `nms` and no assertion noticed.
+ * That is the failure the manual has a section about -- a pipeline runs green
+ * and produces nothing -- reproduced in the test meant to cover it.
+ *
+ * A filled disc, because it has to exercise both descriptions: straight
+ * segments around a polygonised edge, and enough curvature for `chain` and
+ * `fitArcs` to have something to join and describe.
+ */
+function writePipelineImage() {
+  const W = 96, H = 96, R = 30;
+  const rgba = Buffer.alloc(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const dx = x - W / 2 + 0.5, dy = y - H / 2 + 0.5;
+      const v = (dx * dx + dy * dy) <= R * R ? 235 : 20;
+      const i = (y * W + x) * 4;
+      rgba[i] = v; rgba[i + 1] = v; rgba[i + 2] = v; rgba[i + 3] = 255;
+    }
+  }
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cvlab-')), 'disc.png');
+  fs.writeFileSync(file, encodePNG(W, H, rgba));
+  return file;
+}
+
+async function collect(win, swatch, linearPng, discImage) {
   // Everything the page can tell us, gathered in one round trip. Assertions
   // happen out here, where failures report properly.
   return win.webContents.executeJavaScript(`(async () => {
     const r = {};
     const swatch = ${JSON.stringify(swatch)};
     const linearPng = ${JSON.stringify(linearPng)};
+    const discImage = ${JSON.stringify(discImage)};
 
     /*
      * Drive the real UI rather than calling lab.run() directly. Since the
@@ -224,6 +254,25 @@ async function collect(win, swatch, linearPng) {
     r.bridge = Object.keys(window.lab).sort();
     r.nodeLeaked = typeof window.require !== 'undefined' || typeof window.process !== 'undefined';
     r.loadImplemented = window.lab.ops().find(o => o.name === 'load').implemented;
+
+    /*
+     * Every pipeline, listed and then read back through the bridge.
+     *
+     * The Generate pane offers what pipelines() returns and runs what
+     * pipeline() reads, so a name that lists and does not read is a dropdown
+     * entry that fails when clicked. Worth asserting here rather than only in
+     * smoke:package, which runs on the artifact and therefore only on release.
+     */
+    r.pipelineNames = await window.lab.pipelines();
+    r.pipelineSizes = {};
+    for (const name of r.pipelineNames) {
+      try {
+        r.pipelineSizes[name] = (await window.lab.pipeline(name)).length;
+      } catch (err) {
+        r.pipelineSizes[name] = 'ERR ' + err.message;
+      }
+    }
+
 
     // The layout the app opens with.
     r.initialPanes = {
@@ -732,7 +781,7 @@ async function collect(win, swatch, linearPng) {
       lab2().newSlotPane(null);
       const before = lab2().slotPaneIds().length;
 
-      await lab2().runPipelineOn(swatch, null);
+      await lab2().runPipelineOn(discImage, null);
       await sleep(120);
 
       const ids = lab2().slotPaneIds();
@@ -746,11 +795,45 @@ async function collect(win, swatch, linearPng) {
         // Every stage of the pipeline is in the log, hashed, like anything
         // else -- the sheet is not a second execution path.
         logged: window.lab.log().length,
+        // How many features each feature slot holds, so "it ran" and "it found
+        // something" are two different questions.
+        features: Object.fromEntries(window.lab.slots()
+          .filter((s) => s.kind === 'features')
+          .map((s) => [s.name, s.count ?? 0])),
         collapsed: ids.every((id) => {
           const parent = lab2().paneStore.getPane(id)?.parentId;
           const left = parent ? lab2().paneStore.getPane(parent)?.leftChildId : null;
           return left ? lab2().paneStore.getPane(left)?.isCollapsed === true : false;
         }),
+      };
+    })();
+
+    /*
+     * And again with a DIFFERENT pipeline, because the sheet now chooses one.
+     * After the block above for the same reason that one is last: this rebinds
+     * the same short slot names again.
+     *
+     * What is asserted is that the name reached the runner and the curve
+     * stages ran in the app -- not that this fixture contains arcs. It is a
+     * colour swatch; whether fitArcs finds anything in it is a property of
+     * the picture, and asserting one either way would be asserting something
+     * about the fixture rather than about the wiring.
+     */
+    r.curvesRun = await (async () => {
+      await lab2().runPipelineOn(discImage, null, 'curves', []);
+      await sleep(120);
+      const slots = window.lab.slots();
+      return {
+        names: slots.map((s) => s.name).sort(),
+        arcSlot: slots.find((s) => s.name === 'AR')?.kind ?? null,
+        chainSlot: slots.find((s) => s.name === 'K')?.kind ?? null,
+        // The log records the CALL and names the slot separately, so this
+        // matches on both rather than on a composed line.
+        ranChain: window.lab.log().some(
+          (e) => e.produced?.slot === 'K' && e.text?.startsWith('chain(')),
+        ranFitArcs: window.lab.log().some(
+          (e) => e.produced?.slot === 'AR' && e.text?.startsWith('fitArcs(')),
+        arcCount: window.lab.slots().find((s) => s.name === 'AR')?.count ?? 0,
       };
     })();
 
@@ -763,6 +846,7 @@ app.whenReady().then(async () => {
   console.log(`cv-lab-2 renderer tests (${runtime}, ${process.platform}/${process.arch})`);
 
   const swatch = writeSwatch();
+  const discImage = writePipelineImage();
   const linearPng = writeLinearDeclaringPng(path.dirname(swatch));
 
   /*
@@ -817,6 +901,14 @@ app.whenReady().then(async () => {
   ipcMain.handle('lab:pipeline', (_event, name) =>
     fs.promises.readFile(path.join(ROOT, 'pipelines', `${name}.lab`), 'utf8'));
 
+  /* What the Generate pane's dropdown is built from. Same directory, same
+   * sort, for the same reason as the handler above. */
+  ipcMain.handle('lab:pipelines', () =>
+    fs.readdirSync(path.join(ROOT, 'pipelines'))
+      .filter((f) => f.endsWith('.lab'))
+      .map((f) => f.replace(/\.lab$/, ''))
+      .sort());
+
   ipcMain.handle('generate:scenes', () => {
     const names = savedSceneNames();
     sceneRequests.push(names);
@@ -869,7 +961,7 @@ app.whenReady().then(async () => {
   });
 
   await win.loadFile(path.join(ROOT, 'dist-renderer', 'index.html'));
-  const r = await collect(win, swatch, linearPng);
+  const r = await collect(win, swatch, linearPng, discImage);
 
   const close = (a, b, tol = 1e-4) => Math.abs(a - b) <= tol;
 
@@ -879,16 +971,59 @@ app.whenReady().then(async () => {
     /*
      * Spelt out rather than counted, because the bridge is the security
      * boundary: this list is where a new member has to be looked at on
-     * purpose instead of arriving with a feature. The two most recent are
-     * `pipeline`, which reads a named file from pipelines/ and nothing else,
-     * and `thumbnail`, which draws a file into a canvas the caller names --
-     * neither hands page script a path it did not already have, and neither
-     * returns pixels.
+     * purpose instead of arriving with a feature. The three most recent are
+     * `pipeline`, which reads a named file from pipelines/ and nothing else;
+     * `pipelines`, which lists the names in that one directory and reads
+     * nothing; and `thumbnail`, which draws a file into a canvas the caller
+     * names. None hands page script a path it did not already have, none
+     * takes one, and none returns pixels.
      */
     assert.deepEqual(r.bridge, ['basename', 'confirmReset', 'draw', 'features',
       'generate', 'histogram', 'log', 'minVisible', 'onMenuCommand', 'openImage',
-      'ops', 'pipeline', 'probeAll', 'quote', 'reset', 'run', 'saveSession',
-      'sessionJSON', 'setMenuState', 'slots', 'thumbnail', 'versions']);
+      'ops', 'pipeline', 'pipelines', 'probeAll', 'quote', 'reset', 'run',
+      'saveSession', 'sessionJSON', 'setMenuState', 'slots', 'thumbnail',
+      'versions']);
+  });
+
+  test('every pipeline the pane can offer is one it can also read', () => {
+    /*
+     * The dropdown in the Generate pane is built from pipelines() and run
+     * through pipeline(). A name in the first that fails the second is an
+     * option that throws when clicked -- which is exactly what shipped in the
+     * packaged app when pipelines/ was missing from electron-builder.yml.
+     */
+    assert.ok(r.pipelineNames.includes('geometry'), 'geometry.lab is not listed');
+    assert.ok(r.pipelineNames.includes('curves'), 'curves.lab is not listed');
+    assert.deepEqual([...r.pipelineNames].sort(), r.pipelineNames,
+      'the list is not sorted, so the dropdown order would depend on the filesystem');
+    for (const name of r.pipelineNames) {
+      assert.equal(typeof r.pipelineSizes[name], 'number',
+        `${name} lists but does not read: ${r.pipelineSizes[name]}`);
+      assert.ok(r.pipelineSizes[name] > 0, `${name} read back empty`);
+    }
+    /*
+     * Not asserted here: that a name containing a path is refused. The real
+     * check is in src/main.js, and the handler in this file is a stand-in for
+     * it -- so an assertion would be testing the stand-in, which would pass
+     * whatever the app does.
+     */
+  });
+
+  test('the contact sheet can run a pipeline other than geometry', () => {
+    /*
+     * The Generate pane offers a dropdown, so the runner takes a name. Before
+     * that it read pipelines/geometry.lab and nothing else, and `chain` and
+     * `fitArcs` were reachable only by typing them into the command bar.
+     */
+    assert.equal(r.curvesRun.ranChain, true, 'chain did not run');
+    assert.equal(r.curvesRun.ranFitArcs, true, 'fitArcs did not run');
+    assert.equal(r.curvesRun.chainSlot, 'buffer', 'K should hold a label map');
+    assert.equal(r.curvesRun.arcSlot, 'features', 'AR should hold features');
+    // The fixture is a disc, so there are arcs to find. Asserting the count
+    // rather than only the slot is what separates "the stage ran" from "the
+    // stage did something" -- see the geometry test above for why.
+    assert.ok(r.curvesRun.arcCount > 0,
+      `fitArcs found no arcs in a disc (${r.curvesRun.arcCount})`);
   });
 
   test('no Node globals leak into page script', () => {
@@ -1269,6 +1404,23 @@ app.whenReady().then(async () => {
     assert.ok(r.pipelineRun.before > 0, 'nothing was open, so nothing was closed');
     assert.equal(r.pipelineRun.panes, r.pipelineRun.buffers.length,
       'panes accumulated across runs');
+  });
+
+  test('a pipeline run actually produces geometry, not just log entries', () => {
+    /*
+     * This is what the fixture change was for. The image used to be the 2x2
+     * swatch, which `segments` cannot work on at all -- so every run here
+     * stopped at `nms`, and the assertions below, which count panes and log
+     * entries, were satisfied by a run that produced no geometry whatsoever.
+     * A pipeline that runs green and produces nothing is the manual's own
+     * example of the failure worth testing for.
+     */
+    assert.ok(r.pipelineRun.buffers.includes('S'), 'segments never ran');
+    // F and C are FEATURE slots, so they never appear in `bound` -- a features
+    // slot has no pixels and cannot be shown in a slot pane.
+    assert.ok(r.pipelineRun.features?.F > 0,
+      `fit found no segments in the disc: ${JSON.stringify(r.pipelineRun.features)}`);
+    assert.ok(r.pipelineRun.features?.C > 0, 'corners found nothing');
   });
 
   test('every stage of a pipeline run is logged like a typed command', () => {

@@ -96,6 +96,17 @@
   let controls = null;
 
   /**
+   * Which pipeline the contact sheet runs, and which ones there are.
+   *
+   * Read from pipelines/ rather than listed here, so adding a script makes it
+   * offerable without touching this file -- the arrangement the scene list
+   * already has. `geometry` is the default because it is the one that ends in
+   * a score.
+   */
+  let pipelines = $state(['geometry']);
+  let pipeline = $state('geometry');
+
+  /**
    * The prose under the controls: what is about to happen, or what is.
    *
    * One string rather than markup, because it is drawn as a paneless label --
@@ -123,8 +134,10 @@
       lines.push(`Failed: ${done.error}`, '');
     } else if (done) {
       lines.push(`${done.files.length} image(s) written. Run them with:`, '',
-        'npm run lab -- --script pipelines/geometry.lab --as linear' +
-          `${current.truth ? ` --truth ${current.out}` : ''} --out results/ ${current.out}/*.png`,
+        `npm run lab -- --script pipelines/${pipeline}.lab --as linear` +
+          `${current.truth ? ` --truth ${current.out}` : ''}` +
+          `${current.aovs ? ` --aovs ${current.out}` : ''}` +
+          ` --out results/ ${current.out}/*.png`,
         ...(current.truth ? ['', 'then  npm run score -- results/'] : []), '');
     }
     lines.push(`Roughly ${estimate}s for ${total} image${total === 1 ? '' : 's'}.`);
@@ -190,6 +203,11 @@
   }
 
   onMount(() => {
+    lab.pipelines().then((found) => {
+      if (found.length > 0) pipelines = found;
+      if (!found.includes(pipeline)) pipeline = found[0] ?? pipeline;
+    }).catch((err) => setStatus(err.message, 'error'));
+
     Promise.all([lab.generate.check(), lab.generate.scenes()]).then(([problem, found]) => {
       unavailable = problem;
       scenes = found;
@@ -228,6 +246,9 @@
             // pipeline's match() stages need it. Absent when --truth was off,
             // in which case the run simply stops being scored.
             truth: progress.truth ? progress.file.replace(/\.png$/, '.gt.json') : null,
+            // The three passes, when the sweep wrote them. `explained.lab`
+            // needs them; the others ignore them.
+            aovs: progress.aovs ?? [],
           }];
         }
       }
@@ -324,7 +345,7 @@ out of the repository.</pre>
           class:current={pipelineRun.image === shot.file}
           disabled={pipelineRun.busy}
           title={shot.file}
-          onclick={() => actions.runPipelineOn(shot.file, shot.truth)}
+          onclick={() => actions.runPipelineOn(shot.file, shot.truth, pipeline, shot.aovs)}
         >
           <canvas id={`gen-thumb-${paneId}-${shot.name}`} width="128" height="128"></canvas>
           <span class="name">{shot.name}</span>
@@ -336,8 +357,13 @@ out of the repository.</pre>
         Running the pipeline over <code>{pipelineRun.image?.split('/').pop()}</code>
         — step {pipelineRun.step} of {pipelineRun.total}.
       {:else}
-        Click an image to run <code>pipelines/geometry.lab</code> over it. Any
-        slot frames open now are closed first.
+        Click an image to run
+        <select bind:value={pipeline} disabled={pipelineRun.busy} aria-label="pipeline">
+          {#each pipelines as name (name)}
+            <option value={name}>pipelines/{name}.lab</option>
+          {/each}
+        </select>
+        over it. Any slot frames open now are closed first.
       {/if}
     </p>
   {:else if !running}
@@ -378,6 +404,19 @@ out of the repository.</pre>
   .shot:disabled { opacity: 0.6; cursor: default; }
   .shot canvas { display: block; width: 128px; height: 128px; }
   .shot .name { font-size: 10px; color: var(--cv-dim, #666666); }
+  /* The selector sits inside the sentence it changes, so what it affects is
+     the thing being read rather than a label somewhere else. */
+  .sheet-hint select {
+    font: inherit;
+    font-family: var(--mono, ui-monospace, monospace);
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    padding: 0 0.2em;
+  }
+  .sheet-hint select:disabled { opacity: 0.5; }
+
   .sheet-hint { margin: 0; flex: 0 0 auto; color: var(--cv-dim, #666666); }
   .sheet-hint code { color: var(--cv-accent, #2a7edf); }
 
