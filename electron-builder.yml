@@ -52,6 +52,15 @@ asarUnpack:
 # Named file by file rather than scripts/**/*: the rest of that directory is
 # CLI entry points and build tooling, which would be dead weight for exactly
 # the reason the exclusions above exist.
+#
+# pipelines/ is runtime data, not developer material, and leaving it out made
+# the Generate pane's "click an image to run the pipeline over it" dead in
+# every packaged build: `lab:pipeline` reads pipelines/<name>.lab from disk at
+# the renderer's request, so it threw ENOENT inside the asar while working
+# perfectly in a dev run. Same shape as scripts/png.js above, found the same
+# way -- by asking what the artifact actually contains rather than reading
+# this list. smoke:package now reads every pipeline THROUGH the packaged app,
+# so a script added here without being packaged fails the build.
 files:
   - package.json
   - src/**/*
@@ -59,6 +68,7 @@ files:
   - "!src/generate/main.js"
   - "!src/generate/index.html"
   - scripts/png.js
+  - pipelines/**/*.lab
   - dist-renderer/**/*
   - dist-generate/**/*
   - native/**/*.js

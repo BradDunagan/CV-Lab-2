@@ -354,6 +354,42 @@ async function main() {
         console.log('  ok   image generation reports itself ready');
       }
 
+      /*
+       * Every pipeline, read back THROUGH the packaged app.
+       *
+       * `lab:pipeline` reads pipelines/<name>.lab off disk at the renderer's
+       * request, so it is runtime data and had to be in electron-builder.yml
+       * -- and was not. The Generate pane's "click an image to run the
+       * pipeline over it" therefore threw ENOENT in every installed build
+       * while working in every dev run, and nothing said so: verify-package
+       * checks the layout it was told to expect, and this file only asked
+       * whether the app started.
+       *
+       * The names come from the source tree rather than a list typed here, so
+       * adding a pipeline and forgetting to package it fails this check
+       * instead of shipping.
+       */
+      const pipelines = fs.existsSync(path.join(ROOT, 'pipelines'))
+        ? fs.readdirSync(path.join(ROOT, 'pipelines'))
+            .filter((f) => f.endsWith('.lab'))
+            .map((f) => f.replace(/\.lab$/, ''))
+        : [];
+      if (pipelines.length === 0) {
+        problems.push('no pipelines in the source tree to check against');
+      }
+      for (const name of pipelines) {
+        // Length rather than the text: it crosses the bridge as a string and
+        // a pipeline is a few hundred bytes of it.
+        const size = await client.evaluate(
+          `window.lab.pipeline(${JSON.stringify(name)})`
+          + '.then((t) => t.length).catch((e) => "ERR " + e.message)');
+        if (typeof size !== 'number' || size <= 0) {
+          problems.push(`pipelines/${name}.lab is not readable from the packaged app: ${size}`);
+        } else {
+          console.log(`  ok   pipelines/${name}.lab reads back, ${size} bytes`);
+        }
+      }
+
       const out = await client.evaluate('window.lab.generate.defaults().then((d) => d.out)');
       if (!out || !path.isAbsolute(out)) {
         problems.push(
