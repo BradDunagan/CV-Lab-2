@@ -131,6 +131,16 @@ const EXPECTED = {
   C: '2cdce86a2f4ad52beb5f0c094cb2678742a610d701f0de781170b171d93e51a0',
 };
 
+/*
+ * The curve stages' hashes, produced the same way and on the same machine as
+ * EXPECTED above. `chain`'s is over the raw i32 label map rather than a slot
+ * hash, because this fixture does not go through a Session.
+ */
+const EXPECTED_CURVES = {
+  chain: 'e60b18a107d8619e30ff27181e881d81e7c14de9c6413aaf67d96c646470a228',
+  arcs: '074247795a62595f6c75f14079c3bdd5971f2a26c14d28433c24350201bbd287',
+};
+
 async function run() {
   const session = new Session({ registry: createRegistry() });
   await session.run(SCRIPT);
@@ -223,6 +233,100 @@ async function run() {
 
     native.bufferRelease(wide);
     native.bufferRelease(tall);
+  });
+
+  /* --- the curve stages ------------------------------------------------ */
+
+  /*
+   * `chain` and `fitArcs` are not in the script above, and cannot be: the
+   * fixture has to be a CURVE, and `pattern` draws ramps, checkers, impulses
+   * and constants. A blurred impulse does produce a ring, but a faint one --
+   * the whole pipeline then hangs off a `minMag` near 1e-4, and the test would
+   * be measuring the blur's tail rather than the geometry.
+   *
+   * So the label map is built here instead, by the midpoint circle algorithm:
+   * integers and comparisons only, no trigonometry, no floating point at all.
+   * The fixture is therefore identical on every platform by construction,
+   * which is the one property it has to have -- a fixture that itself differed
+   * across the matrix would make this test report a divergence it caused.
+   *
+   * What is pinned is the hash of the `edge-arc` list, and that is the point:
+   * feature records hash full-precision DOUBLES, with nothing narrowing to f32
+   * on the way out. That is precisely where `-ffp-contract=off` and libm split
+   * `fit` three ways, and it is where these stages would split too.
+   */
+  await test('the curve stages reproduce their recorded hashes', () => {
+    const { hashFeatures } = require('../src/lab/session');
+    const native = require('../native');
+
+    /*
+     * A circle of radius 40, cut into sixteen pieces of about 22 degrees --
+     * roughly what `segments` leaves of a curve once maxResidual and angleTol
+     * have each capped how long a piece can be. `chain` joins them back into
+     * four arcs of 85 degrees, so both stages do real work: a fixture that
+     * `chain` declined to touch would pin `fitArcs` and nothing else.
+     *
+     * The sub-octant split tests y*5 <= x*2, which is the 21.8 degree line
+     * expressed without a tangent. Everything here is integer arithmetic and
+     * comparisons.
+     */
+    const W = 112, H = 112, R = 40, CX = 56, CY = 56;
+    const labels = new Int32Array(W * H);
+    const SYM = [[1, 1, 0], [1, 1, 1], [-1, 1, 1], [-1, 1, 0],
+                 [-1, -1, 0], [-1, -1, 1], [1, -1, 1], [1, -1, 0]];
+    {
+      let x = R, y = 0, err = 1 - R;
+      while (x >= y) {
+        const sub = (y * 5 <= x * 2) ? 0 : 1;
+        // A break either side of every boundary, so the pieces do not touch.
+        const atBreak = Math.abs(y * 5 - x * 2) <= 2 || Math.abs(x - y) <= 1 || y <= 1;
+        if (!atBreak) {
+          SYM.forEach(([sx, sy, swap], octant) => {
+            const px = swap ? y : x, py = swap ? x : y;
+            const gx = CX + sx * px, gy = CY + sy * py;
+            if (gx < 0 || gy < 0 || gx >= W || gy >= H) return;
+            labels[gy * W + gx] = octant * 2 + sub + 1;
+          });
+        }
+        y += 1;
+        if (err < 0) err += 2 * y + 1;
+        else { x -= 1; err += 2 * (y - x) + 1; }
+      }
+    }
+
+    const handle = native.createBuffer({ width: W, height: H, channels: 1, dtype: 'i32' });
+    native.bufferWrite(handle, labels);
+    const chained = native.runKernel('chain', [handle], {});
+    const arcs = native.fitArcs(chained);
+
+    /*
+     * Guards the hashes below. A hash of nothing agrees on every platform, and
+     * so does a hash of a fixture neither stage changed -- which is how a
+     * determinism test passes for the wrong reason.
+     */
+    let pieces = 0;
+    for (const v of native.bufferRead(chained)) if (v > pieces) pieces = v;
+    assert.equal(pieces, 4, `chain should join sixteen pieces into four, got ${pieces}`);
+    assert.equal(arcs.length, 4, `expected four arcs, got ${arcs.length}`);
+    assert.ok(arcs.every((a) => a.sweep > 60), 'an arc spans too little to be worth hashing');
+    // The circle is four-fold symmetric, so the four fits must agree exactly.
+    // A difference here would be an asymmetry in the fit, not in the fixture.
+    assert.equal(new Set(arcs.map((a) => a.r)).size, 1,
+      'four symmetric arcs produced different radii');
+
+    const actual = {
+      chain: require('node:crypto').createHash('sha256')
+        .update(Buffer.from(native.bufferRead(chained).buffer)).digest('hex'),
+      arcs: hashFeatures(arcs, null),
+    };
+    if (EXPECTED_CURVES.chain === null || EXPECTED_CURVES.arcs === null) {
+      console.error('\n  curve hashes are unpinned. Paste into EXPECTED_CURVES:\n');
+      for (const [k, v] of Object.entries(actual)) console.error(`    ${k}: '${v}',`);
+      console.error('');
+      throw new Error('unpinned');
+    }
+    assert.equal(actual.chain, EXPECTED_CURVES.chain, 'chain label map');
+    assert.equal(actual.arcs, EXPECTED_CURVES.arcs, 'fitArcs feature list');
   });
 
   /* --- reporting ------------------------------------------------------- */

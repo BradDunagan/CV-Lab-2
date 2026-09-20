@@ -980,6 +980,13 @@ chain candidate spans, a conic beat the circle on 6 of 12 chains by a median
 of **0.001 px** and returned a hyperbola on 4 of them, because its extra
 parameters are not identifiable over that short an arc (2026-09-20).
 
+`test/determinism.js` pins both of them, on a fixture built by the midpoint
+circle algorithm — integers and comparisons, no trigonometry — because a
+fixture that itself differed across the matrix would make the test report a
+divergence it had caused. `pattern` cannot draw a curve, and the blurred
+impulse that comes closest hangs the whole pipeline off a `minMag` near 1e-4,
+which measures the blur's tail rather than the geometry.
+
 `fitArcs` has the same exposure `fit` had and avoids it the same way. An arc's
 endpoints are the two extreme pixels projected radially onto the fitted circle
 — `c + r·(p − c)/|p − c|` — rather than the circle evaluated at the endpoint
