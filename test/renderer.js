@@ -132,6 +132,49 @@ function writePipelineImage() {
   return file;
 }
 
+/**
+ * The contact sheet, which nothing else here can reach.
+ *
+ * It renders only once a sweep has written images, and a sweep needs a GPU --
+ * so the markup that offers the pipeline dropdown had never been rendered by
+ * any test at all. It is driven here by sending the progress events the main
+ * process would send, which is the same door the pane actually listens at.
+ *
+ * Worth the trouble because this is the branch a person sees: everything else
+ * in the Generate pane is controls and a render host, and the sheet is where
+ * they choose what to run and click to run it.
+ */
+async function collectSheet(win, discImage) {
+  /*
+   * Two DIFFERENT files, because the sheet is keyed by path. Sending one file
+   * twice throws each_key_duplicate and takes the whole pane down with it --
+   * which cannot happen in a real sweep, since every shot writes its own name
+   * and `sheet` is emptied when a run starts, but is worth knowing about
+   * before someone reuses this helper.
+   */
+  const second = discImage.replace(/\.png$/, '-2.png');
+  fs.copyFileSync(discImage, second);
+  [discImage, second].forEach((file, i) => {
+    win.webContents.send('generate:progress', {
+      type: 'shot', index: i, total: 2, name: `p${i}-l0.png`,
+      file, elapsedMs: 10, truth: null, aovs: [],
+    });
+  });
+  await new Promise((r) => setTimeout(r, 250));
+  return win.webContents.executeJavaScript(`(async () => {
+    const pane = document.querySelector('.generate-pane');
+    const hint = pane?.querySelector('.sheet-hint');
+    const select = hint?.querySelector('select');
+    return {
+      shots: pane ? pane.querySelectorAll('.shot').length : 0,
+      hasSelect: !!select,
+      options: select ? [...select.options].map((o) => o.value) : [],
+      chosen: select ? select.value : null,
+      labels: select ? [...select.options].map((o) => o.textContent.trim()) : [],
+    };
+  })()`);
+}
+
 async function collect(win, swatch, linearPng, discImage) {
   // Everything the page can tell us, gathered in one round trip. Assertions
   // happen out here, where failures report properly.
@@ -962,6 +1005,7 @@ app.whenReady().then(async () => {
 
   await win.loadFile(path.join(ROOT, 'dist-renderer', 'index.html'));
   const r = await collect(win, swatch, linearPng, discImage);
+  r.sheet = await collectSheet(win, discImage);
 
   const close = (a, b, tol = 1e-4) => Math.abs(a - b) <= tol;
 
@@ -1024,6 +1068,24 @@ app.whenReady().then(async () => {
     // stage did something" -- see the geometry test above for why.
     assert.ok(r.curvesRun.arcCount > 0,
       `fitArcs found no arcs in a disc (${r.curvesRun.arcCount})`);
+  });
+
+  test('the contact sheet offers every pipeline, and defaults to geometry', () => {
+    /*
+     * This markup only appears once a sweep has written images, so no test
+     * rendered it until this one -- which makes it the piece of the Generate
+     * pane most likely to break unnoticed.
+     */
+    assert.equal(r.sheet.shots, 2, 'the sheet did not build from the progress events');
+    assert.equal(r.sheet.hasSelect, true, 'the sheet offers no pipeline selector');
+    assert.ok(r.sheet.options.includes('curves'), 'curves is not offered');
+    assert.ok(r.sheet.options.includes('geometry'), 'geometry is not offered');
+    assert.equal(r.sheet.chosen, 'geometry',
+      'the sheet should start on the pipeline that ends in a score');
+    // The option says which FILE it runs, because that is the thing a reader
+    // can then go and look at.
+    assert.ok(r.sheet.labels.every((l) => /^pipelines\/.+\.lab$/.test(l)),
+      `an option does not name its file: ${JSON.stringify(r.sheet.labels)}`);
   });
 
   test('no Node globals leak into page script', () => {
