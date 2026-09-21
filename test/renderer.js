@@ -1060,6 +1060,15 @@ app.whenReady().then(async () => {
 
   await win.loadFile(path.join(ROOT, 'dist-renderer', 'index.html'));
   const r = await collect(win, swatch, linearPng, discImage);
+  /*
+   * Where the render pane reported itself while the pane was laid out
+   * normally. collectSheet closes and reopens the Generate frame to get a
+   * second mount out of it, and the reopened one lands in whatever space the
+   * docked contact sheet left -- 16 px wide on a Linux runner. That is a
+   * property of this helper, not of the pane, so the assertion below reads
+   * what was reported before it ran.
+   */
+  const boundsBeforeSheet = viewBounds.length;
   r.sheet = await collectSheet(win, discImage);
 
   const close = (a, b, tol = 1e-4) => Math.abs(a - b) <= tol;
@@ -1559,8 +1568,9 @@ app.whenReady().then(async () => {
     // the renderer -- so a pane that never reports, or reports a degenerate
     // box, puts the render somewhere nobody can see. It looks exactly like a
     // generator that did not start.
-    assert.ok(viewBounds.length > 0, 'the render pane never reported its bounds');
-    const last = viewBounds[viewBounds.length - 1];
+    const reported = viewBounds.slice(0, boundsBeforeSheet);
+    assert.ok(reported.length > 0, 'the render pane never reported its bounds');
+    const last = reported[reported.length - 1];
     assert.ok(last.width > 50 && last.height > 50,
       `reported a degenerate rectangle: ${JSON.stringify(last)}`);
     assert.ok(last.x >= 0 && last.y >= 0,
