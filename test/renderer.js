@@ -146,6 +146,23 @@ function writePipelineImage() {
  */
 async function collectSheet(win, discImage) {
   /*
+   * Open the pane if it is not already, rather than inheriting whatever the
+   * main collection left behind. The sheet lives inside it and listens for
+   * the progress events from its own onMount, so sending them to a pane that
+   * is not there loses them silently -- which is one of the two things a
+   * `shots: 0` could have meant when Windows reported it.
+   */
+  await win.webContents.executeJavaScript(`(async () => {
+    if (!document.querySelector('.generate-pane')) {
+      window.__cvlab.menuCommand('generate');
+      for (let i = 0; i < 40 && !document.querySelector('.generate-pane'); i++) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+    return !!document.querySelector('.generate-pane');
+  })()`);
+
+  /*
    * Two DIFFERENT files, because the sheet is keyed by path. Sending one file
    * twice throws each_key_duplicate and takes the whole pane down with it --
    * which cannot happen in a real sweep, since every shot writes its own name
@@ -160,12 +177,19 @@ async function collectSheet(win, discImage) {
       file, elapsedMs: 10, truth: null, aovs: [],
     });
   });
-  await new Promise((r) => setTimeout(r, 250));
-  return win.webContents.executeJavaScript(`(async () => {
+  /*
+   * Polled rather than slept on. A fixed wait passed on macOS and Linux and
+   * failed on Windows, which is the slowest of the three runners -- reporting
+   * `shots: 0` with no console error, which says "not yet" and "never" in the
+   * same words. The diagnostics come back either way so a failure names which.
+   */
+  const read = () => win.webContents.executeJavaScript(`(() => {
     const pane = document.querySelector('.generate-pane');
     const hint = pane?.querySelector('.sheet-hint');
     const select = hint?.querySelector('select');
     return {
+      paneOpen: !!pane,
+      hintShown: !!hint,
       shots: pane ? pane.querySelectorAll('.shot').length : 0,
       hasSelect: !!select,
       options: select ? [...select.options].map((o) => o.value) : [],
@@ -173,6 +197,13 @@ async function collectSheet(win, discImage) {
       labels: select ? [...select.options].map((o) => o.textContent.trim()) : [],
     };
   })()`);
+
+  let seen = await read();
+  for (let i = 0; i < 60 && seen.shots < 2; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    seen = await read();
+  }
+  return seen;
 }
 
 async function collect(win, swatch, linearPng, discImage) {
@@ -1076,7 +1107,8 @@ app.whenReady().then(async () => {
      * rendered it until this one -- which makes it the piece of the Generate
      * pane most likely to break unnoticed.
      */
-    assert.equal(r.sheet.shots, 2, 'the sheet did not build from the progress events');
+    assert.equal(r.sheet.shots, 2,
+      `the sheet did not build from the progress events: ${JSON.stringify(r.sheet)}`);
     assert.equal(r.sheet.hasSelect, true, 'the sheet offers no pipeline selector');
     assert.ok(r.sheet.options.includes('curves'), 'curves is not offered');
     assert.ok(r.sheet.options.includes('geometry'), 'geometry is not offered');
