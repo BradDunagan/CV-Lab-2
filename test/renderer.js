@@ -146,20 +146,44 @@ function writePipelineImage() {
  */
 async function collectSheet(win, discImage) {
   /*
-   * Open the pane if it is not already, rather than inheriting whatever the
-   * main collection left behind. The sheet lives inside it and listens for
-   * the progress events from its own onMount, so sending them to a pane that
-   * is not there loses them silently -- which is one of the two things a
-   * `shots: 0` could have meant when Windows reported it.
+   * WHY THE GENERATOR HAS TO BE FAKED READY FIRST.
+   *
+   * The pane's first branch is `{#if unavailable}`: with no dist-generate/
+   * build it shows the message saying so and renders nothing else, which is
+   * correct and is what the test above asserts. CI never builds the generator,
+   * so the contact sheet is unreachable there.
+   *
+   * The first version of this did not know that and appeared to work, because
+   * `unavailable` is set when generate.check() RESOLVES -- so the sheet was
+   * briefly reachable before the answer came back. It won that race on macOS
+   * and Linux, lost it on Windows, then lost it on macOS on the next run. A
+   * test that passes by outrunning an await is worse than one that fails.
+   *
+   * So the answer is swapped for "ready" and the pane reopened, after the
+   * degrades-honestly assertions have already been collected from the real
+   * one. Two states of one pane, tested in order, rather than a race between
+   * them.
    */
+  ipcMain.removeHandler('generate:check');
+  ipcMain.handle('generate:check', () => null);
+
   await win.webContents.executeJavaScript(`(async () => {
-    if (!document.querySelector('.generate-pane')) {
-      window.__cvlab.menuCommand('generate');
-      for (let i = 0; i < 40 && !document.querySelector('.generate-pane'); i++) {
-        await new Promise((r) => setTimeout(r, 100));
+    const lab2 = () => window.__cvlab;
+    const paneOf = () => document.querySelector('.generate-pane');
+    // Close the pane built against the real answer, so onMount asks again.
+    const existing = paneOf();
+    if (existing) {
+      const frameId = lab2().paneStore.getPane(existing.dataset.pane)?.frameId;
+      if (frameId) lab2().frames.closeFrame(Number(frameId));
+      for (let i = 0; i < 40 && paneOf(); i++) {
+        await new Promise((r) => setTimeout(r, 50));
       }
     }
-    return !!document.querySelector('.generate-pane');
+    lab2().menuCommand('generate');
+    for (let i = 0; i < 60 && !paneOf(); i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return !!paneOf();
   })()`);
 
   /*
