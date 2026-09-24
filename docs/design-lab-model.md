@@ -1346,26 +1346,35 @@ item genuinely deferrable.
   as a per-size figure or rasterise visibility at a fixed resolution
   independent of the render.
 
-- **Arcs are detected and not scored.** `chain` and `fitArcs` put a curve back
-  together and describe it, and `explain` samples across one radially, so the
-  question "what put this curve in the picture" is answerable. "Is it really
-  there" is not. `match` has no arc branch because the truth model cannot hold
-  the answer: `gt-edge` records are straight 2D chords off a tessellated mesh,
-  so a fitted arc crosses a fan of them and matches none in particular.
-  `nearestAlong` already samples a detection per pixel and takes a median,
-  which transfers unchanged — its **modal vote** does not. An arc spanning
-  twelve chords would report one match in twelve and read as catastrophic
-  recall on a perfect detection, so an arc needs a *coverage set* rather than
-  one best truth edge, and `score.js` needs to tally coverage rather than
-  count hits.
+- **Arcs are scored.** *Settled, and the reasoning that deferred it was
+  wrong.* This entry used to say `match` could not take an arc, because
+  `gt-edge` records are straight chords off a tessellated mesh, so a fitted
+  arc crosses a fan of them and "matches" only the modal one — reading as one
+  hit in twelve on a perfect detection. The conclusion drawn was that an arc
+  needed a coverage set and `score.js` a coverage tally.
 
-  Underneath that is the same problem T-junctions have, and worse. The
-  silhouette of a smooth surface is where **n·v = 0**: not a mesh feature, not
-  on mesh edges, and moving with the camera. On a curved subject that is not
-  an occasional artefact, it is the majority case — every point of the
-  contour. Emitting analytic `gt-arc` records from the generator would fix the
-  chord problem and not this one, and only for surfaces known to be analytic,
-  which a thread is not.
+  None of that was needed, because `match` already does not have the defect.
+  It runs **two passes asking two different questions**, and recall walks the
+  TRUTH: each of the twelve chords is asked separately whether anything covers
+  it, so one arc along all twelve is credited with finding all twelve. That is
+  the same defect, and the same fix, the ball's silhouette forced on segments
+  long before arcs existed — written down four lines above the code, and not
+  read. The whole change was geometry: sample along the curve, measure
+  distance to the curve, and compare a truth edge against the arc's **tangent**
+  where that edge is rather than one angle for the whole arc.
+
+  *Open, and separate:* recall is per list. `fit` and `fitArcs` describe one
+  label map, so an edge covered by a segment counts as missed by the arcs and
+  the other way round, and no operation builds one list from both. Precision
+  is the number that means what it says. On the nut at 512: segments 50%,
+  arcs **59%** — the curved description is right more often than the straight
+  one on a subject made of curves.
+
+  *Also open, and untouched by any of this:* the silhouette of a smooth
+  surface is where **n·v = 0** — not a mesh feature, not on mesh edges, and
+  moving with the camera. On a curved subject that is the majority case rather
+  than an artefact. Emitting analytic `gt-arc` records would fix a chord
+  problem that turned out not to exist, and not this one.
 
 - **Multi-image operations.** Stereo pairs, image stacks and frame sequences
   all want more than "two inputs". Does a slot ever hold a *stack*, or is that

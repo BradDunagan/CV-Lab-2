@@ -1,14 +1,18 @@
 // The curve branch: the same edge pixels, described as arcs instead of lines.
 //
-// Run it over any directory of images -- no ground truth needed, because arcs
-// are not scored (design-lab-model.md §11):
+// Run it over a directory the generator wrote WITH ground truth:
 //
 //   npm run lab -- --script pipelines/curves.lab --as linear \
-//                  --out results/nut/ generated/nut/*.png
+//                  --truth generated/nut/ --out results/nut/ generated/nut/*.png
+//   npm run score   -- results/nut/
 //   npm run overlay -- generated/nut/p0-l0.png results/nut/
 //
-// A is prepended by the runner, one per image:
+// Without --truth the last two lines are the ones to drop: everything above
+// them runs on any image at all.
+//
+// A and T are prepended by the runner, one per image:
 //   A = load("<image>", from=srgb, as=linear)
+//   T = groundTruth("<truth-dir>/<name>.gt.json")
 //
 // --as linear matters here for the same reason it does in geometry.lab:
 // `gray` computes luminance, and the coefficients are only valid on linear
@@ -42,3 +46,12 @@ AR = fitArcs(K)
 
 // Compare K against R in the app, or with `npm run overlay`, to see what
 // `chain` joined. That is why it is a separate operation rather than a flag.
+
+// Both descriptions, scored against the same `gt-edge` truth.
+//
+// Read the two recalls separately and never add them. Each is over the truth
+// THAT list could have found, and the two lists describe one label map -- an
+// edge covered by a segment counts as missed by the arcs and the other way
+// round. Precision is the number that means what it says here.
+MF = match(F, T)
+MA = match(AR, T)

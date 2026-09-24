@@ -200,15 +200,13 @@ for (const file of files) {
     for (const f of features) {
       if (f.type === 'edge-match' || typeof f.cause !== 'string') continue;
       /*
-       * Arcs are explained and not scored, so they have a cause and no verdict
-       * to attach it to -- and skipping them is not tidiness. `fit` and
-       * `fitArcs` read the SAME label map, so an arc and a segment describing
-       * one label share its id. Filing an explained arc under "segment:7"
-       * would overwrite the explanation of the segment that actually was
-       * scored, with a cause measured across a different geometry.
+       * Keyed by KIND as well as id. `fit` and `fitArcs` read the same label
+       * map, so an arc and a segment describing one label share its id --
+       * filing both under "7" would have one overwrite the other with a cause
+       * measured across a different geometry.
        */
-      if (f.type === 'edge-arc') continue;
-      const kind = f.type === 'edge-corner' ? 'corner' : 'segment';
+      const kind = f.type === 'edge-corner' ? 'corner'
+        : f.type === 'edge-arc' ? 'arc' : 'segment';
       explained.set(`${kind}:${f.id}`, f.cause);
     }
   }
@@ -219,11 +217,17 @@ for (const file of files) {
     if (!totals.has(slot)) totals.set(slot, []);
     totals.get(slot).push(...records);
 
+    /*
+     * Segments and arcs share this table. They are two descriptions of the
+     * same thing -- an edge in the picture -- scored against the same
+     * `gt-edge` truth, so "which geometry was this" is one question for both.
+     * Corners are not here for the opposite reason, below.
+     */
     for (const r of records) {
-      if (r.kind !== 'segment') continue;
+      if (r.kind !== 'segment' && r.kind !== 'arc') continue;
       const cause = r.cause
         ?? (r.role === 'false-positive'
-          ? explained.get(`segment:${r.detected}`) ?? '(not geometry)'
+          ? explained.get(`${r.kind}:${r.detected}`) ?? '(not geometry)'
           : '(unknown)');
       if (!byCause.has(cause)) byCause.set(cause, []);
       byCause.get(cause).push(r);
@@ -292,7 +296,7 @@ for (const [slot, records] of totals) {
 }
 
 if (byCause.size > 0) {
-  console.log('\nSEGMENTS BY WHAT THE GEOMETRY IS');
+  console.log('\nEDGE DETECTIONS BY WHAT THE GEOMETRY IS');
   console.log('  cause             detected   real   missed   recall');
   for (const [cause, records] of [...byCause].sort()) {
     const t = tally(records);

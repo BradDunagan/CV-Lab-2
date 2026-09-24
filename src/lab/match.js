@@ -88,7 +88,14 @@ function nearestAlong(from, others, samples) {
     let bestOther = null;
     for (const other of others) {
       const d = pointToSegment(px, py, other.x0, other.y0, other.x1, other.y1);
-      if (d < best) { best = d; bestOther = other; }
+      // Ties broken by id, for the same reason the modal vote below is: a
+      // sample at the junction of two truth chords is exactly equidistant
+      // from both, and keeping the first-seen would make the answer depend on
+      // the order the list arrived in.
+      if (d < best || (d === best && bestOther !== null && other.id < bestOther.id)) {
+        best = d;
+        bestOther = other;
+      }
     }
     if (bestOther === null) continue;
     distances.push(best);
@@ -111,12 +118,119 @@ function sampleCount(length) {
   return Math.min(256, Math.max(4, Math.ceil(length) + 1));
 }
 
+/* ------------------------------------------------------------------ */
+/* arcs, as geometry                                                   */
+/*                                                                     */
+/* Everything below treats an arc as a CURVE and never as its chord. An */
+/* edge-arc carries x0,y0,x1,y1 like a segment does and means its two   */
+/* ENDS by them, so reusing the segment helpers would silently measure  */
+/* the straight line between a curve's ends -- the same failure         */
+/* overlay-features.mjs and corners.js are each guarded against.        */
+/* ------------------------------------------------------------------ */
+
+/** The point a fraction `u` along an arc's own sweep. */
+function arcPoint(a, u) {
+  const t = ((a.angle0 + a.sweep * u) * Math.PI) / 180;
+  return { x: a.cx + a.r * Math.cos(t), y: a.cy + a.r * Math.sin(t) };
+}
+
+/**
+ * The arc's direction there, folded onto [0, 180) so it compares with a
+ * truth edge's `angle` on the same terms — a tangent is a line and a line has
+ * no direction, which is the fold `fit` applies too.
+ */
+function arcTangent(a, u) {
+  const t = a.angle0 + a.sweep * u + 90;
+  return ((t % 180) + 180) % 180;
+}
+
+/**
+ * Distance from a point to an arc, clamped to the arc's own extent.
+ *
+ * The analogue of pointToSegment, and clamped for the same reason: an arc is
+ * a piece of a circle, not the whole one, and a detection on the far side of
+ * that circle is not near this arc. Beside the arc the answer is the radial
+ * distance; past either end it is the distance to that end.
+ */
+function pointToArc(px, py, a) {
+  if (!(a.r > 0) || !(a.sweep > 0)) return Math.hypot(px - a.cx, py - a.cy);
+  const dx = px - a.cx, dy = py - a.cy;
+  const radial = Math.abs(Math.hypot(dx, dy) - a.r);
+  let u = (Math.atan2(dy, dx) * 180) / Math.PI - a.angle0;
+  u = ((u % 360) + 360) % 360;
+  if (u <= a.sweep) return radial;
+  // Past an end. Which one is nearer round the circle decides which end.
+  const end = (u - a.sweep) <= (360 - u) ? arcPoint(a, 1) : arcPoint(a, 0);
+  return Math.hypot(px - end.x, py - end.y);
+}
+
+/** Where a point sits along an arc, as a fraction of its sweep, clamped. */
+function arcFraction(a, px, py) {
+  if (!(a.sweep > 0)) return 0;
+  let u = (Math.atan2(py - a.cy, px - a.cx) * 180) / Math.PI - a.angle0;
+  u = ((u % 360) + 360) % 360;
+  return Math.min(1, Math.max(0, u / a.sweep));
+}
+
+/**
+ * The generic version of `nearestAlong`: walk one feature, and at each step
+ * find the nearest of the others.
+ *
+ * Takes the three things that differ between a line and a curve -- how to walk
+ * it, how far a point is from a candidate, and which way that candidate runs
+ * where the point is -- so the two passes below read the same for both.
+ *
+ * Reports the MEDIAN distance and angle difference rather than the mean, for
+ * the reason `nearestAlong` already gives: a fitted feature routinely
+ * overshoots its real extent, and a few samples landing past the end of
+ * whatever caused it should not decide the answer.
+ */
+function nearestAlongCurve(walk, others, samples, distanceTo, angleAt, ownAngle) {
+  const distances = [], angles = [];
+  const votes = new Map();
+  for (let s = 0; s < samples; s++) {
+    const u = samples === 1 ? 0.5 : s / (samples - 1);
+    const { x, y } = walk(u);
+    let best = Infinity, bestOther = null;
+    for (const other of others) {
+      const d = distanceTo(other, x, y);
+      // Ties broken by id. A sample landing exactly where two truth chords
+      // meet is equidistant from both, and `d < best` alone would keep
+      // whichever arrived first -- which is the input's order, not the
+      // image's. On a tessellated curve that happens at every junction.
+      if (d < best || (d === best && bestOther !== null && other.id < bestOther.id)) {
+        best = d;
+        bestOther = other;
+      }
+    }
+    if (bestOther === null) continue;
+    distances.push(best);
+    angles.push(lineAngleDifference(ownAngle(u), angleAt(bestOther, x, y)));
+    votes.set(bestOther, (votes.get(bestOther) ?? 0) + 1);
+  }
+  let modal = null, mostVotes = 0;
+  for (const [other, count] of votes) {
+    // Ties broken by id, as nearestAlong does, so the record does not depend
+    // on iteration order.
+    if (count > mostVotes || (count === mostVotes && modal !== null && other.id < modal.id)) {
+      modal = other;
+      mostVotes = count;
+    }
+  }
+  return {
+    distance: distances.length > 0 ? median(distances) : null,
+    angleDiff: angles.length > 0 ? median(angles) : null,
+    modal,
+  };
+}
+
 /**
  * Match detected features against ground-truth ones.
  *
- * Dispatches on the type of the DETECTED records — `edge-segment` scores
- * against `gt-edge`, `edge-corner` against `gt-vertex`. That the two go to
- * different ground truth is why the feature types are namespaced at all.
+ * Dispatches on the type of the DETECTED records — `edge-segment` and
+ * `edge-arc` score against `gt-edge`, `edge-corner` against `gt-vertex`. That
+ * they go to different ground truth is why the feature types are namespaced
+ * at all.
  *
  * @param {Array} detected  `fit` or `corners` output
  * @param {Array} truth     `groundTruth` output
@@ -152,16 +266,20 @@ function matchFeatures(detected, truth, opts = {}) {
     );
   }
   const kind = detected.length === 0 ? null : [...kinds][0];
-  if (kind !== null && kind !== 'edge-segment' && kind !== 'edge-corner') {
+  const KNOWN = ['edge-segment', 'edge-arc', 'edge-corner'];
+  if (kind !== null && !KNOWN.includes(kind)) {
     throw new Error(
       `match: nothing to compare a "${kind}" against. ` +
-        `Expects edge-segment (from fit) or edge-corner (from corners).`
+        `Expects edge-segment (from fit), edge-arc (from fitArcs) ` +
+        `or edge-corner (from corners).`
     );
   }
 
-  return kind === 'edge-corner'
-    ? matchCorners(detected, truth, { maxDistance, minAngle })
-    : matchSegments(detected, truth, { maxDistance, maxAngle, minVisible });
+  if (kind === 'edge-corner') return matchCorners(detected, truth, { maxDistance, minAngle });
+  if (kind === 'edge-arc') {
+    return matchArcs(detected, truth, { maxDistance, maxAngle, minVisible });
+  }
+  return matchSegments(detected, truth, { maxDistance, maxAngle, minVisible });
 }
 
 /* ------------------------------------------------------------------ */
@@ -221,6 +339,96 @@ function matchSegments(detected, truth, { maxDistance, maxAngle, minVisible }) {
     if (modal !== null && distance <= maxDistance && angleDiff <= maxAngle) continue;
     records.push({
       kind: 'segment',
+      role: 'miss',
+      detected: null,
+      truth: edge.id,
+      cause: edge.cause,
+      objects: edge.objects,
+      distance: modal === null ? null : distance,
+      angleDiff,
+      x: (edge.x0 + edge.x1) / 2,
+      y: (edge.y0 + edge.y1) / 2,
+    });
+  }
+
+  return numbered(records);
+}
+
+/* ------------------------------------------------------------------ */
+/* arcs                                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Score fitted arcs against the same `gt-edge` truth segments do.
+ *
+ * WHY THIS IS NOT HARDER THAN IT LOOKS. The worry written into
+ * design-lab-model.md §11 was that ground truth lists straight chords off a
+ * tessellated mesh, so one arc crosses a fan of them and "matches" only the
+ * modal one -- reading as one hit in twelve on a perfect detection. That is a
+ * real failure and `match` already does not have it: the two passes below ask
+ * two different questions, and RECALL walks the truth. An arc lying along
+ * twelve chords is credited with finding all twelve, because each of the
+ * twelve is asked separately whether anything covers it. This is the same
+ * defect, and the same fix, that the ball's silhouette forced on segments.
+ *
+ * What genuinely differs is only the geometry: sample along the curve, measure
+ * distance to the curve, and compare a truth edge's angle against the arc's
+ * TANGENT where that edge is, not against some single angle for the whole arc.
+ *
+ * WHAT THE NUMBERS DO AND DO NOT MEAN. Precision is honest on its own: every
+ * arc is asked whether geometry explains it. Recall is only over the truth
+ * this list could have found -- run `fit` and `fitArcs` on one label map and a
+ * truth edge covered by a segment counts as missed here. There is no operation
+ * that builds one list from both, so a combined recall cannot be computed
+ * today; §11 records that.
+ */
+function matchArcs(detected, truth, { maxDistance, maxAngle, minVisible }) {
+  const candidates = truth.filter((f) => f.type === 'gt-edge' && f.visible >= minVisible);
+  const records = [];
+
+  const edgeDistance = (e, x, y) => pointToSegment(x, y, e.x0, e.y0, e.x1, e.y1);
+  const edgeAngle = (e) => e.angle;
+
+  /* Precision: is this arc explained by geometry? */
+  for (const arc of detected) {
+    const { distance, angleDiff, modal } = nearestAlongCurve(
+      (u) => arcPoint(arc, u),
+      candidates,
+      sampleCount(arc.arcLength ?? arc.length ?? 0),
+      edgeDistance, edgeAngle,
+      (u) => arcTangent(arc, u)
+    );
+    const hit = modal !== null && distance <= maxDistance && angleDiff <= maxAngle;
+    const mid = arcPoint(arc, 0.5);
+    records.push({
+      kind: 'arc',
+      role: hit ? 'hit' : 'false-positive',
+      detected: arc.id,
+      truth: hit ? modal.id : null,
+      cause: hit ? modal.cause : null,
+      objects: hit ? modal.objects : [],
+      distance: modal === null ? null : distance,
+      angleDiff,
+      // The middle of the ARC, not of its chord: on a half circle those are
+      // most of a radius apart, and this is what the overlay draws on.
+      x: mid.x,
+      y: mid.y,
+    });
+  }
+
+  /* Recall: was this edge found by anything? */
+  for (const edge of candidates) {
+    const { distance, angleDiff, modal } = nearestAlongCurve(
+      (u) => ({ x: edge.x0 + (edge.x1 - edge.x0) * u, y: edge.y0 + (edge.y1 - edge.y0) * u }),
+      detected,
+      sampleCount(edge.length),
+      (a, x, y) => pointToArc(x, y, a),
+      (a, x, y) => arcTangent(a, arcFraction(a, x, y)),
+      () => edge.angle
+    );
+    if (modal !== null && distance <= maxDistance && angleDiff <= maxAngle) continue;
+    records.push({
+      kind: 'arc',
       role: 'miss',
       detected: null,
       truth: edge.id,
@@ -363,6 +571,7 @@ function summarise(records) {
 }
 
 module.exports = {
+  matchArcs, pointToArc, arcPoint, arcTangent, arcFraction,
   matchFeatures, summarise, MIN_VISIBLE,
   lineAngleDifference, pointToSegment, nearestAlong, sampleCount, median,
 };

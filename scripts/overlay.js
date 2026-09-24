@@ -147,10 +147,10 @@ const COLOURS = {
   unmatched: [255, 70, 70],
   truthCorner: [110, 170, 255],
   matchedCorner: [255, 220, 60],
-  /* Arcs are not scored -- `match` has no arc branch, because ground truth
-   * lists straight chords off a tessellated mesh and an arc crosses a fan of
-   * them. So they are drawn in one colour rather than green-or-red: a verdict
-   * colour here would be inventing a verdict nothing computed. */
+  /* An arc with no match record: drawn in its own colour rather than
+   * green-or-red, because a verdict colour with nothing behind it invents a
+   * verdict. Where `match` did run over the arcs, they take the same
+   * matched/unmatched colours segments do. */
   arc: [255, 166, 87],
 };
 
@@ -321,10 +321,14 @@ for (const [, features] of slots) {
   }
 }
 
+const arcVerdict = verdicts('arc');
 for (const [, features] of slots) {
   for (const f of features) {
     if (f.type !== 'edge-arc') continue;
-    arc(canvas, f.cx * S, f.cy * S, f.r * S, f.angle0, f.sweep, COLOURS.arc, 1);
+    const role = arcVerdict.get(f.id);
+    arc(canvas, f.cx * S, f.cy * S, f.r * S, f.angle0, f.sweep,
+      role === undefined ? COLOURS.arc
+        : role === 'hit' ? COLOURS.matched : COLOURS.unmatched, 1);
   }
 }
 
@@ -358,7 +362,8 @@ console.log(
   `${outFile}\n` +
   `  white / grey       ground-truth edges: visible / hidden\n` +
   `  green / red        detected segments:  matched to geometry / not\n` +
-  `  orange             detected arcs:      not scored -- see fitArcs\n` +
+  `  green / red        detected arcs:      matched to geometry / not\n` +
+  `  orange             detected arcs:      no match record for them\n` +
   `  blue rings         ground-truth corners above ${opts.minAngle}°\n` +
   `  yellow / red dots  detected corners:   matched / invented`
 );

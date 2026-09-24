@@ -460,9 +460,9 @@ is the obvious reading and it is wrong: a chord shrinks again past 180°, so a
 disc's outline — which `chain` joins into one nearly closed label — would
 report a bow of 0.01 px and be dismissed as a straight line.
 
-Arcs are **not scored**. `match` has no arc branch, because ground truth lists
-straight chords off a tessellated mesh and one arc crosses a fan of them — see
-§11.
+Arcs **are** scored — `match` takes a list of them and compares it against the
+same `gt-edge` truth segments are compared against. Read the caveat under
+`match` on what the recall column means for one.
 
 #### `corners(src features, …)` → features (`edge-corner`)
 
@@ -495,8 +495,10 @@ Which of those you should threshold on is measured, not guessed — see §7.
 #### `match(src features, truth features, …)` → features (`edge-match`)
 
 Score detected features against ground truth. Dispatches on what the *detected*
-records say they are: `edge-segment` goes to the ground truth's edges,
-`edge-corner` to its vertices.
+records say they are: `edge-segment` and `edge-arc` go to the ground truth's
+edges, `edge-corner` to its vertices. One kind at a time — a mixed list is
+refused, because the two that go to edges and the one that goes to vertices are
+different questions.
 
 | parameter | default | what it does |
 |---|---|---|
@@ -504,6 +506,31 @@ records say they are: `edge-segment` goes to the ground truth's edges,
 | `maxAngle` | 20° | how differently a matched segment may run |
 | `minVisible` | 0.5 | which ground-truth edges the detector is answerable for |
 | `minAngle` | 30° | which ground-truth vertices count as corners rather than polyline bends |
+
+**Two passes, asking two different questions.** Precision walks the detections:
+is this one explained by geometry? Recall walks the ground truth: was this edge
+found by anything? They are not each other's inverse, and treating them as one
+was a real defect — crediting only the single nearest truth edge per detection
+made a segment lying along twelve facets of a ball's silhouette mark one found
+and eleven missed, and recall read 40% for a line drawn straight down the
+middle of all of them.
+
+That structure is also what makes arcs cost almost nothing to score. A fitted
+arc crosses a fan of mesh chords, and each chord is asked separately whether
+anything covers it.
+
+**An arc is measured as a curve, never as its chord.** Samples run along the
+sweep, distance is to the arc and clamped to its own extent — a detection on
+the far side of the same circle is not near it — and a truth edge's angle is
+compared against the arc's **tangent** where that edge is, since an arc has no
+single direction. In practice the angle gate seldom decides an arc on its own:
+an edge at much of an angle to a curve is already far from most of it, so the
+median distance gets there first.
+
+**Recall is over the truth that list could have found.** `fit` and `fitArcs`
+describe one label map, so an edge covered by a segment counts as missed by the
+arcs. Score them in separate slots, read the two recalls separately, and never
+add them.
 
 Refuses two feature lists measured in different images, because scoring a
 512-pixel run against 256-pixel truth produces plausible numbers rather than an
@@ -1256,6 +1283,9 @@ complaint.
 | `gt-vertex` | `groundTruth` | `id`, `x y z`, `degree`, `visibleDegree`, `onFrame`, `visible`, `angle`, `objects` |
 | `edge-match` | `match` | `id`, `kind`, `role`, `detected`, `truth`, `cause`, `objects`, `distance`, `angleDiff`, `x y` |
 
+`kind` is `segment`, `arc` or `corner` — which of the three detectors the
+verdict is about.
+
 `role` is `hit`, `false-positive` or `miss`. Join a match record back to the
 feature it judged by `detected` — that is how the evidence and the verdict come
 together.
@@ -1398,12 +1428,11 @@ Stated plainly, so you do not go looking:
 - **An ICC-profiled PNG loads silently under the sRGB convention.** The profile
   is detected and then discarded; only explicit `sRGB` and `gAMA` declarations
   cause a refusal. Same for a `gAMA` value that is neither sRGB nor linear.
-- **Arcs are detected but never scored.** `fitArcs` finds them and `explain`
-  can say what put them there, but `match` refuses a list of them by name.
-  Ground truth records straight chords off a tessellated mesh, so one arc
-  crosses a fan of truth edges and matches none of them in particular — and
-  the matcher's modal vote would report a perfect detection as one hit in
-  twelve. See `design-lab-model.md` §11.
+- **Recall is per feature list, and the lists overlap.** `fit` and `fitArcs`
+  describe the same label map, so an edge found by a segment is counted as
+  missed by the arcs and the other way round. Nothing builds one list from
+  both, so a combined recall cannot be computed. Precision is the column that
+  means what it says.
 - **Ground truth models geometry, so an image-space T-junction is scored as an
   invention.** Where two real occluding contours cross, the picture has a
   corner and the scene has no vertex — nothing touches there. `explain` makes

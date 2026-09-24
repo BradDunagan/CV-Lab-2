@@ -15,8 +15,9 @@
 const assert = require('node:assert/strict');
 const { parseGroundTruth, readGroundTruth, GroundTruthError } =
   require('../src/lab/groundtruth');
-const { matchFeatures, summarise, lineAngleDifference, pointToSegment } =
-  require('../src/lab/match');
+const {
+  matchFeatures, summarise, lineAngleDifference, pointToSegment, pointToArc, arcTangent,
+} = require('../src/lab/match');
 const { createRegistry } = require('../src/lab/ops');
 
 let failures = 0;
@@ -86,6 +87,36 @@ const seg = (id, x0, y0, x1, y1) => ({
   angle: ((Math.atan2(y1 - y0, x1 - x0) * 180 / Math.PI) % 180 + 180) % 180,
   pixels: 30, residual: 0.3, rms: 0.2, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2,
 });
+
+/** One fitted arc, as `fitArcs` reports one. */
+const arc = (id, cx, cy, r, angle0, sweep) => {
+  const at = (deg) => [cx + r * Math.cos(deg * Math.PI / 180),
+                       cy + r * Math.sin(deg * Math.PI / 180)];
+  const [x0, y0] = at(angle0), [x1, y1] = at(angle0 + sweep);
+  return {
+    type: 'edge-arc', id, pixels: Math.round(r * sweep * Math.PI / 180),
+    cx, cy, r, x0, y0, x1, y1,
+    angle0: ((angle0 % 360) + 360) % 360,
+    angle1: (((angle0 + sweep) % 360) + 360) % 360,
+    sweep,
+    arcLength: r * sweep * Math.PI / 180,
+    chord: Math.hypot(x1 - x0, y1 - y0),
+    sagitta: r * (1 - Math.cos(sweep * Math.PI / 360)),
+    residual: 0.4, rms: 0.2, lineRms: 2.0, mx: cx, my: cy,
+  };
+};
+
+/** A circular arc of truth, as a tessellated mesh gives it: straight chords. */
+const gtArcChords = (cx, cy, r, angle0, sweep, n) => {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const a0 = angle0 + sweep * i / n, a1 = angle0 + sweep * (i + 1) / n;
+    const p = (d) => [cx + r * Math.cos(d * Math.PI / 180), cy + r * Math.sin(d * Math.PI / 180)];
+    const [x0, y0] = p(a0), [x1, y1] = p(a1);
+    out.push(gtEdge(i + 1, x0, y0, x1, y1, { cause: 'crease' }));
+  }
+  return out;
+};
 
 /** One corner candidate, as `corners` reports one. */
 const corner = (id, x, y, extra = {}) => ({
@@ -229,6 +260,106 @@ test('a hidden edge is not held against the detector', () => {
   // …and lowering the bar brings it back as a miss.
   const strict = matchFeatures([seg(1, 10, 50, 90, 50)], truth, { minVisible: 0 });
   assert.equal(strict.filter((r) => r.role === 'miss').length, 1);
+});
+
+/* --- matching arcs ------------------------------------------------------ */
+
+test('one arc over a fan of truth chords finds all of them', () => {
+  /*
+   * The case design-lab-model.md §11 expected to be a problem: ground truth
+   * is a tessellated mesh, so a curve arrives as many short straight edges and
+   * one detection covers all of them. Crediting per DETECTION would score this
+   * one hit in twelve. It does not, because recall walks the truth -- the same
+   * two-pass structure the ball's silhouette forced on segments.
+   */
+  const truth = parseGroundTruth(doc(gtArcChords(50, 50, 40, 0, 90, 12), [])).features;
+  const out = matchFeatures([arc(1, 50, 50, 40, 0, 90)], truth);
+  assert.equal(out.filter((r) => r.role === 'hit').length, 1, 'the arc should be a hit');
+  assert.equal(out.filter((r) => r.role === 'miss').length, 0,
+    'every chord the arc lies along should count as found');
+  assert.equal(out.filter((r) => r.role === 'false-positive').length, 0);
+  assert.ok(out.every((r) => r.kind === 'arc'));
+});
+
+test('an arc is measured as a curve, never as its chord', () => {
+  /*
+   * THE test for this file. An edge-arc carries x0,y0,x1,y1 exactly as a
+   * segment does and means its two ENDS by them. A half circle's chord runs
+   * straight through the middle of the circle, nowhere near the arc -- so an
+   * edge sitting on that chord must NOT match, and one on the arc must.
+   */
+  const half = arc(1, 50, 50, 40, 0, 180);
+  const onTheChord = parseGroundTruth(
+    doc([gtEdge(1, 50 + 40, 50, 50 - 40, 50, { cause: 'crease' })], [])).features;
+  const chordOut = matchFeatures([half], onTheChord);
+  assert.equal(chordOut.filter((r) => r.role === 'hit').length, 0,
+    'an edge along the chord was treated as if it were on the arc');
+
+  const onTheArc = parseGroundTruth(doc(gtArcChords(50, 50, 40, 0, 180, 16), [])).features;
+  assert.equal(matchFeatures([half], onTheArc).filter((r) => r.role === 'hit').length, 1);
+});
+
+test('distance to an arc is clamped to the arc, not to its whole circle', () => {
+  // The same property pointToSegment has. A detection on the far side of the
+  // circle is not near this arc, however well it fits the circle.
+  const quarter = arc(1, 50, 50, 40, 0, 90);
+  assert.ok(pointToArc(90, 50, quarter) < 1e-9, 'a point on the arc');
+  assert.ok(Math.abs(pointToArc(95, 50, quarter) - 5) < 1e-9, 'five pixels outside it');
+  // 180 degrees away: the far end of the diameter, which the circle fits
+  // perfectly and the arc does not reach.
+  assert.ok(pointToArc(10, 50, quarter) > 50,
+    `the far side of the circle reported ${pointToArc(10, 50, quarter)}`);
+});
+
+test('an arc far from any geometry is a false positive, and says how far', () => {
+  const truth = parseGroundTruth(doc([gtEdge(1, 10, 10, 90, 10)], [])).features;
+  const out = matchFeatures([arc(1, 50, 200, 40, 0, 90)], truth);
+  const fp = out.find((r) => r.role === 'false-positive');
+  assert.ok(fp, 'expected a false positive');
+  assert.equal(fp.truth, null);
+  assert.ok(fp.distance > 100, `distance ${fp.distance}`);
+});
+
+test('the angle an arc is judged on is its tangent, not one angle for the whole', () => {
+  /*
+   * An arc has no single direction, so `angleDiff` is measured per sample
+   * against the tangent there and reported as the median. On a fan of chords
+   * of the same circle that difference is near zero all the way round, which
+   * a single whole-arc angle could not be: this arc's tangent turns through
+   * ninety degrees between its ends.
+   */
+  const truth = parseGroundTruth(doc(gtArcChords(50, 50, 40, 0, 90, 12), [])).features;
+  const hit = matchFeatures([arc(1, 50, 50, 40, 0, 90)], truth).find((r) => r.role === 'hit');
+  assert.ok(hit.angleDiff < 5, `angleDiff ${hit.angleDiff} over a 90° turn`);
+  assert.ok(Math.abs(arcTangent(arc(1, 50, 50, 40, 0, 90), 0) - 90) < 1e-9);
+  assert.ok(Math.abs(arcTangent(arc(1, 50, 50, 40, 0, 90), 1) - 0) < 1e-9);
+
+  /*
+   * Not asserted: an arc rejected on angle alone. For a curve the median
+   * distance gets there first -- an edge running across an arc is far from
+   * most of it by the time it is at much of an angle to it -- so the angle
+   * gate seldom binds on its own here, unlike for segments where two edges
+   * can cross at one point and be close along their whole length.
+   */
+});
+
+test('arc records carry the middle of the arc, not the middle of the chord', () => {
+  // On a half circle those are a radius apart, and this is the point the
+  // overlay draws a verdict on.
+  const out = matchFeatures([arc(1, 50, 50, 40, 0, 180)],
+    parseGroundTruth(doc(gtArcChords(50, 50, 40, 0, 180, 16), [])).features);
+  const hit = out.find((r) => r.role === 'hit');
+  assert.ok(Math.abs(hit.x - 50) < 1e-6 && Math.abs(hit.y - 90) < 1e-6,
+    `midpoint reported at ${hit.x}, ${hit.y}; the chord's midpoint is 50, 50`);
+});
+
+test('matching arcs does not depend on the order they arrive in', () => {
+  const truth = parseGroundTruth(doc(gtArcChords(50, 50, 40, 0, 120, 16), [])).features;
+  const detected = [arc(1, 50, 50, 40, 0, 60), arc(2, 50, 50, 40, 60, 60)];
+  const forward = matchFeatures(detected, truth);
+  const backward = matchFeatures([...detected].reverse(), [...truth].reverse());
+  const key = (rs) => rs.map((r) => `${r.role}:${r.detected}:${r.truth}`).sort().join('|');
+  assert.equal(key(forward), key(backward));
 });
 
 /* --- matching corners --------------------------------------------------- */
