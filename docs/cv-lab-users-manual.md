@@ -955,15 +955,20 @@ and the ready line prints what pt-lab really applied — in the same form
 anything starts, because a typo read as *something* renders a plausible image
 lit wrongly.
 
-**`--lighting` scales every light by the same factor as the lamp.** pt-lab's own
-intensity lever reaches only the room lamp or environment, so with editor lights
-present each rung would have changed the *ratio* between sources — shadow
-strength, not just exposure. The ladder has always meant the same lighting at a
-different brightness, and scaling everything together keeps that. Checked on a
-render rather than assumed: at 0.5, a 120 cd spot lights its pool less than a 60
-cd spot does at 1.0, which only holds if it rendered at 60. Photometric ratios
-cannot show this — beauty renders go through ACES filmic tone mapping, under
-which the lamp alone brightens 2.8× in linear terms for a 2× step.
+**`--lighting` multiplies every light by the same factor as the lamp.** The
+multipliers are 0.5, 1.0, 2.0 and so on, doubling each time, and one image is
+rendered per value. pt-lab's own intensity setting reaches only the room lamp
+or environment, so with editor lights present each value would have changed the
+*ratio* between the sources: shadows differing in strength from one image to
+the next, not only in overall brightness. `--lighting` is meant to render the
+same lighting at a different brightness, and multiplying every source by the
+same factor is what keeps it to that.
+
+Checked on a render rather than assumed: at 0.5, a 120 cd spot lights its pool
+less than a 60 cd spot does at 1.0, which only holds if it rendered at 60.
+Measuring the rendered pixels cannot show this — beauty renders go through ACES
+filmic tone mapping, under which the lamp alone brightens 2.8× in linear terms
+when the multiplier is doubled.
 
 Lights never reach ground truth or the AOV passes. That was checked, not
 assumed: the same view of `cube-1` with and without a spot and an area light

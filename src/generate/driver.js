@@ -331,7 +331,11 @@ function resolveLights(opts, scene) {
 const RADIUS = 3.4;
 const HEIGHT = 1.3;
 
-/** The lighting ladder, shared by every scene: 0.5, 1.0, 2.0, … */
+/**
+ * The intensity multiplier for lighting index `l`, the same for every scene:
+ * 0.5, 1.0, 2.0, and so on, doubling each time. One image is rendered per
+ * index, so `--lighting 3` renders the same view at 0.5x, 1x and 2x.
+ */
 function intensityFor(l, lighting) {
   return lighting === 1 ? 1 : 0.5 * 2 ** l;
 }

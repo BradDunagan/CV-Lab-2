@@ -97,8 +97,8 @@ really used. Quote a spec with a colour: zsh can read # as a glob.
 
 The lights come on top of the room's own lighting, never instead of it. A scene
 saved with lights brings them along; any --light replaces that set, and
---no-lights empties it. --lighting scales every light by the same factor as
-the lamp, so each rung is the same lighting at a different brightness.
+--no-lights empties it. --lighting multiplies every light by the same factor as
+the lamp, so it renders the same lighting at a different brightness.
 
 --room none uses pt-lab's default scene, which lights the subject with a
 photographic HDR environment. It looks better and is a poor CV fixture: the

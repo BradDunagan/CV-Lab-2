@@ -13,9 +13,11 @@ let lab = null;
 let lastStatus = null;
 
 /**
- * The scene's lights as they were applied, before the lighting ladder scaled
- * them. The ladder multiplies these rather than whatever pt-lab currently
- * holds, so stepping 0.5 → 1 → 2 does not compound.
+ * The scene's lights as they were applied, before any intensity multiplier.
+ *
+ * Each multiplier is applied to these recorded values rather than to whatever
+ * pt-lab is holding at the time, so rendering at 0.5, then 1, then 2 gives
+ * those three intensities and not 0.5, 0.5 and 1.
  */
 let baseLights = [];
 
@@ -207,14 +209,15 @@ const api = {
   },
 
   /**
-   * The two levers the plan asks to vary lighting with.
+   * The two lighting settings the shot plan varies.
    *
-   * `intensity` scales the editor lights as well as the room's lamp or
-   * environment. pt-lab's own lever reaches only the latter, and with editor
-   * lights present that would change the RATIO between sources from one rung
-   * of the ladder to the next -- shadows shifting in strength, not just the
-   * exposure -- where the ladder has always meant the same lighting at a
-   * different brightness.
+   * `intensity` multiplies the editor lights as well as the room's lamp or
+   * environment. pt-lab's own intensity setting reaches only the lamp or
+   * environment, and with editor lights present that would change the RATIO
+   * between the sources every time the multiplier changed: shadows would
+   * differ in strength between one image and the next, not only in overall
+   * brightness. `--lighting` is meant to render the same lighting at a
+   * different brightness, so every source is multiplied by the same factor.
    */
   lighting({ intensity, room } = {}) {
     if (typeof intensity === 'number') {
