@@ -5,24 +5,23 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PT_ROOT = path.resolve(HERE, '..', 'pt-lab-workspace', 'packages');
-const PT_LAB = path.join(PT_ROOT, 'pt-lab', 'src', 'index.ts');
-const PT_ASSETS = path.join(PT_ROOT, 'demo', 'public', 'assets');
+// pt-lab lives in this repository now, under pt-lab/: the library's source,
+// and the assets its default URLs name. It used to be a sibling checkout.
+const PT_LAB = path.join(HERE, 'pt-lab', 'src', 'index.ts');
+const PT_ASSETS = path.join(HERE, 'pt-lab', 'assets');
 const OUT = path.resolve(HERE, 'dist-generate');
 
 /**
- * Copy pt-lab's demo assets into the bundle.
+ * Copy pt-lab's assets into the bundle.
  *
  * pt-lab's default URLs are `./assets/…` — the glTF model, the HDR
- * environment, and the denoiser weights — and those files live in the DEMO
- * package's public directory, not in the library. Without this the generator
- * fetched them out of the sibling checkout at render time, which meant a build
- * could be complete and correct and still fail on the first frame because the
- * checkout had moved.
- *
- * Copying them here makes `dist-generate/` self-contained: the BUILD needs the
- * sibling checkout, and running the generator does not. The same split the
- * source already had.
+ * environment, and the denoiser weights — relative to the PAGE, so they have
+ * to sit beside it in `dist-generate/`. They live in pt-lab/assets/, apart
+ * from the library's source, because nothing imports them: the page fetches
+ * them at run time. (In pt-lab's own repository they were its demo app's
+ * public files, and before this copy existed the generator fetched them from
+ * that checkout at render time -- a complete, correct build could fail on its
+ * first frame because the checkout had moved.)
  *
  * The cost, stated because it used to be the other way round: pt-lab's assets
  * are now a BUILD INPUT. Swapping the helmet or the environment takes effect
@@ -64,23 +63,15 @@ function copyPtLabAssets() {
 /*
  * The image generator, built separately from the app.
  *
- * Deliberately NOT part of `npm run build:renderer`, and deliberately not a
- * dependency in package.json. Three reasons, all pointing the same way:
+ * Deliberately NOT part of `npm run build:renderer`: pt-lab is three.js, a
+ * GPU path tracer and an OIDN WASM blob, and the app's window has no use for
+ * any of it. It runs in views of its own, loaded from dist-generate/.
  *
- *   - pt-lab is a GPU path tracer. CI runners have software GL only, so this
- *     could never run there usefully, and building it there would cost minutes
- *     for an artifact nobody uses.
- *   - it would drag three.js and an OIDN WASM blob into the app's bundle for a
- *     feature the app does not have.
- *   - a `file:` dependency has to resolve at INSTALL time even if nothing
- *     imports it, so adding pt-lab to package.json would make `npm ci` fail
- *     anywhere the sibling checkout is absent -- including CI, which has no
- *     use for it.
- *
- * An alias instead: only this config knows pt-lab exists, and it is only read
- * by `npm run build:generate`. pt-lab's own dependencies (three,
- * three-gpu-pathtracer, oidn-web) resolve by ordinary node resolution from its
- * source, out of the sibling workspace's node_modules.
+ * pt-lab is reached through an alias rather than as a package: it is source
+ * in this repository, compiled here, never published. Its dependencies (three,
+ * three-gpu-pathtracer, three-mesh-bvh, oidn-web) are this repository's
+ * devDependencies, like everything else Vite bundles, and resolve from
+ * pt-lab/src/ by ordinary upward node resolution.
  */
 export default defineConfig({
   root: 'src/generate',

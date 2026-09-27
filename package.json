@@ -20,6 +20,7 @@
     "postbuild:generate": "node scripts/check-generate-bundle.js",
     "dev:renderer": "vite build --watch",
     "dev:generate": "vite build --config vite.generate.config.mjs --watch",
+    "check:pt-lab": "svelte-check --workspace pt-lab --tsconfig ./tsconfig.json --threshold error",
     "lint:native": "node scripts/lint-native.js",
     "rebuild:electron": "node scripts/rebuild-electron.js",
     "test:native": "node test/smoke.js && node test/buffer.js && node test/kernels.js && node test/arcs.js && node test/render.js",
@@ -44,11 +45,19 @@
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/three": "^0.185.4",
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3",
     "node-gyp": "^13.0.1",
+    "oidn-web": "^0.3.5",
     "paneless": "file:../paneless-workspace/packages/paneless",
     "svelte": "^5.56.10",
+    "svelte-check": "^4.7.6",
+    "three": "^0.185.1",
+    "three-gpu-pathtracer": "^0.0.24",
+    "three-mesh-bvh": "0.9.13",
+    "typescript": "~6.0.3",
     "vite": "^7.3.6"
   }
 }

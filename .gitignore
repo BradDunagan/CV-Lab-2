@@ -4,7 +4,11 @@ dist/
 out/
 *.node
 .DS_Store
-assets/
+# The ROOT assets/ -- local test images. Anchored with the slash: unanchored,
+# this matched a directory called assets ANYWHERE, and pt-lab/assets/ (the
+# model, environment and denoiser weights the generator is built with) would
+# have been silently left out of every commit.
+/assets/
 sessions/
 tmp/
 # What the generator, the batch runner and the overlay tool write.

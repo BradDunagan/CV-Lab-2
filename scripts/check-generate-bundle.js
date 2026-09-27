@@ -6,7 +6,7 @@
  *
  * WHY, and this one shipped.
  *
- * pt-lab is a Vite ALIAS resolved against a sibling checkout, and
+ * pt-lab was a Vite ALIAS resolved against a sibling checkout, and
  * `src/generate/main.js` is plain JavaScript. So calling a pt-lab method that
  * does not exist is not a build error, not a type error and not a lint error —
  * it is a runtime error, in a window nothing opens until somebody asks for an
@@ -18,6 +18,13 @@
  * That is exactly what happened. Two of three CI jobs went green over
  * installers whose headline feature could not run, because the sibling
  * checkout had a commit that had not been pushed.
+ *
+ * pt-lab is in this repository now, under pt-lab/, so a checkout that is
+ * BEHIND can no longer happen -- the caller and the callee move in the same
+ * commit. The check stays because the rest of the reasoning does: the pages
+ * are plain JavaScript and Svelte without type-checking, so renaming a method
+ * in pt-lab/src/ and missing one caller still builds, packages and launches
+ * clean. `npm run check:pt-lab` type-checks pt-lab itself, not its callers.
  *
  * THE SUBTLETY THAT MAKES THIS MORE THAN A GREP.
  *
@@ -49,7 +56,7 @@ const PAGES = ['main.js', 'Editor.svelte', 'CameraControls.svelte']
   .map((f) => path.join(ROOT, 'src', 'generate', f));
 const OUT = path.join(ROOT, 'dist-generate');
 const BUNDLE = path.join(OUT, 'generate.js');
-const PT_SRC = path.join(ROOT, '..', 'pt-lab-workspace', 'packages', 'pt-lab', 'src');
+const PT_SRC = path.join(ROOT, 'pt-lab', 'src');
 
 /**
  * Every method the page calls on the PathTracerLab instance.
@@ -134,21 +141,19 @@ function main() {
   const missing = missingFrom(bundle, called);
   if (missing.length > 0) {
     /*
-     * Name the cause, because the fix is somewhere else entirely. Nothing in
-     * this repository is wrong when this fires: the sibling checkout is behind
-     * whatever main.js was written against, and it is usually an unpushed
-     * commit rather than anything subtler.
+     * Name both halves: with pt-lab in the repository, this is a method that
+     * was renamed or removed in one place and not in the other.
      */
     console.error(
       `FAIL: the bundled pt-lab does not define ${missing.length} method(s) ` +
       `that the generator or the scene editor calls:\n` +
       missing.map((m) => `  - lab.${m}()`).join('\n') + '\n\n' +
-      `They were built against a pt-lab that is behind the code calling it, so\n` +
-      `the app would build, package and launch cleanly and then\n` +
-      `throw the moment those are used.\n\n` +
+      `Nothing would have caught it: the app would build, package and launch\n` +
+      `cleanly and then throw the moment those are used. Either pt-lab lost the\n` +
+      `method --\n\n` +
       `  ${path.relative(ROOT, PT_SRC)}\n\n` +
-      `Check that the sibling checkout has the commit you expect — an unpushed\n` +
-      `one is the usual cause — then: npm run build:generate`
+      `-- or a page calls one that never existed:\n\n` +
+      PAGES.map((p) => `  ${path.relative(ROOT, p)}`).join('\n')
     );
     return 1;
   }

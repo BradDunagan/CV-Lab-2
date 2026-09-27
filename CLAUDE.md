@@ -47,6 +47,8 @@ scripts/score.js     tallies match records: precision, recall, and which
                      corner field actually discriminates
 scripts/overlay.js   draws ground truth and detections over an image — every
                      defect in the scoring machinery was found this way
+pt-lab/              the path tracer + scene editor library, TypeScript, moved in
+                     from its own repository — see pt-lab/README.md
 src/generate/        the generator: page (bundled separately) + main-process
                      driver shared by the CLI and the app's Generate frame;
                      also the Scene Editor page (pt-lab's editor, saving to
@@ -66,7 +68,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — fifteen suites, ~422 tests
+npm test                # everything — fifteen suites, ~444 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -74,6 +76,7 @@ npm run score -- results/           # found, against what is really there
 npm run overlay -- <img> results/   # ...and the same thing as a picture
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
+npm run check:pt-lab    # type-check pt-lab/ — the build strips types unchecked
 npm run dev:renderer    # the same, in watch mode
 npm run build:generate  # the generator bundle — rerun whenever pt-lab's source
                         # changes; a stale one is refused rather than run
@@ -85,7 +88,7 @@ npm run smoke:package   # launch it and check it actually works
 ## Constraints that are not negotiable without a reason
 
 - **Node-API, never NAN.** One binary works under both Node and Electron. Verified, not assumed.
-- **Image generation ships in the app.** It is not a developer tool: varying lighting and pose to test a pipeline against is the lab's core loop, so `npm run package` builds `dist-generate/` into the `app.asar`. That is why pt-lab is a *build* dependency only — the bundle carries the tracer, the model and the environment. Needs a GPU; adds ~17 MB.
+- **Image generation ships in the app.** It is not a developer tool: varying lighting and pose to test a pipeline against is the lab's core loop, so `npm run package` builds `dist-generate/` into the `app.asar`. pt-lab's source lives in `pt-lab/` and its dependencies are devDependencies — the bundle carries the tracer, the model and the environment, so none is needed at run time. Needs a GPU; adds ~17 MB.
 - **`sandbox: false` on the window**, with `contextIsolation` on and `nodeIntegration` off. It exists so the preload can `require()` a real `.node`. Conditional on this window only ever loading local, first-party content.
 - **Pixels never cross the contextBridge.** It deep-copies typed arrays — measured. The preload owns the buffers and renders into the canvas directly. Svelte owns the DOM and only the DOM: a pane hands the preload a canvas **id**, because a DOM node cannot cross the bridge either.
 - **The macOS menu-bar name is `CFBundleName` in the running bundle**, not `app.setName()`. A dev run says "Electron" because it runs Electron's own bundle; the packaged app is always right. `scripts/brand-dev-electron.js` patches the dev copy from `postinstall`.
@@ -99,7 +102,7 @@ npm run smoke:package   # launch it and check it actually works
 - **Measure before optimising, and before believing.** `merge` was 114× slower than necessary and nothing in the code looked wrong. The default `minMag` was tuned on synthetic images and missed a third of the real ones.
 - **Assert properties, not current output.** A test that records what the code produces cannot tell you the code is wrong.
 - **A check that runs in one place can pass for the wrong reason.** An implicit `posix_memalign` declaration warned on every Linux build for weeks and never once on macOS.
-- **A green build can ship a broken feature.** The generator page calls pt-lab from plain JS across a Vite alias, so a sibling checkout one commit behind builds, packages, launches and smoke-tests clean, then throws on use — two CI jobs did exactly that. `build:generate` now asserts every `lab.<method>()` the page calls is *defined* in the bundle, not merely called in it.
+- **A green build can ship a broken feature.** The generator page calls pt-lab from plain JS across a Vite alias, so a sibling checkout one commit behind built, packaged, launched and smoke-tested clean, then threw on use — two CI jobs did exactly that. pt-lab lives in this repository now, which ends that case, but not the class: `build:generate` still asserts every `lab.<method>()` the pages call is *defined* in the bundle, because nothing type-checks the callers.
 - **Read what `git add -A` staged.** A renderer build once wrote itself to the project root — 92 files, 13 MB — and `git add -A` committed 83 of them under a stat line reading "105 files changed, 70315 insertions(+)". `/*.js` is ignored now and `test/repo.js` fails loudly if any reappear, because an ignored stray accumulates silently, which is worse.
 - **Layout is not behaviour.** `verify:package` checked that the right files were in the artifact and passed on every release while the packaged app was dead on launch — the preload required `scripts/png.js`, which was never in `files:`, so `window.lab` never existed. `smoke:package` starts the real artifact and asks whether it works. Anything the preload or main process `require`s at runtime must be in `electron-builder.yml`.
 - **Read CI logs for warnings, not only errors.** That is how the above survived three green checkmarks.
@@ -111,7 +114,7 @@ npm run smoke:package   # launch it and check it actually works
 
 In `design-lab-model.md` §11 — whether `load` should default to `as=linear`;
 whether higher-precision decoding is worth a native decoder; and whether
-`pt-lab-workspace` writes gamma-encoded or linear PNGs, which matters because
+pt-lab writes gamma-encoded or linear PNGs, which matters because
 every image in `assets/` declares nothing and the lab assumes sRGB by
 convention.
 

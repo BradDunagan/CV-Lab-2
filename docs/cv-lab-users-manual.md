@@ -899,13 +899,14 @@ places the camera 20° off the axis so no view lands on a degenerate one and 25�
 above so three faces and seven vertices show. That is the case
 `design-lab-model.md` §5's claim is about.
 
-**The sibling `pt-lab-workspace` checkout is a build dependency, not a runtime
-one** — which is what lets the feature ship at all. Only `generate` needs a
-GPU:
+**pt-lab is in this repository, under `pt-lab/`, and only the build reads
+it** — which is what lets the feature ship at all. It used to be a sibling
+checkout; see [pt-lab/README.md](../pt-lab/README.md) for why it moved and
+what it is. Only `generate` needs a GPU:
 
-| | needs the checkout | GPU |
+| | reads `pt-lab/` | GPU |
 |---|---|---|
-| `build:generate` | **yes** — `packages/pt-lab/src/` for the code, `packages/demo/public/assets/` for the model, environment and denoiser weights, and pt-lab's own `node_modules` for three, three-gpu-pathtracer and oidn-web | no — it is a Vite build |
+| `build:generate` | **yes** — `pt-lab/src/` for the code, `pt-lab/assets/` for the model, environment and denoiser weights; three, three-gpu-pathtracer, three-mesh-bvh and oidn-web come from this repository's devDependencies | no — it is a Vite build |
 | `generate`, and the installed app | **no** — a built `dist-generate/` carries everything it needs | **yes** — path tracing is WebGL |
 
 `npm run package` runs `build:generate` and puts `dist-generate/` inside the
@@ -915,14 +916,15 @@ rather than assumed — a 3.7 MB glTF comes back byte-identical.
 
 That is what the copy step in `vite.generate.config.mjs` is for. pt-lab's
 default URLs are `./assets/…`, resolved against `gen://lab/index.html`, and
-those files live in the *demo* package rather than the library — so without the
-copy the generator fetched them out of the checkout at render time, and a
-complete, correct build could still fail on its first frame because the checkout
-had moved. They are fetched on **every** run, `--scene cube` included, because
+nothing imports those files — so without the copy they would be fetched from
+`pt-lab/assets/` at render time, which a packaged app does not have. (Before
+the copy existed, that meant fetching them from the sibling checkout, and a
+complete, correct build could fail on its first frame because the checkout had
+moved.) They are fetched on **every** run, `--scene cube` included, because
 `init()` loads the model and the environment before `applyScene` replaces them.
 
 A bundle built before that copy existed still works: the handler falls back to
-the checkout when the bundle has no assets of its own. One function,
+`pt-lab/assets/` when the bundle has no assets of its own. One function,
 `assetsDir()`, decides for both the handler and the prerequisite check, so the
 two cannot disagree about where a file is meant to come from.
 
@@ -1075,34 +1077,34 @@ loads into a hidden Chromium renderer inside its own process tree, and drives.
 ```
 
 **Changing pt-lab means rebuilding, and nothing else.** The alias resolves to
-pt-lab's *source*, so `npm run build:generate` picks up any edit there — you
-never build pt-lab itself, and its own `npm run pkg:build` output is bypassed
-entirely. Three things do not follow that rule:
+pt-lab's *source*, so `npm run build:generate` picks up any edit there — pt-lab
+is never built on its own. `npm run check:pt-lab` type-checks it, which the
+build does not. A few things do not follow that rule:
 
 | what changed | what to run |
 |---|---|
 | pt-lab's `src/` | `npm run build:generate` |
 | pt-lab's **assets** (the glTF model, the HDR, the denoiser weights) | `npm run build:generate` — they are copied into the bundle, so swapping one takes effect on the next build rather than immediately. That is deliberate: it pins what was rendered to what the bundle was built against |
-| pt-lab gained a **dependency** | `npm install` in `pt-lab-workspace` first; its deps resolve from *its* `node_modules` |
+| pt-lab gained a **dependency** | `npm install --save-dev` it here — pt-lab's dependencies are this repository's, and nothing of them is needed at run time |
 | `src/generate/driver.js` | nothing — Electron requires it directly, it is not bundled |
 
-**A checkout that is BEHIND is caught at build time.** `src/generate/main.js`
-is plain JavaScript calling pt-lab, so a method the bundled pt-lab does not
-have is a runtime error rather than a build one — the bundle builds, the app
-packages and launches, and `--truth` throws the moment it is used. Two CI jobs
-went green over installers in exactly that state. `build:generate` now ends by
-checking that every `lab.<method>()` the page calls is *defined* in the bundle
-and not merely called there, which is a distinction a search for the name
-cannot make, since both the call and the definition end up in the same file:
+**A method a page calls and pt-lab lacks is caught at build time.**
+`src/generate/main.js` and the Scene Editor are plain JavaScript and Svelte
+calling pt-lab, so a method pt-lab does not have is a runtime error rather than
+a build one — the bundle builds, the app packages and launches, and `--truth`
+throws the moment it is used. Two CI jobs once went green over installers in
+exactly that state, when pt-lab was a sibling checkout one commit behind.
+Moving it into the repository ended that case; renaming a method in one place
+and not the other remains. `build:generate` ends by checking that every
+`lab.<method>()` the pages call is *defined* in the bundle and not merely
+called there, which is a distinction a search for the name cannot make, since
+the call and the definition both end up in the build:
 
 ```
-FAIL: the bundled pt-lab does not define 2 method(s) that
-src/generate/main.js calls:
+FAIL: the bundled pt-lab does not define 2 method(s) that the generator or the scene editor calls:
   - lab.exportAOVs()
   - lab.groundTruthGeometry()
 …
-Check that the sibling checkout has the commit you expect — an unpushed
-one is the usual cause — then: npm run build:generate
 ```
 
 Forgetting the rebuild used to be silent, and it is the worst kind of silent:
@@ -1112,21 +1114,17 @@ timestamp against every file it was built from and refuses first:
 
 ```
 The generator build is older than its sources.
-  ../pt-lab-workspace/packages/pt-lab/src/lib/pathtracer.ts changed after
+  pt-lab/src/lib/pathtracer.ts changed after
   dist-generate/generate.js was built.
 Run: npm run build:generate
 ```
 
-**pt-lab is a Vite alias, not a dependency.** `vite.generate.config.mjs` points
-`'pt-lab'` at `../pt-lab-workspace/packages/pt-lab/src/index.ts` and bundles its
-*source*. It is deliberately absent from `package.json`, because a `file:`
-dependency must resolve at **install** time even when nothing imports it — so
-adding it would break `npm ci` anywhere the sibling checkout is missing, CI
-included. Only that one config knows pt-lab exists, and only
-`npm run build:generate` reads it. That is also why this is a separate bundle:
-three.js and an OIDN WASM blob have no business in the app's renderer, and CI
-runners have software GL only, so building it there would cost minutes for an
-artifact nobody can use.
+**pt-lab is a Vite alias, not a package.** `vite.generate.config.mjs` points
+`'pt-lab'` at `pt-lab/src/index.ts` and bundles its *source*; it is never
+built or published on its own. Only that one config knows pt-lab exists, and
+only `npm run build:generate` reads it. That is also why this is a separate
+bundle: three.js and an OIDN WASM blob have no business in the app's
+renderer.
 
 **Why a custom `gen://` scheme rather than `file://`.** three.js's loaders fetch
 the glTF model and the HDR environment, and **Chromium refuses `fetch()` on

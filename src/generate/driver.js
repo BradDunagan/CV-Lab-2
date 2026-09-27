@@ -21,7 +21,7 @@ const { pathToFileURL } = require('node:url');
 
 const ROOT = path.join(__dirname, '..', '..');
 const PAGE = path.join(ROOT, 'dist-generate');
-const PT_ASSETS = path.join(ROOT, '..', 'pt-lab-workspace', 'packages', 'demo', 'public', 'assets');
+const PT_ASSETS = path.join(ROOT, 'pt-lab', 'assets');
 const BUNDLED_ASSETS = path.join(PAGE, 'assets');
 
 /**
@@ -34,13 +34,13 @@ const BUNDLED_ASSETS = path.join(PAGE, 'assets');
 const CORE_ASSETS = ['damaged-helmet.glb', 'royal_esplanade_1k.hdr'];
 
 /**
- * Where pt-lab's assets are coming from this run — the bundle, or the sibling
- * checkout, or nowhere.
+ * Where pt-lab's assets are coming from this run — the bundle, or pt-lab/assets/
+ * in this working copy, or nowhere.
  *
  * `build:generate` copies them into the bundle, so a built generator is
- * self-contained and the checkout is a BUILD dependency rather than a runtime
- * one. The fallback keeps an older bundle, built before that copy existed,
- * working rather than failing on its first frame.
+ * self-contained -- which is what lets a packaged app, with no pt-lab/ beside
+ * it, generate at all. The fallback keeps an older bundle, built before that
+ * copy existed, working rather than failing on its first frame.
  *
  * One function so there is exactly one rule: the protocol handler and the
  * prerequisite check cannot disagree about where a file is meant to come from.
@@ -107,8 +107,8 @@ function installHandler() {
         : new Response('not a model this run verified', { status: 404 });
     }
     // pt-lab's default model and environment URLs are ./assets/…, which the
-    // build copies into the bundle; assetsDir() falls back to the checkout for
-    // a bundle built before it did.
+    // build copies into the bundle; assetsDir() falls back to pt-lab/assets/
+    // for a bundle built before it did.
     const file = rel.startsWith('assets/')
       ? path.join(assetsDir() ?? BUNDLED_ASSETS, rel.slice('assets/'.length))
       : path.join(PAGE, rel || 'index.html');
@@ -140,7 +140,7 @@ function openSceneForEditor(name) {
   };
 }
 
-const PT_SRC = path.join(ROOT, '..', 'pt-lab-workspace', 'packages', 'pt-lab', 'src');
+const PT_SRC = path.join(ROOT, 'pt-lab', 'src');
 
 /**
  * The files under src/generate/ that Electron loads as they are, rather than
@@ -167,9 +167,9 @@ function buildInputs() {
   walkInto(__dirname, own);
   const runtime = new Set(NOT_BUNDLED.map((f) => path.join(__dirname, f)));
   const inputs = [path.join(ROOT, 'vite.generate.config.mjs'), ...own.filter((f) => !runtime.has(f))];
-  // pt-lab's demo assets are copied into the bundle, so they are a build input
-  // now. Swapping the helmet used to take effect immediately and now needs a
-  // rebuild -- which is the trade that makes a built generator self-contained.
+  // pt-lab's assets are copied into the bundle, so they are a build input:
+  // swapping the helmet takes effect on the next build, not immediately --
+  // which is the trade that makes a built generator self-contained.
   walkInto(PT_ASSETS, inputs);
   walkInto(PT_SRC, inputs);
   return inputs;
@@ -181,7 +181,7 @@ function walkInto(dir, into) {
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch {
-    return; // the sibling checkout is missing; a different check reports that
+    return; // missing; checkPrerequisites is what reports that
   }
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
@@ -251,9 +251,9 @@ function checkPrerequisites() {
         `  Expected them at ${BUNDLED_ASSETS}\n${rebuild}`
       : `pt-lab's assets are missing.\n` +
         `  Not in the bundle: ${BUNDLED_ASSETS}\n` +
-        `  Nor in the checkout: ${PT_ASSETS}\n` +
-        `The build copies them into the bundle, so this usually means the sibling ` +
-        `pt-lab-workspace checkout was absent when it ran.\n${rebuild}`;
+        `  Nor in the working copy: ${PT_ASSETS}\n` +
+        `They are committed under pt-lab/assets/, so this means that directory ` +
+        `is missing or incomplete -- check \`git status pt-lab/assets\`.\n${rebuild}`;
   }
 
   /*

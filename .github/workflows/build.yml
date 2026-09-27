@@ -131,18 +131,11 @@ jobs:
           token: ${{ secrets.PANELESS_TOKEN }}
           path: paneless-workspace
 
-      # pt-lab is the image generator's path tracer, and image generation ships
-      # AS PART OF THE APP -- varying lighting and pose to test a pipeline
-      # against is the point of the lab, not a developer convenience. So the
-      # package job needs it, exactly as it needs paneless for the renderer.
-      #
-      # No token: unlike paneless-workspace this repository is public. The
-      # directory name differs from the repository name on purpose -- every
-      # path in cv-lab-2 expects a `pt-lab-workspace` sibling.
-      - uses: actions/checkout@v7
-        with:
-          repository: BradDunagan/pt-lab
-          path: pt-lab-workspace
+      # pt-lab, the path tracer behind image generation and the scene editor,
+      # used to be checked out here as a sibling, the way paneless still is.
+      # It lives in this repository now (pt-lab/), so there is nothing to check
+      # out -- and no way for the build to package a pt-lab one commit behind
+      # the code calling it, which two of three jobs once did.
 
       # Must be >= 22.12. Electron 43, @electron/rebuild 4 and node-gyp 13 all
       # declare it, and node-gyp 13's bundled undici genuinely breaks on Node 20
@@ -161,15 +154,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential xvfb
 
       - run: npm ci
-
-      # pt-lab is consumed from SOURCE through a Vite alias, so building the
-      # generator compiles its TypeScript here -- and therefore has to resolve
-      # pt-lab's own runtime dependencies (three, three-gpu-pathtracer,
-      # oidn-web) out of ITS node_modules. Same shape as the paneless step
-      # below, and for the same reason.
-      - name: Install pt-lab's dependencies
-        working-directory: pt-lab-workspace
-        run: npm ci
 
       # paneless is consumed from SOURCE, not from a published package, so
       # Vite compiles its TypeScript and Svelte here -- and therefore has to
@@ -191,6 +175,13 @@ jobs:
       # glibc gates POSIX declarations that Apple's libc exposes unconditionally
       # -- which is exactly how an implicit posix_memalign declaration survived
       # unnoticed on every Linux build for weeks.
+      # pt-lab is TypeScript, and this is its only static check -- Vite strips
+      # types without checking them, so a type error builds clean. Once is
+      # enough: unlike the native lint, nothing here depends on the platform.
+      - name: Type-check pt-lab
+        if: runner.os == 'Linux'
+        run: npm run check:pt-lab
+
       - name: Lint native sources
         if: runner.os != 'Windows'
         run: npm run lint:native

@@ -132,8 +132,9 @@ notes/                   working notes; unlike docs/, never obliged to be curren
 | `npm run build:native` | Compile the addon with node-gyp |
 | `npm run build:renderer` | Vite build of the Svelte renderer |
 | `npm run lab` | Run a pipeline over images, headless — see below |
-| `npm run build:generate` | Build the pt-lab image generator (needs the sibling checkout); refuses a bundle whose pt-lab is behind the code calling it |
-| `npm run dev:generate` | The same, in watch mode, for editing pt-lab alongside |
+| `npm run build:generate` | Build the image generator and the Scene Editor from `pt-lab/`; refuses a bundle missing a pt-lab method the pages call |
+| `npm run dev:generate` | The same, in watch mode, for editing pt-lab |
+| `npm run check:pt-lab` | Type-check pt-lab — the build strips types without checking them |
 | `npm run generate` | Render images with varying position and lighting, optionally with ground truth |
 | `npm run score` | Tally what the pipeline found against what is really there |
 | `npm run overlay` | Draw ground truth and detections over an image, so you can look |
@@ -193,7 +194,7 @@ npm run generate -- --out generated/ --positions 3 --lighting 2
 npm run lab -- --script pipelines/geometry.lab --out results/ generated/*.png
 ```
 
-It hosts [pt-lab](../pt-lab-workspace) — a GPU path tracer — orbits the camera,
+It hosts [pt-lab](pt-lab/README.md) — a GPU path tracer — orbits the camera,
 varies the environment intensity, and writes one PNG per combination. `--show`
 puts the render in a window of its own, which the CLI needs and the app does
 not. `--dry-run` prints the sweep without rendering, which is worth doing
@@ -219,25 +220,27 @@ through pt-lab's own `exportPNG`, so each is **tagged sRGB** (`sRGB` + `gAMA` +
 runs OIDN over each export; it is off by default, matching pt-lab, so every
 image recorded so far carries the raw path-traced noise floor.
 
-### What needs the sibling checkout, and when
+### Where pt-lab comes from
 
-`npm run build:generate` does — for pt-lab's source, and for the model,
-environment and denoiser weights it copies into the bundle. **`npm run
-generate` does not**, and neither does the installed app: a built
-`dist-generate/` is self-contained. That split is what lets the feature ship,
-and `npm run package` builds the generator into the `app.asar`.
+`pt-lab/` in this repository: the library's TypeScript source, and the model,
+environment and denoiser weights the build copies into the bundle. It used to
+be a sibling checkout, and moved in because a build could package a pt-lab one
+commit behind the code calling it — which shipped once. Only the build reads
+it: **`npm run generate` does not**, and neither does the installed app, since
+a built `dist-generate/` is self-contained and `npm run package` builds it into
+the `app.asar`.
 
-Two guards, because both failures are silent. The bundle is refused if it is
-**older than its sources**, since a stale one runs happily and produces images
-that look completely reasonable. And `build:generate` refuses a bundle whose
-pt-lab does not **define** the methods `src/generate/main.js` calls — a
-checkout one commit behind builds, packages and launches cleanly, then throws
-the moment `--truth` is used, and that shipped once already.
+Two guards remain, because both failures are silent. The bundle is refused if
+it is **older than its sources**, since a stale one runs happily and produces
+images that look completely reasonable. And `build:generate` refuses a bundle
+that does not **define** a pt-lab method the pages call — they are plain
+JavaScript, so a renamed method still builds, packages and launches, then
+throws the moment it is used.
 
 It is a separate build from `build:renderer` and no part of `npm test`: it
-needs a real GPU, and it would otherwise pull three.js and an OIDN WASM blob
-into a renderer bundle that has no use for them. `npm run dev:generate` is the
-same build in watch mode, for editing pt-lab and cv-lab-2 together.
+needs a real GPU to run, and it would otherwise pull three.js and an OIDN WASM
+blob into a renderer bundle that has no use for them. `npm run dev:generate` is
+the same build in watch mode.
 
 ## Checking the answers against the scene
 

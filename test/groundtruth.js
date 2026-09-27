@@ -555,8 +555,8 @@ test('the assets a run cannot start without, and the ones it can', () => {
 
 test('a built bundle carries its own assets, so a run needs no checkout', () => {
   /*
-   * The point of copying them in at build time: `build:generate` needs the
-   * sibling pt-lab-workspace checkout and `npm run generate` does not. Checked
+   * The point of copying them in at build time: `build:generate` reads
+   * pt-lab/assets/, and a packaged app, which has no pt-lab/, does not. Checked
    * against the real bundle, and skipped when there is not one, because this
    * suite runs under plain node where a build may never have happened.
    */
@@ -566,7 +566,7 @@ test('a built bundle carries its own assets, so a run needs no checkout', () => 
   const built = CORE_ASSETS.every((f) => fs.existsSync(path.join(BUNDLED_ASSETS, f)));
   if (!built) return; // nothing built here; the flag below is what would catch a regression
   assert.equal(assetsDir(), BUNDLED_ASSETS,
-    'a bundle with its own assets must be preferred over the sibling checkout');
+    'a bundle with its own assets must be preferred over pt-lab/assets/');
 });
 
 test("pt-lab's assets count as build inputs, so swapping one is caught", () => {
@@ -574,9 +574,11 @@ test("pt-lab's assets count as build inputs, so swapping one is caught", () => {
   // rebuild, and now a stale bundle is refused instead.
   const fs = require('node:fs');
   const { buildInputs, PT_ASSETS } = require('../src/generate/driver');
-  if (!fs.existsSync(PT_ASSETS)) return; // no sibling checkout here
+  // Asserted, not skipped: pt-lab is in the repository, so its absence is a
+  // defect rather than an environment without a sibling checkout.
+  assert.ok(fs.existsSync(PT_ASSETS), `${PT_ASSETS} is missing`);
   assert.ok(buildInputs().some((f) => f.startsWith(PT_ASSETS)),
-    "pt-lab's demo assets must be build inputs now that the build copies them");
+    "pt-lab's assets must be build inputs now that the build copies them");
 });
 
 /* --- the generator bundle guard --------------------------------------- */
@@ -584,8 +586,8 @@ test("pt-lab's assets count as build inputs, so swapping one is caught", () => {
 test('a called-but-undefined pt-lab method is caught, a called-and-defined one is not', () => {
   /*
    * The distinction this whole check turns on. `src/generate/main.js` is plain
-   * JavaScript calling a pt-lab built from a sibling checkout, so a method that
-   * does not exist there is a RUNTIME error -- the bundle builds, the app
+   * JavaScript calling pt-lab without a type-checker between them, so a method
+   * that does not exist there is a RUNTIME error -- the bundle builds, the app
    * packages and launches, and the call throws when a user asks for an image.
    *
    * Both halves live in the same bundled file: main.js's call
@@ -890,7 +892,7 @@ test('every prerequisite message leads with a headline the pane can show', () =>
   assert.ok(/^[A-Z].*\.$/.test(headline),
     `the first line should be a sentence, got ${JSON.stringify(headline)}`);
   assert.ok(detail.length > 0, 'a headline with no detail leaves nothing to act on');
-  assert.match(message, /Run: npm run build:generate|sibling pt-lab-workspace/);
+  assert.match(message, /Run: npm run build:generate/);
 });
 
 test('a light spec parses to exactly what it says, and nothing it does not', () => {
@@ -1243,16 +1245,15 @@ test('the generator page forwards every field of a saved scene to pt-lab', () =>
    * from pt-lab's own interface rather than typed here, so the next field it
    * grows fails this rather than a render.
    *
-   * Needs the sibling checkout, and skips without one because there is nothing
-   * to compare against. CI has it -- build.yml checks pt-lab out beside
-   * cv-lab-2 before the lab tests run -- so this is checked on all three
-   * platforms, against whatever pt-lab commit the build packages.
+   * It used to skip without a sibling pt-lab checkout. pt-lab is in the
+   * repository now, so it always runs, on all three platforms, against the
+   * pt-lab the same commit builds -- and a missing file fails it.
    */
   const fs = require('node:fs');
   const path = require('node:path');
   const { PT_SRC } = require('../src/generate/driver');
   const tracer = path.join(PT_SRC, 'lib', 'pathtracer.ts');
-  if (!fs.existsSync(tracer)) return;
+  assert.ok(fs.existsSync(tracer), `${tracer} is missing`);
 
   const iface = /export interface SceneData \{([\s\S]*?)\n\}/.exec(fs.readFileSync(tracer, 'utf8'));
   assert.ok(iface, `no SceneData interface in ${tracer} -- the check needs updating`);
