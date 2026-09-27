@@ -80,12 +80,28 @@ let handlerInstalled = false;
  */
 const servedModels = new Map();
 
+/**
+ * The same, for the scene editor, which is a different HOST: gen://editor
+ * rather than gen://lab.
+ *
+ * A different host is a different origin, and that is the point. The editor
+ * keeps the models imported into it in IndexedDB, and pt-lab reloads its
+ * origin's IndexedDB into the object library on every init() -- so an editor
+ * sharing the generator's origin would put whatever was last imported there
+ * into every render's library. As two origins they cannot see each other's
+ * storage at all. Separate maps for the same reason: a render clears its own
+ * when it starts, and must not clear the editor's.
+ */
+const editorModels = new Map();
+
 function installHandler() {
   if (handlerInstalled) return;
   protocol.handle(SCHEME, (request) => {
-    const rel = decodeURIComponent(new URL(request.url).pathname).replace(/^\/+/, '');
+    const url = new URL(request.url);
+    const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
     if (rel.startsWith('models/')) {
-      const file = servedModels.get(rel.slice('models/'.length));
+      const served = url.host === 'editor' ? editorModels : servedModels;
+      const file = served.get(rel.slice('models/'.length));
       return file
         ? net.fetch(pathToFileURL(file).toString())
         : new Response('not a model this run verified', { status: 404 });
@@ -101,7 +117,38 @@ function installHandler() {
   handlerInstalled = true;
 }
 
+/** The scene editor's page, with the scheme ready to serve it. */
+function editorURL() {
+  installHandler();
+  return `${SCHEME}://editor/editor.html`;
+}
+
+/**
+ * openSceneFile, plus serving its models to the editor page: each model gets a
+ * gen://editor/models/… URL the page can fetch, and nothing else is servable.
+ */
+function openSceneForEditor(name) {
+  const scene = openSceneFile(name);
+  editorModels.clear();
+  for (const m of scene.models) editorModels.set(m.glb, m.file);
+  return {
+    ...scene,
+    models: scene.models.map(({ key, name: modelName, glb, sha256 }) => ({
+      key, name: modelName, glb, sha256,
+      url: `${SCHEME}://editor/models/${encodeURIComponent(glb)}`,
+    })),
+  };
+}
+
 const PT_SRC = path.join(ROOT, '..', 'pt-lab-workspace', 'packages', 'pt-lab', 'src');
+
+/**
+ * The files under src/generate/ that Electron loads as they are, rather than
+ * through the bundle: this module, in the main process, and the editor page's
+ * preload. Editing either cannot make dist-generate/ stale, and packaging has
+ * to ship both as source.
+ */
+const NOT_BUNDLED = ['driver.js', 'editor-preload.js'];
 
 /**
  * Every file the bundle in dist-generate/ is built FROM.
@@ -113,11 +160,13 @@ const PT_SRC = path.join(ROOT, '..', 'pt-lab-workspace', 'packages', 'pt-lab', '
  * one really does change the output.
  */
 function buildInputs() {
-  const inputs = [
-    path.join(ROOT, 'vite.generate.config.mjs'),
-    path.join(__dirname, 'main.js'),
-    path.join(__dirname, 'index.html'),
-  ];
+  // Both pages -- the generator's and the scene editor's -- and everything
+  // they import. Walked rather than listed, so a new component cannot be
+  // forgotten; the files Electron loads directly are taken back out.
+  const own = [];
+  walkInto(__dirname, own);
+  const runtime = new Set(NOT_BUNDLED.map((f) => path.join(__dirname, f)));
+  const inputs = [path.join(ROOT, 'vite.generate.config.mjs'), ...own.filter((f) => !runtime.has(f))];
   // pt-lab's demo assets are copied into the bundle, so they are a build input
   // now. Swapping the helmet used to take effect immediately and now needs a
   // rebuild -- which is the trade that makes a built generator self-contained.
@@ -465,11 +514,12 @@ const SCENES = {
 const CUBE_YAW_OFFSET = 0.35;
 
 /**
- * Scenes composed in pt-lab's editor, exported from its localStorage.
+ * Scenes composed in the scene editor, one file each.
  *
- * pt-lab keeps saved scenes under one localStorage key, which is per-ORIGIN --
- * so cv-lab's gen:// page cannot see them, and neither can anything else. The
- * file here is that record, copied out once. That indirection is not a
+ * pt-lab's own editor keeps saved scenes under one localStorage key, which is
+ * per-ORIGIN -- so nothing else can see them. cv-lab's Scene Editor frame
+ * saves here instead, and a scene composed in pt-lab's demo can still be
+ * exported and copied in. Files rather than browser storage is not a
  * workaround to be removed later: a scene that lives only in a browser profile
  * is machine-local, unversioned and invisible to the provenance log, which is
  * the opposite of what this project promises. As a FILE it can be committed,
@@ -485,6 +535,30 @@ const SCENES_DIR = path.join(ROOT, 'scenes');
  * scenes is one file, and two different models that share a name are two.
  */
 const MODELS_DIR = path.join(SCENES_DIR, 'models');
+
+/**
+ * Where scenes are read from and saved to, this run.
+ *
+ * A working copy uses the repository's scenes/, so a scene saved in the editor
+ * is a file `git status` shows. A packaged app cannot: its scenes/ would be
+ * inside the .asar, which is read-only -- and was never packaged at all, so an
+ * installed app's Generate pane had nothing to offer. It gets a directory in
+ * Documents instead, beside the Pictures directory its images already go to,
+ * for the same reason: somewhere a person can find, copy and commit.
+ */
+function scenesDir() {
+  if (!isPackaged()) return SCENES_DIR;
+  try {
+    return path.join(app.getPath('documents'), 'CV-Lab', 'scenes');
+  } catch {
+    return path.join(app.getPath('userData'), 'scenes');
+  }
+}
+
+/** The models directory that goes with scenesDir(). */
+function modelsDir() {
+  return path.join(scenesDir(), 'models');
+}
 
 /** Does this look like one SceneData, rather than a map of them? */
 function isSceneData(o) {
@@ -529,7 +603,19 @@ function sceneFileName(file) {
  * the right name. Both files are named, because the likeliest way to get there
  * is now a private copy of a committed scene kept beside it.
  */
-function readSavedScenes(dir = SCENES_DIR) {
+function readSavedScenes(dir = scenesDir()) {
+  return Object.fromEntries(
+    Object.entries(readSceneEntries(dir)).map(([name, entry]) => [name, entry.data])
+  );
+}
+
+/**
+ * readSavedScenes, remembering where each scene came from: its file, and
+ * whether that file holds other scenes too. The editor needs both -- Save
+ * writes a scene back to the file it was read from, and cannot do that to a
+ * file it would have to rewrite someone else's scenes in.
+ */
+function readSceneEntries(dir = scenesDir()) {
   let files;
   try {
     files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
@@ -538,7 +624,6 @@ function readSavedScenes(dir = SCENES_DIR) {
   }
 
   const out = {};
-  const from = {};
   for (const file of files) {
     const full = path.join(dir, file);
     let data;
@@ -547,16 +632,16 @@ function readSavedScenes(dir = SCENES_DIR) {
     } catch (err) {
       throw new Error(`${full} is not valid JSON: ${err.message}`);
     }
-    const entries = isSceneData(data)
-      ? [[sceneFileName(file), data]]
-      : Object.entries(data).filter(([, v]) => isSceneData(v));
+    const shared = !isSceneData(data);
+    const entries = shared
+      ? Object.entries(data).filter(([, v]) => isSceneData(v))
+      : [[sceneFileName(file), data]];
     for (const [name, scene] of entries) {
       if (out[name]) {
         throw new Error(`two scenes under ${dir} are both called "${name}": ` +
-          (from[name] === file ? `twice in ${file}` : `${from[name]} and ${file}`));
+          (out[name].file === file ? `twice in ${file}` : `${out[name].file} and ${file}`));
       }
-      out[name] = scene;
-      from[name] = file;
+      out[name] = { data: scene, file, shared };
     }
   }
   return out;
@@ -565,6 +650,151 @@ function readSavedScenes(dir = SCENES_DIR) {
 /** The names a saved scene can be asked for by, for help text and the app. */
 function savedSceneNames() {
   return Object.keys(readSavedScenes()).sort();
+}
+
+/**
+ * What a new scene may be called.
+ *
+ * It becomes a file name, so no separators -- and no dots either, because the
+ * name is what is left once `.json`, `.local` and `.pt-scene` have been
+ * stripped. A scene called `lamp.local` would be saved as `lamp.local.json`
+ * and read back as `lamp`, private, which is two surprises in one.
+ */
+const SCENE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/**
+ * Save one scene from the editor: the SceneData as a file, and every imported
+ * model it includes beside it in models/.
+ *
+ * `models` maps a model's `glb` file name to its bytes, for the imports the
+ * editor holds itself. A model loaded FROM models/ is not sent back -- the
+ * file it came from is already there, and is checked rather than rewritten.
+ *
+ * Where it goes:
+ *   - a scene that already exists is written back to the file it came from,
+ *     whatever that file is called (`nut-1.pt-scene.local.json` stays that),
+ *     and only when `replace` says the editor opened it. Saving a different
+ *     scene under an existing name is refused: that is how a scene is lost.
+ *   - a new one is `<name>.json`, or `<name>.local.json` with `local`, which
+ *     .gitignore keeps out of the repository. Its new models follow the same
+ *     rule, as `.local.glb`.
+ *   - a scene held in a file of several is refused. Rewriting that file would
+ *     rewrite scenes the editor never opened.
+ *
+ * Every problem is found before anything is written, and the JSON goes last,
+ * through a temporary file: a scene file never names a model that did not
+ * make it to disk, and a failed save never leaves half a scene.
+ *
+ * @returns {{ name: string, file: string, models: string[] }} what was written
+ */
+function saveSceneFile({ name, data, models = {}, local = false, replace = false }, dir = scenesDir()) {
+  if (!SCENE_NAME.test(String(name ?? ''))) {
+    throw new Error(`"${name}" cannot be a scene name: use letters, digits, - and _, ` +
+      `starting with a letter or digit`);
+  }
+  if (!isSceneData(data)) throw new Error(`scene "${name}" is not a pt-lab SceneData`);
+
+  const existing = readSceneEntries(dir)[name];
+  if (existing?.shared) {
+    throw new Error(`scene "${name}" lives in ${existing.file} with other scenes, which saving ` +
+      `it would rewrite. Save it under a new name instead.`);
+  }
+  if (existing && !replace) {
+    throw new Error(`there is already a scene called "${name}" (${existing.file}). ` +
+      `Open it to change it, or choose another name.`);
+  }
+  const file = existing ? existing.file : `${name}${local ? '.local' : ''}.json`;
+  const isLocal = /\.local\.json$/.test(file);
+
+  const modelDir = path.join(dir, 'models');
+  const writes = [];
+  const problems = [];
+  const seen = new Set();
+  for (const o of data.objects) {
+    if (!o.included) continue;
+    if (!o.glb) {
+      if (String(o.key).startsWith('import-')) {
+        problems.push(`${o.key}: pt-lab recorded no model file for it, so no other host could render it`);
+      }
+      continue;
+    }
+    if (seen.has(o.glb)) continue;
+    seen.add(o.glb);
+    if (path.basename(o.glb) !== o.glb || !o.glb.endsWith('.glb') || o.glb.startsWith('.')) {
+      problems.push(`${o.key}: "${o.glb}" is not a plain .glb file name`);
+      continue;
+    }
+    if (!/^[0-9a-f]{64}$/.test(o.sha256 ?? '')) {
+      problems.push(`${o.key}: ${o.glb} has no valid sha256`);
+      continue;
+    }
+    const onDisk = [o.glb, o.glb.replace(/\.glb$/, '.local.glb')]
+      .map((f) => path.join(modelDir, f))
+      .filter((f) => fs.existsSync(f));
+    if (onDisk.length > 0) {
+      // Already there, from an earlier save or an Export. Checked, because a
+      // file that merely has the right name is how the wrong model renders.
+      const actual = sha256Of(fs.readFileSync(onDisk[0]));
+      if (actual !== o.sha256) {
+        problems.push(`${o.key}: ${path.basename(onDisk[0])} is already in ${modelDir} and is a ` +
+          `different model (sha256 ${actual.slice(0, 12)}…, the scene has ${o.sha256.slice(0, 12)}…)`);
+      }
+      continue;
+    }
+    const bytes = models[o.glb];
+    if (!bytes) {
+      problems.push(`${o.key}: ${o.glb} is neither in ${modelDir} nor held by the editor`);
+      continue;
+    }
+    const buffer = Buffer.from(bytes);
+    const actual = sha256Of(buffer);
+    if (actual !== o.sha256) {
+      problems.push(`${o.key}: the editor's bytes for ${o.glb} hash to ${actual.slice(0, 12)}…, ` +
+        `not the ${o.sha256.slice(0, 12)}… the scene records`);
+      continue;
+    }
+    writes.push({ glb: isLocal ? o.glb.replace(/\.glb$/, '.local.glb') : o.glb, buffer });
+  }
+  if (problems.length > 0) {
+    throw new Error(`Scene "${name}" was not saved.\n` + problems.map((p) => `  - ${p}`).join('\n'));
+  }
+
+  fs.mkdirSync(modelDir, { recursive: true });
+  for (const { glb, buffer } of writes) writeAtomically(path.join(modelDir, glb), buffer);
+  writeAtomically(path.join(dir, file), JSON.stringify(data, null, 2) + '\n');
+  return { name, file: path.join(dir, file), models: writes.map((w) => w.glb) };
+}
+
+function sha256Of(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+/** Write through a temporary file, so a reader never sees half of one. */
+function writeAtomically(file, contents) {
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, contents);
+  fs.renameSync(tmp, file);
+}
+
+/**
+ * One scene as the editor opens it: the SceneData, which file it came from,
+ * and the imported models it includes, found and hash-checked by the same
+ * resolveModels a render uses -- so the editor refuses exactly the scenes the
+ * generator would.
+ */
+function openSceneFile(name, dir = scenesDir()) {
+  const entry = readSceneEntries(dir)[name];
+  if (!entry) throw new Error(`there is no scene called "${name}" in ${dir}`);
+  const { models, problems } = resolveModels(entry.data, path.join(dir, 'models'));
+  if (problems.length > 0) throw new Error(modelProblems(`${name}`, problems));
+  return {
+    name,
+    file: entry.file,
+    shared: entry.shared,
+    local: /\.local\.json$/.test(entry.file),
+    data: entry.data,
+    models,
+  };
 }
 
 /**
@@ -586,7 +816,7 @@ function savedScene(name) {
     const have = savedSceneNames();
     throw new Error(
       `unknown saved scene "${name}"` +
-      (have.length ? ` (have: ${have.join(', ')})` : ` -- ${SCENES_DIR} has none`)
+      (have.length ? ` (have: ${have.join(', ')})` : ` -- ${scenesDir()} has none`)
     );
   }
   return sceneFromData(name, data);
@@ -664,7 +894,7 @@ function sceneFromData(name, data) {
  * them. Nothing here needs Electron or a GPU, which is why it runs before
  * either is started -- and under --dry-run.
  */
-function resolveModels(sceneData, dir = MODELS_DIR) {
+function resolveModels(sceneData, dir = modelsDir()) {
   const models = [];
   const problems = [];
   const seen = new Map();
@@ -1045,6 +1275,7 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
 
 module.exports = {
   generate, windowHost, plan, resolveScene, savedSceneNames, sceneFromData, readSavedScenes, registerScheme, checkPrerequisites, buildInputs,
+  readSceneEntries, saveSceneFile, openSceneFile, openSceneForEditor, editorURL, scenesDir, modelsDir, SCENE_NAME,
   parseLight, resolveLights, requestedKeys, unbuiltObjects, resolveModels, modelProblems,
   DEFAULTS, SCENES, LIGHT_TYPES, MODELS_DIR, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS,
   assetsDir, defaultOutputDir, isPackaged,

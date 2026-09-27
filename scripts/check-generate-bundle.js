@@ -40,8 +40,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
-const PAGE = path.join(ROOT, 'src', 'generate', 'main.js');
-const BUNDLE = path.join(ROOT, 'dist-generate', 'generate.js');
+/**
+ * Every source that calls pt-lab: the generator page, and the scene editor
+ * with its camera panel. The editor was the second caller, and a check that
+ * read only the first would have passed over it.
+ */
+const PAGES = ['main.js', 'Editor.svelte', 'CameraControls.svelte']
+  .map((f) => path.join(ROOT, 'src', 'generate', f));
+const OUT = path.join(ROOT, 'dist-generate');
+const BUNDLE = path.join(OUT, 'generate.js');
 const PT_SRC = path.join(ROOT, '..', 'pt-lab-workspace', 'packages', 'pt-lab', 'src');
 
 /**
@@ -55,7 +62,7 @@ const PT_SRC = path.join(ROOT, '..', 'pt-lab-workspace', 'packages', 'pt-lab', '
  */
 function methodsCalledOnLab(source) {
   return [...new Set(
-    [...source.matchAll(/\blab\s*\.\s*([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1])
+    [...source.matchAll(/\blab\s*\??\.\s*([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1])
   )].sort();
 }
 
@@ -80,6 +87,23 @@ function missingFrom(bundle, names) {
   return names.filter((name) => !definedIn(bundle, name));
 }
 
+/**
+ * All of the built JavaScript, as one string.
+ *
+ * Not generate.js alone: with two pages in one build, pt-lab's code sits in a
+ * chunk both import, so its definitions are no longer in the entry file. A
+ * check reading only that file would report every method missing -- or, had
+ * it been written the other way round, find calls and definitions in
+ * different files and prove nothing.
+ */
+function readBundle(dir = OUT) {
+  return fs.readdirSync(dir)
+    .filter((f) => f.endsWith('.js'))
+    .sort()
+    .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
+    .join('\n');
+}
+
 /* ------------------------------------------------------------------ */
 
 function main() {
@@ -91,18 +115,21 @@ function main() {
     return 1;
   }
 
-  const page = fs.readFileSync(PAGE, 'utf8');
-  const bundle = fs.readFileSync(BUNDLE, 'utf8');
-  const called = methodsCalledOnLab(page);
-
-  if (called.length === 0) {
-    console.error(
-      `FAIL: found no pt-lab calls in ${path.relative(ROOT, PAGE)}\n` +
-      `  This check looks for \`lab.<method>(\`. If that variable was renamed, ` +
-      `the check needs updating — it is not evidence that everything is fine.`
-    );
-    return 1;
+  const bundle = readBundle();
+  // Per page, so a page whose calls stopped being found is named, rather than
+  // hidden by the other page's calls.
+  for (const page of PAGES) {
+    if (methodsCalledOnLab(fs.readFileSync(page, 'utf8')).length === 0) {
+      console.error(
+        `FAIL: found no pt-lab calls in ${path.relative(ROOT, page)}\n` +
+        `  This check looks for \`lab.<method>(\` and \`lab?.<method>(\`. If that ` +
+        `variable was renamed, the check needs updating — it is not evidence that ` +
+        `everything is fine.`
+      );
+      return 1;
+    }
   }
+  const called = methodsCalledOnLab(PAGES.map((p) => fs.readFileSync(p, 'utf8')).join('\n'));
 
   const missing = missingFrom(bundle, called);
   if (missing.length > 0) {
@@ -114,10 +141,10 @@ function main() {
      */
     console.error(
       `FAIL: the bundled pt-lab does not define ${missing.length} method(s) ` +
-      `that src/generate/main.js calls:\n` +
+      `that the generator or the scene editor calls:\n` +
       missing.map((m) => `  - lab.${m}()`).join('\n') + '\n\n' +
-      `The generator was built against a pt-lab that is behind the code calling\n` +
-      `it, so image generation would build, package and launch cleanly and then\n` +
+      `They were built against a pt-lab that is behind the code calling it, so\n` +
+      `the app would build, package and launch cleanly and then\n` +
       `throw the moment those are used.\n\n` +
       `  ${path.relative(ROOT, PT_SRC)}\n\n` +
       `Check that the sibling checkout has the commit you expect — an unpushed\n` +
@@ -127,11 +154,11 @@ function main() {
   }
 
   console.log(
-    `  ok   the bundle defines all ${called.length} pt-lab methods the page calls`
+    `  ok   the bundle defines all ${called.length} pt-lab methods the pages call`
   );
   return 0;
 }
 
 if (require.main === module) process.exit(main());
 
-module.exports = { methodsCalledOnLab, definedIn, missingFrom };
+module.exports = { methodsCalledOnLab, definedIn, missingFrom, readBundle, PAGES };

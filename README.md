@@ -178,9 +178,11 @@ tracer itself, converging while the sweep runs. Images default to
 never chose.
 
 **The pane offers the scenes in `scenes/`, and nothing else.** They are
-composed in pt-lab's editor and exported as JSON — one file per scene, named
-for the scene, carrying its objects, their materials and transforms, the room
-and a camera. `scenes/cube-1.json` ships with the repository. A scene records
+composed in **Panes → Scene Editor…** (⌘E) — pt-lab's editor, running in the
+app, whose Save writes the file directly — one file per scene, named for the
+scene, carrying its objects, their materials and transforms, the room, its
+lights and a camera. In an installed app they live in
+`~/Documents/CV-Lab/scenes/`. `scenes/cube-1.json` ships with the repository. A scene records
 the room it was composed in, so the pane has no room control: the file decides.
 
 From a working copy there is a command line too:

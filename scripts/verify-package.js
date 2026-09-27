@@ -145,7 +145,9 @@ for (const asar of asars) {
         'this build. Run `npm run build:generate` before packaging.'
     );
   } else {
-    const missing = ['index.html', 'generate.js']
+    // editor.html and editor.js are the Scene Editor, built by the same
+    // config; without them the frame opens onto a 404.
+    const missing = ['index.html', 'generate.js', 'editor.html', 'editor.js']
       .filter((f) => !generator.files[f]);
     const assets = generator.files['assets']?.files ?? {};
     // The two init() fetches on every run, whatever the scene. The .tza
@@ -170,6 +172,8 @@ for (const asar of asars) {
     ['src/renderer/', tree.files['src']?.files?.['renderer'], '"!src/renderer/**/*"'],
     ['src/generate/main.js', tree.files['src']?.files?.['generate']?.files?.['main.js'],
      '"!src/generate/main.js"'],
+    ['src/generate/Editor.svelte', tree.files['src']?.files?.['generate']?.files?.['Editor.svelte'],
+     '"!src/generate/*.svelte"'],
   ]) {
     if (node) {
       problems.push(
@@ -181,11 +185,15 @@ for (const asar of asars) {
   // …but driver.js is main-process CommonJS, required at run time. Losing it
   // to an over-broad exclusion would break generation with a module-not-found
   // at startup.
-  if (!tree.files['src']?.files?.['generate']?.files?.['driver.js']) {
-    problems.push(
-      `${where}: src/generate/driver.js is missing -- it is required at run ` +
-        'time, not bundled, so an exclusion has gone too wide'
-    );
+  // The same for the scene editor's preload, which Electron loads into the
+  // editor's view as it is.
+  for (const file of ['driver.js', 'editor-preload.js']) {
+    if (!tree.files['src']?.files?.['generate']?.files?.[file]) {
+      problems.push(
+        `${where}: src/generate/${file} is missing -- it is loaded at run ` +
+          'time, not bundled, so an exclusion has gone too wide'
+      );
+    }
   }
 }
 

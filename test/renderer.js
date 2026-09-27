@@ -640,6 +640,35 @@ async function collect(win, swatch, linearPng, discImage) {
       })(),
     };
 
+    // --- the Scene Editor frame ---
+    /*
+     * The frame only hosts pt-lab's editor, which the main process lays over it
+     * in a view of its own and which needs a GPU -- so what is checkable here is
+     * the frame: that the menu opens exactly one, that it asks the main process
+     * for the editor, and that closing it tells the main process so. The last
+     * is the one that matters: a frame that closed without saying so would
+     * leave the editor's view floating over the window with nothing under it.
+     */
+    menu('scene-editor');
+    await sleep(300);
+    const editorPane = () => document.querySelector('.editor-pane');
+    r.editor = {
+      opened: !!editorPane(),
+      single: (menu('scene-editor'), await sleep(200), document.querySelectorAll('.editor-pane').length),
+      explains: (editorPane()?.querySelector('.unavailable')?.textContent ?? '').trim(),
+    };
+    {
+      const paneId = editorPane()?.dataset.pane;
+      let state;
+      lab2().paneStore.subscribe((v) => { state = v; })();
+      const frameId = Object.entries(state?.byFrame ?? {})
+        .find(([, panes]) => panes.some((p) => p.id === paneId))?.[0];
+      r.editor.frameFound = !!frameId;
+      if (frameId) lab2().frames.closeFrame(Number(frameId));
+      await sleep(200);
+      r.editor.goneAfterClose = !editorPane();
+    }
+
     /*
      * No control paints text outside itself.
      *
@@ -1022,6 +1051,17 @@ app.whenReady().then(async () => {
   const viewBounds = [];
   ipcMain.handle('generate:view-bounds', (_event, bounds) => { viewBounds.push(bounds); });
 
+  /*
+   * The Scene Editor's frame-side channels. The editor itself is a
+   * WebContentsView the app's main process creates; here each call is only
+   * recorded, and `open` answers as the app would -- null, or the generator's
+   * own sentence about why it cannot run.
+   */
+  const editorCalls = [];
+  ipcMain.handle('editor:open', () => { editorCalls.push('open'); return checkPrerequisites(); });
+  ipcMain.handle('editor:close', () => { editorCalls.push('close'); return 'closed'; });
+  ipcMain.handle('editor:view-bounds', () => { editorCalls.push('bounds'); });
+
   const win = new BrowserWindow({
     show: false,
     width: 1320,
@@ -1085,8 +1125,13 @@ app.whenReady().then(async () => {
      * nothing; and `thumbnail`, which draws a file into a canvas the caller
      * names. None hands page script a path it did not already have, none
      * takes one, and none returns pixels.
+     *
+     * `editor` is newer still, and narrower: open, close, and a rectangle.
+     * It does not read or write a scene -- the editor page does that through
+     * a preload of its own, checked by sender in the main process -- so this
+     * window gains no reach into scenes/ at all.
      */
-    assert.deepEqual(r.bridge, ['basename', 'confirmReset', 'draw', 'features',
+    assert.deepEqual(r.bridge, ['basename', 'confirmReset', 'draw', 'editor', 'features',
       'generate', 'histogram', 'log', 'minVisible', 'onMenuCommand', 'openImage',
       'ops', 'pipeline', 'pipelines', 'probeAll', 'quote', 'reset', 'run',
       'saveSession', 'sessionJSON', 'setMenuState', 'slots', 'thumbnail',
@@ -1264,7 +1309,8 @@ app.whenReady().then(async () => {
 
     const byLabel = (label) => items.find((i) => i.label === label);
     for (const label of ['Open Image…', 'Save Session…', 'Discard Session…',
-                         'Reset View', 'New Slot Pane', 'New Log Pane']) {
+                         'Reset View', 'New Slot Pane', 'New Log Pane',
+                         'Scene Editor…', 'Generate Images…']) {
       assert.ok(byLabel(label), `the menu has no "${label}" item`);
     }
 
@@ -1455,6 +1501,21 @@ app.whenReady().then(async () => {
     // process would lay pt-lab's webContents over the controls.
     assert.equal(r.generate.isRightChild, true,
       'the render pane is not the right-hand child of the split');
+  });
+
+  test('the Scene Editor frame opens once, asks for the editor, and lets go of it', () => {
+    assert.equal(r.editor.opened, true, 'the menu command should open a Scene Editor frame');
+    assert.equal(r.editor.single, 1, 'a second command should not open a second frame');
+    assert.ok(editorCalls.includes('open'), 'the frame never asked the main process for the editor');
+    // Without a build it must say so; with one, it must have reported where to
+    // put the view. Neither is the failure.
+    assert.ok(r.editor.explains === '' ? editorCalls.includes('bounds')
+      : /not built|missing|checkout|older than/i.test(r.editor.explains),
+      `the frame neither placed the editor nor explained why not: ${JSON.stringify(r.editor)}`);
+    assert.equal(r.editor.frameFound, true, 'could not find the frame to close it');
+    assert.equal(r.editor.goneAfterClose, true);
+    assert.ok(editorCalls.includes('close'),
+      'closing the frame did not tell the main process, so the editor view would outlive it');
   });
 
   test('no control paints its text outside itself', () => {

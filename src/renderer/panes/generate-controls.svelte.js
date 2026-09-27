@@ -300,6 +300,20 @@ export function attachGenerateControls(paneId, options, scenes, handlers) {
       else if (row.kind === 'dropdown') set(paneId, id, { selectedId: value });
       else set(paneId, id, { value: String(value ?? '') });
     },
+    /**
+     * Offer a new list of scenes, keeping the selection if it is still there.
+     *
+     * The column is built once, from the list the pane had on opening; the
+     * Scene Editor adds to that list while the column is on screen.
+     */
+    setScenes(names) {
+      const id = ids.rows.scene;
+      const control = id ? controlStore.getControl(paneId, id) : null;
+      if (!control) return;
+      const items = names.map((name) => ({ id: `saved:${name}`, label: name }));
+      const keep = items.some((i) => i.id === control.selectedId) ? control.selectedId : items[0]?.id;
+      controlStore.updateControl(paneId, id, { items, selectedId: keep });
+    },
     /** Reflect run state: the fields lock while a sweep is in flight. */
     update({ running, hint, runLabel }) {
       for (const row of ROWS) set(paneId, ids.rows[row.key], { enabled: !running });

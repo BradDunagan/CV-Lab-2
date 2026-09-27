@@ -630,7 +630,8 @@ prepends the three loads correctly, per image.
 ### Panes
 
 A tiling workspace. **Panes → New Slot Pane** (⌘N) adds a tile; **New Log Pane**
-adds the session log; **Generate Images…** (⌘G) opens the generator frame.
+adds the session log; **Scene Editor…** (⌘E) opens pt-lab's scene editor, and
+**Generate Images…** (⌘G) opens the generator frame.
 
 A slot pane shows one slot. Click the slot name in its header to bind a
 different one. Its header reads `A#2  512×512×1 f32 linear` — name, version,
@@ -772,16 +773,62 @@ It needs a GPU capable of WebGL path tracing, which is the one real
 requirement, and about 20 s per image. The frame is split: the controls on the
 left, and the tracer itself on the right, converging while the sweep runs.
 
+### Composing a scene: Panes → Scene Editor…
+
+**Panes → Scene Editor…** (⌘E) opens pt-lab's scene editor in a frame of its
+own: room, objects, materials, transforms, lights and camera, with a raster
+view for editing and a path-traced preview of what Generate will render. It is
+pt-lab's editor and pt-lab's panels, running in the app, from the same bundle
+as the generator — so it needs the same build, and says so when it is missing.
+
+What differs from pt-lab's own editor is where a scene goes. **Save writes
+`scenes/<name>.json`**, the file the Generate pane offers and the CLI takes as
+`--scene saved:<name>` — so there is no Export step and nothing to copy, and
+Generate's scene list updates the moment a save lands.
+
+- **Save** writes a scene back to the file it was opened from, whatever that
+  file is called: `nut-1.pt-scene.local.json` stays that.
+- **Save As** takes a new name — letters, digits, `-` and `_`, no dots, because
+  the name is what is left after the suffixes are stripped. An existing name is
+  refused rather than overwritten; open that scene to change it. Tick
+  **private** for `<name>.local.json`, which is not committed.
+- **Imported models** travel with the save. A `.glb` imported in the editor is
+  written to `scenes/models/` under pt-lab's name-plus-hash file name —
+  `.local.glb` for a private scene — and a model already there is hash-checked
+  rather than rewritten. Every problem is found before anything is written, so
+  a refused save leaves nothing behind.
+- **Opening** a scene runs the same model checks a render does, so the editor
+  refuses exactly the scenes the generator would.
+- A scene in a file that holds several — the map form below — opens, but saves
+  only under a new name: saving it back would rewrite the others.
+- Closing the frame with unsaved changes asks first; **Keep Editing** reopens
+  it with the editor as it was.
+
+Left out on purpose: pt-lab's Save PNG, depth-pass and rotation-series
+exports, and its demo scenes. Images come from Generate, as a sweep with
+provenance. So is the field of view: a scene does not record one, so a FOV
+set in the editor would look saved and not be.
+
+The editor runs as its own origin (`gen://editor`), apart from the generator
+(`gen://lab`). pt-lab keeps imported models in its origin's IndexedDB and loads
+all of them into the library on every start, so sharing an origin would put
+whatever was last imported in the editor into every render's library.
+
+**In an installed app** scenes live in `~/Documents/CV-Lab/scenes/` (the
+app bundle is read-only), beside the `~/Pictures/CV-Lab` its images go to. A
+working copy uses the repository's `scenes/`.
+
 ### Which scenes the pane offers
 
 Exactly the ones in `scenes/`, and nothing else. A scene there is a file —
-one per scene, named for the scene — composed in pt-lab's editor and exported
-as JSON: its objects with their materials and transforms, the room, any
-lights added in the editor, and a camera. `scenes/cube-1.json` ships with the repository.
+one per scene, named for the scene — composed in the Scene Editor (or in
+pt-lab's own editor and exported as JSON): its objects with their materials and
+transforms, the room, any lights added in the editor, and a camera.
+`scenes/cube-1.json` ships with the repository.
 
-Composing them elsewhere is deliberate. pt-lab's editor already does that job,
-and its scenes live in `localStorage`, which is partitioned by ORIGIN — cv-lab
-cannot read it, and neither can another browser, another machine, or CI. As
+Files rather than browser storage is deliberate. pt-lab's own editor keeps its
+scenes in `localStorage`, which is partitioned by ORIGIN — nothing else can read
+it: not another browser, another machine, or CI. As
 files they can be committed, hashed and replayed, which is what this project
 promises of everything else. `scenes/*.local.json` is gitignored, for a scene a
 working copy should have and a public repository should not. The suffix is not

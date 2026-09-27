@@ -95,8 +95,26 @@ export default defineConfig({
     modulePreload: false,
     target: 'chrome130',
     sourcemap: false,
+    /*
+     * Two pages from one build: the generator, and the scene editor. One
+     * build rather than two so they share one copy of pt-lab -- Rollup puts it
+     * in a chunk both entries import, instead of shipping it twice.
+     *
+     * The generator's entry keeps the name `generate.js`: checkPrerequisites
+     * dates the build by it. Nothing may assume pt-lab's code is IN it, though
+     * -- it is in the shared chunk -- which is why check-generate-bundle.js
+     * reads every .js here rather than that one file.
+     */
     rollupOptions: {
-      output: { entryFileNames: 'generate.js', chunkFileNames: '[name].js', assetFileNames: '[name][extname]' },
+      input: {
+        index: path.join(HERE, 'src', 'generate', 'index.html'),
+        editor: path.join(HERE, 'src', 'generate', 'editor.html'),
+      },
+      output: {
+        entryFileNames: (chunk) => (chunk.name === 'index' ? 'generate.js' : '[name].js'),
+        chunkFileNames: '[name].js',
+        assetFileNames: '[name][extname]',
+      },
     },
   },
 });

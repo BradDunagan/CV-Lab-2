@@ -29,6 +29,7 @@
   import SlotPane from './panes/SlotPane.svelte';
   import LogPane from './panes/LogPane.svelte';
   import GeneratePane from './panes/GeneratePane.svelte';
+  import EditorPane from './panes/EditorPane.svelte';
   import CommandBar from './CommandBar.svelte';
   import {
     lab, viewport, display, slots, probe, status, setStatus, actions,
@@ -54,7 +55,9 @@
    */
   // 'Render' is the Generate frame's right-hand pane, which is the one that
   // carries the component; 'Generate' is kept for a frame made before it split.
-  const byTitle = { Log: LogPane, Generate: GeneratePane, Render: GeneratePane };
+  const byTitle = {
+    Log: LogPane, Generate: GeneratePane, Render: GeneratePane, 'Scene Editor': EditorPane,
+  };
   const isSlotTitle = (t) => typeof t === 'string' && (t === 'Slot' || t.startsWith('Slot '));
 
   function paneContentProvider(paneId, meta) {
@@ -497,6 +500,24 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* the scene editor frame                                              */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * One pane, no split: the editor brings its own sidebar, because it is
+   * pt-lab's editor running in a view of its own rather than paneless
+   * controls. Large, because composing a scene is looking at it -- and the
+   * sidebar alone takes 270px of the width.
+   */
+  function newEditorFrame() {
+    const box = contentBox();
+    const w = Math.min(box.width - GAP * 2, 1100);
+    const h = Math.min(box.height - GAP * 2, Math.round(box.height * 0.8));
+    return makeFrame('Scene Editor', EditorPane,
+      Math.round((box.width - w) / 2), Math.round((box.height - h) / 2), w, h);
+  }
+
+  /* ------------------------------------------------------------------ */
   /* running a pipeline over one generated image                         */
   /* ------------------------------------------------------------------ */
 
@@ -819,6 +840,14 @@
           .find(([id]) => contentRegistry.get(id) === GeneratePane);
         if (open) { setStatus('The Generate frame is already open.'); break; }
         newGenerateFrame();
+        break;
+      }
+      case 'scene-editor': {
+        // One at a time: there is one editor view, and two frames would be
+        // two rectangles claiming it.
+        const open = Object.keys(paneData.byId).some((id) => contentRegistry.get(id) === EditorPane);
+        if (open) { setStatus('The Scene Editor is already open.'); break; }
+        newEditorFrame();
         break;
       }
       case 'new-log-pane': {

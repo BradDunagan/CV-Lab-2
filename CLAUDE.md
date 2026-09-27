@@ -48,7 +48,9 @@ scripts/score.js     tallies match records: precision, recall, and which
 scripts/overlay.js   draws ground truth and detections over an image — every
                      defect in the scoring machinery was found this way
 src/generate/        the generator: page (bundled separately) + main-process
-                     driver shared by the CLI and the app's Generate frame
+                     driver shared by the CLI and the app's Generate frame;
+                     also the Scene Editor page (pt-lab's editor, saving to
+                     scenes/ through its own sandboxed preload)
 src/menu.js          the application menu — global commands live here, not in the UI
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels

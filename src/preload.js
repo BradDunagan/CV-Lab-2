@@ -331,6 +331,28 @@ contextBridge.exposeInMainWorld('lab', {
       ipcRenderer.on('generate:progress', listener);
       return () => ipcRenderer.removeListener('generate:progress', listener);
     },
+    /**
+     * The scene list, whenever the scene editor saves one -- an array of
+     * names, or { error } if scenes/ could not be read.
+     */
+    onScenesChanged: (callback) => {
+      const listener = (_event, names) => callback(names);
+      ipcRenderer.on('scenes:changed', listener);
+      return () => ipcRenderer.removeListener('scenes:changed', listener);
+    },
+  },
+
+  /*
+   * The scene editor. The frame only hosts it: pt-lab's editor runs in a view
+   * of its own that the main process lays over the pane, and reads and writes
+   * scenes/ through a preload of its own. Nothing here touches a scene.
+   */
+  editor: {
+    /** null once the editor is showing, or a sentence saying why it cannot. */
+    open: () => ipcRenderer.invoke('editor:open'),
+    /** The frame has gone. May ask about unsaved changes, and reopen it. */
+    close: () => ipcRenderer.invoke('editor:close'),
+    setViewBounds: (bounds) => ipcRenderer.invoke('editor:view-bounds', bounds),
   },
 
   /**

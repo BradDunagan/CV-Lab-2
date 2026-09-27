@@ -618,9 +618,10 @@ test('the page\'s pt-lab calls are found by name', () => {
     const t = lab.getObjectTransform(id);
     other.notALabMethod();
     lab.init({});
+    lab?.setLight(id, l);
   `);
-  assert.deepEqual(found, ['getObjectTransform', 'init', 'setRoom'],
-    'deduplicated, sorted, and only calls on the lab');
+  assert.deepEqual(found, ['getObjectTransform', 'init', 'setLight', 'setRoom'],
+    'deduplicated, sorted, only calls on the lab -- and the editor\'s lab?. counts');
 });
 
 test('the real bundle defines every pt-lab method the real page calls', () => {
@@ -635,11 +636,12 @@ test('the real bundle defines every pt-lab method the real page calls', () => {
   const bundle = path.join(__dirname, '..', 'dist-generate', 'generate.js');
   if (!fs.existsSync(bundle)) return;
 
-  const { methodsCalledOnLab, missingFrom } = require('../scripts/check-generate-bundle');
-  const page = fs.readFileSync(path.join(__dirname, '..', 'src', 'generate', 'main.js'), 'utf8');
-  const called = methodsCalledOnLab(page);
-  assert.ok(called.length > 5, `expected the page to call pt-lab, found ${called.length} methods`);
-  assert.deepEqual(missingFrom(fs.readFileSync(bundle, 'utf8'), called), []);
+  const { methodsCalledOnLab, missingFrom, readBundle, PAGES } = require('../scripts/check-generate-bundle');
+  for (const page of PAGES) {
+    const called = methodsCalledOnLab(fs.readFileSync(page, 'utf8'));
+    assert.ok(called.length > 1, `expected ${path.basename(page)} to call pt-lab, found ${called.length} methods`);
+    assert.deepEqual(missingFrom(readBundle(), called), [], path.basename(page));
+  }
 });
 
 test('the packaged application is found on every platform layout', () => {
@@ -1265,6 +1267,151 @@ test('the generator page forwards every field of a saved scene to pt-lab', () =>
     assert.ok(forwarded.includes(field),
       `SceneData.${field} is never passed to lab.applyScene, so a saved scene loses it`);
   }
+});
+
+/* --- the scene editor's Save ------------------------------------------ */
+
+/** A scratch scenes/ directory, a SceneData, and a model with a real hash. */
+function sceneFixture() {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const crypto = require('node:crypto');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cvlab-save-'));
+  const bytes = Buffer.from('glTF pretend model bytes');
+  const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+  const glb = `nut-${sha256.slice(0, 12)}.glb`;
+  const scene = (objects = []) => ({
+    version: 1, room: 'room-arealight', objects, lights: [],
+    camera: { position: [0, 1, 3], target: [0, 0, 0] },
+  });
+  const nut = { key: 'import-abc-0', included: true, glb, sha256 };
+  return { fs, path, dir, bytes, sha256, glb, scene, nut };
+}
+
+test('Save writes a scene the generator reads back unchanged', () => {
+  const { saveSceneFile, readSavedScenes, resolveModels } = require('../src/generate/driver');
+  const { fs, path, dir, bytes, glb, scene, nut } = sceneFixture();
+
+  const data = scene([{ key: 'Cube', included: true }, nut]);
+  const saved = saveSceneFile({ name: 'bench-1', data, models: { [glb]: bytes } }, dir);
+  assert.equal(path.basename(saved.file), 'bench-1.json');
+  assert.deepEqual(readSavedScenes(dir)['bench-1'], data,
+    'what the generator reads must be exactly what the editor saved');
+
+  // The render path finds and verifies the model the editor wrote.
+  const { models, problems } = resolveModels(data, path.join(dir, 'models'));
+  assert.deepEqual(problems, []);
+  assert.equal(models.length, 1);
+  assert.ok(fs.readFileSync(models[0].file).equals(bytes));
+});
+
+test('Save keeps a private scene private, models included', () => {
+  const { saveSceneFile, readSavedScenes } = require('../src/generate/driver');
+  const { fs, path, dir, bytes, glb, scene, nut } = sceneFixture();
+
+  saveSceneFile({ name: 'mine', local: true, data: scene([nut]), models: { [glb]: bytes } }, dir);
+  assert.ok(fs.existsSync(path.join(dir, 'mine.local.json')),
+    '.local.json is what .gitignore keeps out of the repository');
+  assert.ok(fs.existsSync(path.join(dir, 'models', glb.replace(/\.glb$/, '.local.glb'))),
+    'a private scene\'s new model must not be published by the back door');
+  assert.ok(!fs.existsSync(path.join(dir, 'models', glb)));
+  assert.ok(readSavedScenes(dir).mine, 'and it is still called "mine"');
+});
+
+test('Save never overwrites a scene it did not open, and writes back to the one it did', () => {
+  const { saveSceneFile, readSavedScenes } = require('../src/generate/driver');
+  const { fs, path, dir, scene } = sceneFixture();
+
+  // An exported pt-lab scene, kept private: its file name is not <name>.json.
+  fs.writeFileSync(path.join(dir, 'nut-1.pt-scene.local.json'), JSON.stringify(scene()));
+  assert.throws(() => saveSceneFile({ name: 'nut-1', data: scene() }, dir),
+    /already a scene called "nut-1" \(nut-1\.pt-scene\.local\.json\)/,
+    'saving a new scene under an existing name is how a scene is lost');
+
+  const changed = { ...scene(), room: 'room-emissive' };
+  const saved = saveSceneFile({ name: 'nut-1', data: changed, replace: true }, dir);
+  assert.equal(path.basename(saved.file), 'nut-1.pt-scene.local.json',
+    'written back where it came from, not beside it as a second nut-1');
+  assert.deepEqual(fs.readdirSync(dir).filter((f) => f.endsWith('.json')), ['nut-1.pt-scene.local.json']);
+  assert.equal(readSavedScenes(dir)['nut-1'].room, 'room-emissive');
+});
+
+test('Save refuses to rewrite a file that holds other scenes', () => {
+  const { saveSceneFile } = require('../src/generate/driver');
+  const { fs, path, dir, scene } = sceneFixture();
+  const before = JSON.stringify({ a: scene(), b: scene() });
+  fs.writeFileSync(path.join(dir, 'pasted.json'), before);
+  assert.throws(() => saveSceneFile({ name: 'a', data: scene(), replace: true }, dir),
+    /lives in pasted\.json with other scenes/);
+  assert.equal(fs.readFileSync(path.join(dir, 'pasted.json'), 'utf8'), before);
+});
+
+test('a scene name cannot smuggle in a path or a suffix', () => {
+  const { saveSceneFile } = require('../src/generate/driver');
+  const { fs, dir, scene } = sceneFixture();
+  for (const name of ['', '../x', 'a/b', 'lamp.local', 'x.pt-scene', '.hidden', '-flag', 'a b']) {
+    assert.throws(() => saveSceneFile({ name, data: scene() }, dir), /cannot be a scene name/,
+      `"${name}" should be refused`);
+  }
+  assert.deepEqual(fs.readdirSync(dir), [], 'and nothing is written for any of them');
+});
+
+test('Save checks every model before writing anything', () => {
+  const { saveSceneFile } = require('../src/generate/driver');
+  const { fs, path, dir, bytes, glb, scene, nut } = sceneFixture();
+
+  // Bytes that are not the model the scene records.
+  assert.throws(
+    () => saveSceneFile({ name: 's', data: scene([nut]), models: { [glb]: Buffer.from('other') } }, dir),
+    /hash to .* not the/);
+  // No bytes, and no file to fall back on.
+  assert.throws(() => saveSceneFile({ name: 's', data: scene([nut]) }, dir),
+    /neither in .* nor held by the editor/);
+  // An import pt-lab could not hash, which no other host could ever render.
+  assert.throws(() => saveSceneFile({ name: 's', data: scene([{ key: 'import-x', included: true }]) }, dir),
+    /recorded no model file/);
+  assert.deepEqual(fs.readdirSync(dir), [], 'a refused save leaves no scene and no model behind');
+
+  // A model already on disk from an earlier save needs no bytes -- but is
+  // checked, not trusted by name.
+  fs.mkdirSync(path.join(dir, 'models'));
+  fs.writeFileSync(path.join(dir, 'models', glb), bytes);
+  saveSceneFile({ name: 's', data: scene([nut]) }, dir);
+  fs.writeFileSync(path.join(dir, 'models', glb), 'tampered');
+  assert.throws(() => saveSceneFile({ name: 's', data: scene([nut]), replace: true }, dir),
+    /already in .* and is a different model/);
+
+  // Excluded models are not the scene's business.
+  saveSceneFile({ name: 't', data: scene([{ ...nut, included: false }]) }, dir);
+});
+
+test('the editor opens exactly the scenes the generator would render', () => {
+  const { openSceneFile, saveSceneFile } = require('../src/generate/driver');
+  const { fs, path, dir, bytes, glb, scene, nut } = sceneFixture();
+  saveSceneFile({ name: 'ok', data: scene([nut]), models: { [glb]: bytes } }, dir);
+
+  const opened = openSceneFile('ok', dir);
+  assert.equal(opened.file, 'ok.json');
+  assert.equal(opened.local, false);
+  assert.deepEqual(opened.models.map((m) => m.key), [nut.key]);
+
+  fs.writeFileSync(path.join(dir, 'models', glb), 'not the nut');
+  assert.throws(() => openSceneFile('ok', dir), /cannot be rendered/,
+    'a scene whose model changed on disk is refused here, not edited into a lie');
+  assert.throws(() => openSceneFile('nope', dir), /no scene called "nope"/);
+});
+
+test('the editor page is a build input, and its preload is not', () => {
+  const path = require('node:path');
+  const { buildInputs } = require('../src/generate/driver');
+  const inputs = buildInputs();
+  const here = (f) => path.join(__dirname, '..', 'src', 'generate', f);
+  for (const f of ['editor.html', 'editor.js', 'Editor.svelte', 'main.js', 'index.html']) {
+    assert.ok(inputs.includes(here(f)), `${f} is bundled, so editing it must make the build stale`);
+  }
+  assert.ok(!inputs.includes(here('editor-preload.js')),
+    'the preload is loaded by Electron as it is, like driver.js');
 });
 
 return drain();

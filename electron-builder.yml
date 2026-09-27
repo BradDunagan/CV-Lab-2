@@ -32,8 +32,12 @@ asarUnpack:
 # it would put two copies of the same thing in the package, one of which cannot
 # run: src/renderer/ is the app's Svelte source, and src/generate/main.js and
 # index.html are the generator page's -- both are already compiled, into
-# dist-renderer/ and dist-generate/ respectively. src/generate/driver.js STAYS:
-# it is main-process CommonJS, required at runtime, and is not bundled at all.
+# dist-renderer/ and dist-generate/ respectively -- the scene editor's page
+# (editor.*, *.svelte) included. src/generate/driver.js STAYS: it is
+# main-process CommonJS, required at runtime, and is not bundled at all. So
+# does src/generate/editor-preload.js, which Electron loads into the scene
+# editor's view as it is; leaving it out would open an editor with no way to
+# read or save a scene.
 #
 # dist-generate/ is the image generator: the pt-lab bundle plus the model, the
 # environment and the denoiser weights the build copies in beside it. About
@@ -67,6 +71,9 @@ files:
   - "!src/renderer/**/*"
   - "!src/generate/main.js"
   - "!src/generate/index.html"
+  - "!src/generate/editor.js"
+  - "!src/generate/editor.html"
+  - "!src/generate/*.svelte"
   - scripts/png.js
   - pipelines/**/*.lab
   - dist-renderer/**/*

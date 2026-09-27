@@ -255,6 +255,159 @@ function createWindow() {
     }
   });
 
+  /*
+   * The scene editor, driven from the Scene Editor frame.
+   *
+   * The same arrangement as the render view above -- a WebContentsView laid
+   * over a pane whose rectangle the renderer reports -- except that it lives
+   * as long as the frame does rather than for one sweep.
+   *
+   * Its page is pt-lab's editor from dist-generate/, served as gen://editor.
+   * It gets a preload of its own, sandboxed, whose only reach is the three
+   * editor:* channels below; each checks that the message really came from
+   * this view, because they read and write files in scenes/.
+   */
+  let editorView = null;
+  let editorBounds = null;
+
+  const applyEditorBounds = () => {
+    if (!editorView || !editorBounds) return;
+    const { x, y, width, height } = editorBounds;
+    // A collapsed or tabbed-away pane reports next to nothing. Hidden rather
+    // than shrunk to a pixel: the editor keeps its state either way, and a
+    // one-pixel view is still a view the GPU is compositing.
+    const shown = width >= 2 && height >= 2;
+    editorView.setVisible(shown);
+    if (shown) {
+      editorView.setBounds({
+        x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height),
+      });
+    }
+  };
+
+  const closeEditor = () => {
+    if (!editorView) return;
+    const view = editorView;
+    editorView = null;
+    editorBounds = null;
+    if (win.isDestroyed()) return;
+    win.contentView.removeChildView(view);
+    view.webContents.close();
+  };
+
+  const fromEditor = (event) => {
+    if (!editorView || event.sender !== editorView.webContents) {
+      throw new Error('only the scene editor may do that');
+    }
+  };
+
+  /** Tell the renderer, so the Generate pane offers a scene the moment it exists. */
+  const scenesChanged = () => {
+    if (win.isDestroyed()) return;
+    try {
+      win.webContents.send('scenes:changed', generator.savedSceneNames());
+    } catch (err) {
+      win.webContents.send('scenes:changed', { error: err.message });
+    }
+  };
+
+  ipcMain.removeHandler('editor:open');
+  ipcMain.handle('editor:open', () => {
+    // The editor is the generator's page with a different entry, so whatever
+    // stops the generator stops it too, and is said the same way.
+    const problem = generator.checkPrerequisites();
+    if (problem) return problem;
+    if (editorView) return null;
+    const view = new WebContentsView({
+      webPreferences: {
+        preload: path.join(__dirname, 'generate', 'editor-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    editorView = view;
+    win.contentView.addChildView(view);
+    applyEditorBounds();
+    view.webContents.loadURL(generator.editorURL());
+    return null;
+  });
+
+  /*
+   * Whether closing now would lose work. Asked of the page rather than
+   * tracked here, because the page is the only thing that knows what was last
+   * saved. A page that cannot answer -- still loading, or crashed -- has
+   * nothing worth keeping.
+   */
+  const editorIsDirty = async () => {
+    if (!editorView) return false;
+    try {
+      return !!(await editorView.webContents.executeJavaScript('window.__editor?.dirty() ?? false'));
+    } catch {
+      return false;
+    }
+  };
+
+  /*
+   * The frame has closed. paneless gives a frame no way to refuse closing, so
+   * the question is asked on the way out instead: with unsaved changes, the
+   * view is kept -- hidden, state intact -- and the renderer is told to open
+   * the frame again around it, as the menu item would.
+   */
+  ipcMain.removeHandler('editor:close');
+  ipcMain.handle('editor:close', async () => {
+    if (!editorView) return 'closed';
+    if (await editorIsDirty()) {
+      editorView.setVisible(false);
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'warning',
+        message: 'The scene has unsaved changes.',
+        detail: 'Closing the Scene Editor discards them. Saved scenes are not affected.',
+        buttons: ['Keep Editing', 'Discard'],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      if (response === 0 && editorView && !win.isDestroyed()) {
+        win.webContents.send('menu:command', 'scene-editor');
+        return 'kept';
+      }
+    }
+    closeEditor();
+    return 'closed';
+  });
+
+  ipcMain.removeHandler('editor:view-bounds');
+  ipcMain.handle('editor:view-bounds', (_event, bounds) => {
+    editorBounds = bounds;
+    applyEditorBounds();
+  });
+
+  ipcMain.removeHandler('editor:scenes');
+  ipcMain.handle('editor:scenes', (event) => {
+    fromEditor(event);
+    return generator.savedSceneNames();
+  });
+
+  ipcMain.removeHandler('editor:open-scene');
+  ipcMain.handle('editor:open-scene', (event, name) => {
+    fromEditor(event);
+    return generator.openSceneForEditor(String(name));
+  });
+
+  ipcMain.removeHandler('editor:save-scene');
+  ipcMain.handle('editor:save-scene', (event, request) => {
+    fromEditor(event);
+    const saved = generator.saveSceneFile({
+      name: String(request?.name ?? ''),
+      data: request?.data,
+      local: !!request?.local,
+      replace: !!request?.replace,
+      models: request?.models ?? {},
+    });
+    scenesChanged();
+    return saved;
+  });
+
   ipcMain.removeHandler('menu:state');
   ipcMain.handle('menu:state', (_event, next) => {
     Object.assign(menuState, next);

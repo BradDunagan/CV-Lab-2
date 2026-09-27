@@ -141,7 +141,7 @@
         ...(current.truth ? ['', 'then  npm run score -- results/'] : []), '');
     }
     lines.push(`Roughly ${estimate}s for ${total} image${total === 1 ? '' : 's'}.`);
-    lines.push('The scene comes from scenes/, composed in pt-lab, and carries ' +
+    lines.push('The scene comes from scenes/, composed in the Scene Editor, and carries ' +
       'its own room and lights; the lighting count scales all of them ' +
       'together. Ground truth is only as useful as the ' +
       'subject: edges that are paint rather than geometry cannot be scored.');
@@ -208,10 +208,7 @@
       if (!found.includes(pipeline)) pipeline = found[0] ?? pipeline;
     }).catch((err) => setStatus(err.message, 'error'));
 
-    Promise.all([lab.generate.check(), lab.generate.scenes()]).then(([problem, found]) => {
-      unavailable = problem;
-      scenes = found;
-      if (problem || found.length === 0) return;
+    const attach = (found) => {
       const target = controlsPaneId();
       if (!target) return;
       current = { ...current, scene: `saved:${found[0]}` };
@@ -220,6 +217,33 @@
         onChange: (opts) => { current = opts; },
       });
       refreshControls();
+    };
+
+    Promise.all([lab.generate.check(), lab.generate.scenes()]).then(([problem, found]) => {
+      unavailable = problem;
+      scenes = found;
+      if (problem || found.length === 0) return;
+      attach(found);
+    });
+
+    /*
+     * A scene saved in the Scene Editor is offered here at once. Before the
+     * editor, a new scene meant a file copied in by hand and a frame
+     * reopened; now it is one Save, and a list that waited for a reopen would
+     * put that step back.
+     */
+    const offScenes = lab.generate.onScenesChanged((found) => {
+      if (!Array.isArray(found)) {
+        setStatus(found?.error ?? 'scenes/ could not be read', 'error');
+        return;
+      }
+      scenes = found;
+      if (controls) {
+        controls.setScenes(found);
+        current = controls.read();
+      } else if (!unavailable && found.length > 0) {
+        attach(found);
+      }
     });
 
     lab.generate.defaults().then(({ out }) => {
@@ -259,6 +283,7 @@
       window.removeEventListener('resize', onWindowResize);
       unsubscribePanes();
       offProgress();
+      offScenes();
       controls?.dispose();
       controls = null;
     };
@@ -323,11 +348,10 @@
     -->
     <div class="unavailable">
       <p><b>No scenes to render.</b></p>
-      <pre>The Generate pane offers the scenes in scenes/, composed in pt-lab's
-editor and exported as JSON. There are none.
+      <pre>The Generate pane offers the scenes in scenes/, and there are none.
 
-Add one as scenes/&lt;name&gt;.json, or scenes/&lt;name&gt;.local.json to keep it
-out of the repository.</pre>
+Compose one in Panes → Scene Editor… (⌘E) and Save it -- it appears here
+as soon as it is saved.</pre>
     </div>
   {:else if !running && sheet.length > 0}
     <!--
