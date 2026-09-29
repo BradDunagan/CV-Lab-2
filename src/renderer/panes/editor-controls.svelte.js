@@ -199,6 +199,7 @@ function build(paneId) {
   s.skip(GAP);
   s.checkbox('preview', 'path-traced preview');
   s.checkbox('denoise', 'denoise the preview');
+  s.field('samples', 'samples', 'editbox', { value: '16' });
   s.field('room', 'room', 'dropdown', {
     items: [
       { id: 'room', label: 'baked HDR env' },
@@ -354,6 +355,14 @@ export function attachEditorControls(paneId, editor, { onError = () => {} } = {}
       case 'room': if (v?.newId) send(key, 'setRoom', v.newId); break;
       case 'preview': send(key, 'setPreview', !!v); break;
       case 'denoise': send(key, 'setDenoise', !!v); break;
+      case 'samples': {
+        // The page checks the range and says so; this only refuses what is
+        // not a number at all, so a typo does not become a command.
+        const n = Number(String(v?.newValue).trim());
+        if (Number.isInteger(n)) send(key, 'setSamples', n);
+        else onError(`"${v?.newValue}" is not a sample count -- write a whole number.`);
+        break;
+      }
       case 'bundled':
         if (v?.newId) send(key, 'importBundled', v.newId);
         // A menu of actions, not a setting: back to its prompt once used.
@@ -498,6 +507,7 @@ export function attachEditorControls(paneId, editor, { onError = () => {} } = {}
     }
     set('preview', { checked: !next.editMode });
     set('denoise', { checked: !!next.denoise });
+    if (next.maxSamples) set('samples', { value: String(next.maxSamples) });
     set('room', { selectedId: next.room ?? undefined });
     fill('camPos', next.camera?.position);
     fill('camTarget', next.camera?.target);
@@ -507,7 +517,8 @@ export function attachEditorControls(paneId, editor, { onError = () => {} } = {}
       : 'new scene, not saved yet';
     // pt-lab's own mode names are internal; say what the view is showing.
     const view = next.mode === 'loading' || next.mode === 'building-bvh' ? next.mode
-      : next.editMode ? 'editing (raster preview)' : `path tracing, ${next.samples} samples`;
+      : next.editMode ? 'editing (raster preview)'
+        : `path tracing, ${Math.floor(next.samples)} of ${next.maxSamples} samples`;
     const lines = [`${where}${next.dirty ? '\n● unsaved changes' : ''}`, view];
     // The denoiser runs on a schedule of its own, and only over the
     // path-traced view, so say where it is.
@@ -525,6 +536,9 @@ export function attachEditorControls(paneId, editor, { onError = () => {} } = {}
     if (next.saving) lines.push('', 'Saving…');
     if (next.error) lines.push('', `Error: ${next.error}`);
     else if (next.message) lines.push('', next.message);
+    // Last, after a blank line, so it is the line the eye lands on: the
+    // preview has every sample it will get, and its final denoise if on.
+    if (next.finished) lines.push('', 'Render finished.');
     set('status', { text: wrap(lines.join('\n'), columnsFor('status')) }, { force: true });
 
     /* Objects */

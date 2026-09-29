@@ -694,6 +694,8 @@ async function collect(win, swatch, linearPng, discImage) {
         cameraX: named('camPos.0')?.value,
         inspectorShown: named('objTitle')?.visible,
         denoise: named('denoise')?.checked,
+        samples: named('samples')?.value,
+        status: named('status')?.text,
         lightNoteShown: named('lightNone')?.visible,
       };
       // A person picking Table in the list: the column must ASK the page to
@@ -1115,10 +1117,11 @@ app.whenReady().then(async () => {
    * column draws can be compared with what it was given.
    */
   const EDITOR_SNAPSHOT = {
-    ready: true, mode: 'pathtracing', samples: 0, scenes: ['cube-1'],
+    ready: true, mode: 'pathtracing', scenes: ['cube-1'],
     current: { name: 'cube-1', file: 'cube-1.json', local: false, shared: false },
-    dirty: true, saving: false, message: '', error: '', editMode: true, denoise: true,
-    denoiseState: 'ready', denoisedAt: 0, room: 'room-arealight',
+    dirty: true, saving: false, message: '', error: '', editMode: false, denoise: true,
+    denoiseState: 'denoised', denoisedAt: 16, maxSamples: 16, finished: true,
+    samples: 16, room: 'room-arealight',
     camera: { position: [1, 2, 3], target: [0, 0.5, 0] },
     objects: [
       { id: 'o1', name: 'Table', included: false, removable: false },
@@ -1608,6 +1611,12 @@ app.whenReady().then(async () => {
     assert.equal(col.cameraX, '1.00');
     assert.equal(col.inspectorShown, true);
     assert.equal(col.denoise, true, 'the denoise box shows what the page says, not its own default');
+    assert.equal(col.samples, '16');
+    assert.match(col.status, /16 of 16 samples/);
+    // The blank line is a no-break space: an EMPTY line draws nothing in
+    // SVG and does not advance, so it would not be a blank line on screen.
+    assert.match(col.status, /\n\u00a0\nRender finished\.$/,
+      'a finished preview ends the status with a blank line and "Render finished."');
     assert.equal(col.lightNoteShown, true, 'no light selected, so the Lights tab says how to pick one');
     assert.deepEqual(editorCommands.find(([m]) => m === 'select'), ['select', 'object', 'o1'],
       'picking an object in the list did not ask the page to select it');

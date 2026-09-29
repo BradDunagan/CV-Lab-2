@@ -36,6 +36,7 @@
     LIGHT_TYPES,
     lightTypeInfo,
   } from 'pt-lab';
+  import { previewFinished, SAMPLES_MIN, SAMPLES_MAX, SAMPLES_DEFAULT } from './preview.mjs';
 
   const host = window.cvlab;
 
@@ -61,6 +62,13 @@
    * it, and Generate's own denoise checkbox decides what a render gets.
    */
   let denoise = false;
+  /**
+   * Where the path-traced preview stops accumulating. pt-lab's own default
+   * is 0, forever; the editor's is 16, enough to judge a scene by and short
+   * enough to reach -- a preview that never ends never says it is finished.
+   * Like denoise, a viewing choice: Generate has its own sample count.
+   */
+  let maxSamples = SAMPLES_DEFAULT;
   /** { kind: 'object' | 'light', id } or null. */
   let selected = null;
 
@@ -152,6 +160,11 @@
       // loading, ready, denoising, denoised, or error.
       denoiseState: status.denoise,
       denoisedAt: status.denoisedAt,
+      maxSamples,
+      finished: previewFinished({
+        editMode, samples: status.samples, maxSamples, denoise,
+        denoiseState: status.denoise, denoisedAt: status.denoisedAt,
+      }),
       room: lab.getRoom(),
       camera: { position: lab.getCameraPosition(), target: lab.getCameraTarget() },
       objects,
@@ -320,6 +333,19 @@
       denoise = !!on;
       await lab.setDenoiseEnabled(denoise);
     }),
+    /**
+     * The preview's sample cap. Raising it resumes accumulation where it
+     * paused; lowering it below the current count pauses at once -- pt-lab
+     * compares against the cap every frame, and neither needs a reset.
+     */
+    setSamples: (n) => command(() => {
+      const value = Number(n);
+      if (!Number.isInteger(value) || value < SAMPLES_MIN || value > SAMPLES_MAX) {
+        throw new Error(`The sample count must be a whole number from ${SAMPLES_MIN} to ${SAMPLES_MAX}.`);
+      }
+      maxSamples = value;
+      lab.setMaxSamples(maxSamples);
+    }),
     setRoom: (kind) => command(() => lab.setRoom(kind)),
     setCamera: ({ position, target } = {}) => command(() => {
       if (position) lab.setCameraPosition(...position);
@@ -401,6 +427,7 @@
     // rather than left to whichever control happens to be touched first --
     // the column's preview checkbox reads this state, it does not set it.
     lab.setEditMode(editMode);
+    lab.setMaxSamples(maxSamples);
     command(async () => {
       await refreshScenes();
       if (scenes.length > 0) await openScene(scenes[0]);

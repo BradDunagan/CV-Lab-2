@@ -1435,6 +1435,41 @@ test('the main process relays exactly the methods the editor page offers', () =>
   assert.deepEqual([...offered].sort(), [...EDITOR_METHODS].sort());
 });
 
+test('the preview is finished only when every sample and the final denoise are in', async () => {
+  /*
+   * "Render finished." is a claim, and the ways to make it too early are the
+   * ones worth pinning: a denoise pass at 8 of 16 is on screen and is not
+   * the final image, and the raster edit view never finishes at all.
+   */
+  const path = require('node:path');
+  const { pathToFileURL } = require('node:url');
+  const { previewFinished, SAMPLES_DEFAULT } = await import(
+    pathToFileURL(path.join(__dirname, '..', 'src', 'generate', 'preview.mjs')).href);
+  const at = (over) => previewFinished({
+    editMode: false, samples: 16, maxSamples: 16, denoise: false,
+    denoiseState: 'off', denoisedAt: 0, ...over,
+  });
+
+  assert.equal(SAMPLES_DEFAULT, 16);
+  assert.equal(at({}), true, 'at the cap, no denoise: finished');
+  assert.equal(at({ samples: 15.75 }), false, 'tiles report fractions; 15.75 is not 16');
+  assert.equal(at({ samples: 40 }), true, 'a cap lowered below the count pauses at once');
+  assert.equal(at({ editMode: true }), false, 'the raster edit view never finishes');
+  assert.equal(at({ maxSamples: 0, samples: 1e6 }), false, '0 is pt-lab\'s forever');
+
+  const dn = { denoise: true };
+  assert.equal(at({ ...dn, denoiseState: 'loading' }), false, 'the model is still loading');
+  assert.equal(at({ ...dn, denoiseState: 'denoising', denoisedAt: 8 }), false, 'the final pass is running');
+  assert.equal(at({ ...dn, denoiseState: 'denoised', denoisedAt: 8 }), false,
+    'a pass at 8 of 16 is on screen, and is not the finished image');
+  assert.equal(at({ ...dn, denoiseState: 'denoised', denoisedAt: 16 }), true);
+  assert.equal(at({ ...dn, denoiseState: 'unsupported' }), true,
+    'with no WebGPU there will never be a pass; the cap is the finish');
+  assert.equal(at({ ...dn, denoiseState: 'error' }), true);
+  assert.equal(at({ ...dn, samples: 12, denoiseState: 'denoised', denoisedAt: 16 }), false,
+    'a pass from before the count was reset does not finish the new one');
+});
+
 return drain();
 }).then(() => {
   console.log(failures === 0 ? '\nAll ground-truth tests passed.' : `\n${failures} failing.`);
