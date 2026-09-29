@@ -118,7 +118,7 @@ function serveEditorImport(file) {
  * together, so neither can grow alone.
  */
 const EDITOR_METHODS = [
-  'refresh', 'dirty', 'open', 'newScene', 'save', 'select', 'setPreview', 'setRoom',
+  'refresh', 'dirty', 'open', 'newScene', 'save', 'select', 'setPreview', 'setDenoise', 'setRoom',
   'setCamera', 'setIncluded', 'removeObject', 'setTransform', 'setMaterial',
   'importFromURL', 'importBundled', 'addLight', 'removeLight', 'setLight',
 ];

@@ -786,9 +786,16 @@ The controls are a column in three tabs, because there is more than fits one:
 
 | tab | what it holds |
 |---|---|
-| **Scene** | which scene is open; New, Save, and Save As with a name and a *private* box; the path-traced preview; the room; the camera and its target as numbers; and a status line — the file, whether there are unsaved changes, and what the last save or error said |
+| **Scene** | which scene is open; New, Save, and Save As with a name and a *private* box; the path-traced preview, and whether to denoise it; the room; the camera and its target as numbers; and a status line — the file, whether there are unsaved changes, and what the last save or error said |
 | **Objects** | the object library, ● in the scene and ○ only in the library; Import .glb…; the bundled objects; and, for the selected object, Include/Exclude, Remove (imported objects only), colour as `#rrggbb`, shininess, metalness, and position, rotation (degrees) and scale |
 | **Lights** | the scene's lights; Add light and Remove; and, for the selected light, its name, type, colour, power (candela for point and spot, nits for area — changing type resets it to that type's default) and position |
+
+**Denoise the preview** runs OIDN over the path-traced view — the same
+denoiser Generate's *denoise* box applies to a render, and like it, off by
+default. It is a viewing choice, not part of the scene: nothing about it is
+saved, and it does not decide whether Generate denoises. It needs WebGPU,
+loads its model the first time, and re-runs as samples accumulate; the status
+line says where it is, including the sample count the last pass finished at.
 
 A number or a colour takes effect when you press Enter or leave the field; a
 slider as you drag it. The column shows what pt-lab holds rather than what was

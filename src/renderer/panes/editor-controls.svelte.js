@@ -198,6 +198,7 @@ function build(paneId) {
   s.button('saveAs', 'Save As');
   s.skip(GAP);
   s.checkbox('preview', 'path-traced preview');
+  s.checkbox('denoise', 'denoise the preview');
   s.field('room', 'room', 'dropdown', {
     items: [
       { id: 'room', label: 'baked HDR env' },
@@ -352,6 +353,7 @@ export function attachEditorControls(paneId, editor, { onError = () => {} } = {}
       case 'scene': if (v?.newId) send(key, 'open', v.newId); break;
       case 'room': if (v?.newId) send(key, 'setRoom', v.newId); break;
       case 'preview': send(key, 'setPreview', !!v); break;
+      case 'denoise': send(key, 'setDenoise', !!v); break;
       case 'bundled':
         if (v?.newId) send(key, 'importBundled', v.newId);
         // A menu of actions, not a setting: back to its prompt once used.
@@ -495,6 +497,7 @@ export function attachEditorControls(paneId, editor, { onError = () => {} } = {}
       lastScene = sceneKey;
     }
     set('preview', { checked: !next.editMode });
+    set('denoise', { checked: !!next.denoise });
     set('room', { selectedId: next.room ?? undefined });
     fill('camPos', next.camera?.position);
     fill('camTarget', next.camera?.target);
@@ -506,6 +509,19 @@ export function attachEditorControls(paneId, editor, { onError = () => {} } = {}
     const view = next.mode === 'loading' || next.mode === 'building-bvh' ? next.mode
       : next.editMode ? 'editing (raster preview)' : `path tracing, ${next.samples} samples`;
     const lines = [`${where}${next.dirty ? '\n● unsaved changes' : ''}`, view];
+    // The denoiser runs on a schedule of its own, and only over the
+    // path-traced view, so say where it is.
+    if (next.denoise) {
+      lines.push({
+        off: 'denoise: off',
+        unsupported: 'denoise: needs WebGPU, which this machine lacks',
+        loading: 'denoise: loading the model…',
+        ready: next.editMode ? 'denoise: waiting for the path-traced preview' : 'denoise: waiting',
+        denoising: 'denoise: running…',
+        denoised: `denoise: denoised at ${next.denoisedAt} samples`,
+        error: 'denoise: failed -- see the Scene view\'s console',
+      }[next.denoiseState] ?? `denoise: ${next.denoiseState}`);
+    }
     if (next.saving) lines.push('', 'Saving…');
     if (next.error) lines.push('', `Error: ${next.error}`);
     else if (next.message) lines.push('', next.message);

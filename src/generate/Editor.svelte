@@ -55,6 +55,12 @@
   let message = '';
   let error = '';
   let editMode = true;
+  /**
+   * OIDN over the path-traced preview. Off, as in pt-lab and in Generate.
+   * A viewing choice, not part of the scene: a SceneData has no field for
+   * it, and Generate's own denoise checkbox decides what a render gets.
+   */
+  let denoise = false;
   /** { kind: 'object' | 'light', id } or null. */
   let selected = null;
 
@@ -141,6 +147,11 @@
       message,
       error,
       editMode,
+      denoise,
+      // pt-lab's own account of the denoiser: off, unsupported (no WebGPU),
+      // loading, ready, denoising, denoised, or error.
+      denoiseState: status.denoise,
+      denoisedAt: status.denoisedAt,
       room: lab.getRoom(),
       camera: { position: lab.getCameraPosition(), target: lab.getCameraTarget() },
       objects,
@@ -304,6 +315,10 @@
     setPreview: (on) => command(() => {
       editMode = !on;
       lab.setEditMode(editMode);
+    }),
+    setDenoise: (on) => command(async () => {
+      denoise = !!on;
+      await lab.setDenoiseEnabled(denoise);
     }),
     setRoom: (kind) => command(() => lab.setRoom(kind)),
     setCamera: ({ position, target } = {}) => command(() => {

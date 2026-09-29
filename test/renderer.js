@@ -693,6 +693,7 @@ async function collect(win, swatch, linearPng, discImage) {
         position: [0, 1, 2].map((i) => named('position.' + i)?.value),
         cameraX: named('camPos.0')?.value,
         inspectorShown: named('objTitle')?.visible,
+        denoise: named('denoise')?.checked,
         lightNoteShown: named('lightNone')?.visible,
       };
       // A person picking Table in the list: the column must ASK the page to
@@ -1116,7 +1117,8 @@ app.whenReady().then(async () => {
   const EDITOR_SNAPSHOT = {
     ready: true, mode: 'pathtracing', samples: 0, scenes: ['cube-1'],
     current: { name: 'cube-1', file: 'cube-1.json', local: false, shared: false },
-    dirty: true, saving: false, message: '', error: '', editMode: true, room: 'room-arealight',
+    dirty: true, saving: false, message: '', error: '', editMode: true, denoise: true,
+    denoiseState: 'ready', denoisedAt: 0, room: 'room-arealight',
     camera: { position: [1, 2, 3], target: [0, 0.5, 0] },
     objects: [
       { id: 'o1', name: 'Table', included: false, removable: false },
@@ -1605,6 +1607,7 @@ app.whenReady().then(async () => {
     assert.deepEqual(col.position, ['-0.30', '0.80', '0.20']);
     assert.equal(col.cameraX, '1.00');
     assert.equal(col.inspectorShown, true);
+    assert.equal(col.denoise, true, 'the denoise box shows what the page says, not its own default');
     assert.equal(col.lightNoteShown, true, 'no light selected, so the Lights tab says how to pick one');
     assert.deepEqual(editorCommands.find(([m]) => m === 'select'), ['select', 'object', 'o1'],
       'picking an object in the list did not ask the page to select it');
