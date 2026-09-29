@@ -100,14 +100,10 @@ const hintColumns = (paneWidth) =>
  * paneless's label renders one tspan per '\n' and does not wrap, so the wrap
  * has to happen here. Monospace is what makes a character count a width.
  *
- * A blank line comes back as a no-break space, not as nothing. An empty
- * tspan draws no glyph, and SVG applies a tspan's `dy` to its first glyph --
- * so an empty line advanced nothing and every blank line in these columns
- * silently vanished, the Generate hint's included. Found when the Scene
- * Editor's "Render finished." landed flush under the line above it.
+ * A blank line stays an empty line. paneless used to drop them -- an empty
+ * tspan advanced nothing -- and this padded them with a no-break space until
+ * paneless placed each line absolutely instead (its c9262d9).
  */
-export const BLANK_LINE = '\u00a0';
-
 export function wrap(text, columns) {
   const out = [];
   for (const paragraph of text.split('\n')) {
@@ -120,7 +116,7 @@ export function wrap(text, columns) {
         line = line ? `${line} ${word}` : word;
       }
     }
-    out.push(line || BLANK_LINE);
+    out.push(line);
   }
   return out.join('\n');
 }

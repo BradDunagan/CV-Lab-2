@@ -696,6 +696,15 @@ async function collect(win, swatch, linearPng, discImage) {
         denoise: named('denoise')?.checked,
         samples: named('samples')?.value,
         status: named('status')?.text,
+        // Where each line of the status label was actually DRAWN -- measured
+        // from layout, not read from attributes, so it holds however paneless
+        // positions lines. An empty line has no character to measure: null.
+        statusLineYs: (() => {
+          const t = [...document.querySelectorAll('text')]
+            .find((x) => x.textContent.includes('Render finished'));
+          return t ? [...t.querySelectorAll('tspan')].map((s) =>
+            s.textContent.length > 0 ? s.getStartPositionOfChar(0).y : null) : null;
+        })(),
         lightNoteShown: named('lightNone')?.visible,
       };
       // A person picking Table in the list: the column must ASK the page to
@@ -1613,10 +1622,21 @@ app.whenReady().then(async () => {
     assert.equal(col.denoise, true, 'the denoise box shows what the page says, not its own default');
     assert.equal(col.samples, '16');
     assert.match(col.status, /16 of 16 samples/);
-    // The blank line is a no-break space: an EMPTY line draws nothing in
-    // SVG and does not advance, so it would not be a blank line on screen.
-    assert.match(col.status, /\n\u00a0\nRender finished\.$/,
+    assert.match(col.status, /\n\nRender finished\.$/,
       'a finished preview ends the status with a blank line and "Render finished."');
+    /*
+     * And the blank line is a line ON SCREEN, which the text alone cannot
+     * say: paneless once dropped empty lines, advancing nothing for them, so
+     * "Render finished." drew flush under the line above. Read off the drawn
+     * tspans -- the gap after the blank line is two line-heights, not one.
+     */
+    const ys = col.statusLineYs;
+    assert.ok(ys && ys.length >= 4, 'the status label drew no lines to measure: ' + JSON.stringify(ys));
+    assert.equal(ys[ys.length - 2], null, 'the line before "Render finished." should be the blank one');
+    const step = ys[1] - ys[0];
+    assert.ok(step > 0, 'lines are not spaced at all: ' + JSON.stringify(ys));
+    assert.ok(Math.abs((ys[ys.length - 1] - ys[ys.length - 3]) - 2 * step) < 0.5,
+      'the blank line before "Render finished." took no space: ' + JSON.stringify(ys));
     assert.equal(col.lightNoteShown, true, 'no light selected, so the Lights tab says how to pick one');
     assert.deepEqual(editorCommands.find(([m]) => m === 'select'), ['select', 'object', 'o1'],
       'picking an object in the list did not ask the page to select it');
