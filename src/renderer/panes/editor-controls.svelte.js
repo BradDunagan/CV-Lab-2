@@ -207,6 +207,10 @@ function build(paneId) {
       { id: 'room-arealight', label: 'rect area light' },
     ],
   });
+  s.field('lampPower', 'lamp', 'slider', {
+    value: 40, min: 0, max: 400, step: 1, showValue: true, valuePrecision: 0,
+  });
+  s.field('lampColor', 'lamp rgb', 'editbox', { value: '', placeholder: '#rrggbb' });
   s.xyz('camPos', 'camera');
   s.xyz('camTarget', 'target');
   s.skip(GAP);
@@ -353,6 +357,11 @@ export function attachEditorControls(paneId, editor, { onError = () => {} } = {}
     switch (base) {
       case 'scene': if (v?.newId) send(key, 'open', v.newId); break;
       case 'room': if (v?.newId) send(key, 'setRoom', v.newId); break;
+      case 'lampPower': send(key, 'setLamp', { intensity: v.newValue }); break;
+      case 'lampColor':
+        if (HEX.test(String(v?.newValue))) send(key, 'setLamp', { color: v.newValue.toLowerCase() });
+        else onError(`"${v?.newValue}" is not a colour -- write it as #rrggbb.`);
+        break;
       case 'preview': send(key, 'setPreview', !!v); break;
       case 'denoise': send(key, 'setDenoise', !!v); break;
       case 'samples': {
@@ -509,6 +518,10 @@ export function attachEditorControls(paneId, editor, { onError = () => {} } = {}
     set('denoise', { checked: !!next.denoise });
     if (next.maxSamples) set('samples', { value: String(next.maxSamples) });
     set('room', { selectedId: next.room ?? undefined });
+    if (next.lamp) {
+      set('lampPower', { value: next.lamp.intensity });
+      set('lampColor', { value: next.lamp.color });
+    }
     fill('camPos', next.camera?.position);
     fill('camTarget', next.camera?.target);
 

@@ -695,6 +695,8 @@ async function collect(win, swatch, linearPng, discImage) {
         inspectorShown: named('objTitle')?.visible,
         denoise: named('denoise')?.checked,
         samples: named('samples')?.value,
+        lampPower: named('lampPower')?.value,
+        lampColor: named('lampColor')?.value,
         status: named('status')?.text,
         // Where each line of the status label was actually DRAWN -- measured
         // from layout, not read from attributes, so it holds however paneless
@@ -1130,7 +1132,7 @@ app.whenReady().then(async () => {
     current: { name: 'cube-1', file: 'cube-1.json', local: false, shared: false },
     dirty: true, saving: false, message: '', error: '', editMode: false, denoise: true,
     denoiseState: 'denoised', denoisedAt: 16, maxSamples: 16, finished: true,
-    samples: 16, room: 'room-arealight',
+    samples: 16, room: 'room-arealight', lamp: { intensity: 55, color: '#ffd8a0' },
     camera: { position: [1, 2, 3], target: [0, 0.5, 0] },
     objects: [
       { id: 'o1', name: 'Table', included: false, removable: false },
@@ -1621,6 +1623,8 @@ app.whenReady().then(async () => {
     assert.equal(col.inspectorShown, true);
     assert.equal(col.denoise, true, 'the denoise box shows what the page says, not its own default');
     assert.equal(col.samples, '16');
+    assert.equal(col.lampPower, 55, 'the lamp slider shows the scene\'s lamp');
+    assert.equal(col.lampColor, '#ffd8a0');
     assert.match(col.status, /16 of 16 samples/);
     assert.match(col.status, /\n\nRender finished\.$/,
       'a finished preview ends the status with a blank line and "Render finished."');

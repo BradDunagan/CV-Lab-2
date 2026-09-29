@@ -124,7 +124,8 @@
       const lights = (ready.lights ?? []).map(
         (l) => `light ${l.type} ${l.intensity} at ${l.position.join(',')}`
       );
-      return [`${shots.length} of ${ready.total} done`,
+      const lamp = ready.lamp ? `room lamp ${ready.lamp.intensity} nt ${ready.lamp.color}` : null;
+      return [`${shots.length} of ${ready.total} done`, ...(lamp ? [lamp] : []),
         lights.length ? lights.join('\n') : 'no editor lights', '', ...recent].join('\n');
     }
     if (running) return 'Loading the model and building its BVH...';

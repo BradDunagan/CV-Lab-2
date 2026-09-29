@@ -99,6 +99,7 @@ Light edits don't need a BVH rebuild: `updateLights()` repacks the tracer's ligh
 - **Each light added makes every light noisier.** Each sample picks one light at random, so the room lamp's soft shadows take longer to converge.
 - **No directional (sun) light.** In the geometric rooms the walls and ceiling would block its infinitely distant source, so it would light the raster preview but not the path-traced render.
 - **`setEnvironmentIntensity` doesn't affect editor lights**; it scales only the room lamp or the baked environment. (The generator's `--lighting` multiplies both, deliberately — see the user's manual.)
+- **The room lamp is scene data**: `getLamp()` / `setLamp({ intensity, color })`, saved as `SceneData.lamp` (radiance in nits, `#rrggbb`). Its effective radiance is `lamp.intensity × setEnvironmentIntensity`. Absent from a scene, it is `DEFAULT_LAMP` — 40 nits, `#fffdf8`, the constants it replaced — and the baked room paints exactly the (40, 39.5, 38.5) it always did, because the lamp is applied as a ratio to that default. In the baked room `setLamp` regenerates the environment map; the geometric rooms recolour and rescale in place.
 
 ### Persistence
 

@@ -786,7 +786,7 @@ The controls are a column in three tabs, because there is more than fits one:
 
 | tab | what it holds |
 |---|---|
-| **Scene** | which scene is open; New, Save, and Save As with a name and a *private* box; the path-traced preview, whether to denoise it, and how many samples it accumulates; the room; the camera and its target as numbers; and a status line — the file, whether there are unsaved changes, and what the last save or error said |
+| **Scene** | which scene is open; New, Save, and Save As with a name and a *private* box; the path-traced preview, whether to denoise it, and how many samples it accumulates; the room, and its overhead lamp's power and colour; the camera and its target as numbers; and a status line — the file, whether there are unsaved changes, and what the last save or error said |
 | **Objects** | the object library, ● in the scene and ○ only in the library; Import .glb…; the bundled objects; and, for the selected object, Include/Exclude, Remove (imported objects only), colour as `#rrggbb`, shininess, metalness, and position, rotation (degrees) and scale |
 | **Lights** | the scene's lights; Add light and Remove; and, for the selected light, its name, type, colour, power (candela for point and spot, nits for area — changing type resets it to that type's default) and position |
 
@@ -1011,6 +1011,26 @@ the same camera reports 3,045 visible edges at 256 px and 2,587 at 512 px —
 of a dense mesh. The total never changes; only the visible fraction does. So a
 **recall number is only comparable within one render size**, and nothing in the
 scoring output says so.
+
+### The room lamp
+
+Every room has an overhead lamp: the ceiling fixture — a sampled area light in
+`room-arealight`, an emissive panel in `room-emissive`, a bright patch painted
+into the environment in `room`. Its **power** (radiance in nits, 40 by default)
+and **colour** (`#fffdf8`, faintly warm) are part of the scene: the Scene
+Editor's *lamp* and *lamp rgb* controls set them, Save writes them to the file
+as `lamp`, and Generate renders them. A scene saved before the lamp could be
+changed has no `lamp` and gets exactly the 40-nit `#fffdf8` lamp every earlier
+render had — checked by rendering `cube-1` before and after, which differ by
+no more than two renders of the same build do.
+
+`--lighting` multiplies the lamp as it multiplies everything else, so a scene
+with an 80-nit lamp renders at 40, 80 and 160 across `--lighting 3`. The ready
+line prints the lamp pt-lab applied, before the multiplier:
+
+```
+  room lamp  40 nt #fffdf8
+```
 
 ### Lights
 

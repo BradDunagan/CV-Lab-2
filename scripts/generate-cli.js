@@ -252,6 +252,9 @@ app.whenReady().then(async () => {
         `${event.status.mode}, scene ${event.scene}` +
         `${event.room ? ` in ${event.room}` : ''}, ` +
         `${event.total} image(s) to render`);
+      // The room's own lamp, before --lighting multiplies it. Printed even at
+      // its default, because a render is only reproducible from what it says.
+      if (event.lamp) console.log(`  room lamp  ${event.lamp.intensity} nt ${event.lamp.color}`);
       console.log(event.lights.length === 0
         ? '  no editor lights -- the room lights the scene'
         : event.lights.map((l) => `  light  ${describeLight(l)}  ${l.name}`).join('\n'));

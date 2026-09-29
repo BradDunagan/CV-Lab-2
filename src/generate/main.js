@@ -70,6 +70,8 @@ const api = {
   },
 
   status: () => lastStatus,
+  /** The room lamp pt-lab is holding, before any lighting multiplier. */
+  lamp: () => lab.getLamp(),
   objects: () => lab.listObjects(),
 
   /** Where the camera is, and what it looks at. */
@@ -99,7 +101,7 @@ const api = {
    * almost no clean vertices; a cube has eight, in known places. Ground truth
    * needs a subject whose corners exist.
    */
-  applyScene({ room = 'room-arealight', objects = [], lights = [], version, camera } = {}) {
+  applyScene({ room = 'room-arealight', objects = [], lights = [], lamp, version, camera } = {}) {
     /*
      * Two callers, one shape.
      *
@@ -121,6 +123,10 @@ const api = {
       // render without them, and test/groundtruth.js now checks the fields
       // against pt-lab's own SceneData so the next one cannot slip past.
       lights: fromEditor ? lights : [],
+      // The room's own lamp. Absent -- a built-in scene, or a file saved
+      // before the lamp could change -- is pt-lab's DEFAULT_LAMP, which is
+      // the lamp every render before this had.
+      lamp: fromEditor ? lamp : undefined,
       // The camera is the driver's business: it plans a sweep, and a saved
       // camera is where that sweep starts rather than where it stays.
       camera: null,

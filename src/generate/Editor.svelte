@@ -166,6 +166,7 @@
         denoiseState: status.denoise, denoisedAt: status.denoisedAt,
       }),
       room: lab.getRoom(),
+      lamp: lab.getLamp(),
       camera: { position: lab.getCameraPosition(), target: lab.getCameraTarget() },
       objects,
       lights,
@@ -347,6 +348,12 @@
       lab.setMaxSamples(maxSamples);
     }),
     setRoom: (kind) => command(() => lab.setRoom(kind)),
+    /**
+     * The room's overhead lamp: { intensity } in nits and/or { color }.
+     * Scene data, unlike the preview settings above -- it is saved with the
+     * scene, and Generate renders it (times its lighting multiplier).
+     */
+    setLamp: (l) => command(() => lab.setLamp(l ?? {})),
     setCamera: ({ position, target } = {}) => command(() => {
       if (position) lab.setCameraPosition(...position);
       if (target) lab.setCameraTarget(...target);

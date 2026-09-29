@@ -200,6 +200,24 @@ export function lightTypeInfo(type: LabLightType): LabLightTypeInfo {
 	return LIGHT_TYPES.find((t) => t.type === type) ?? LIGHT_TYPES[0];
 }
 
+/**
+ * The room's own overhead lamp -- the ceiling fixture every room has, as
+ * opposed to editor lights added to it. Scene data: it is saved with the
+ * scene and rendered from it.
+ */
+export interface LabLamp {
+	/** Radiance in nits, before any host multiplier (setEnvironmentIntensity). */
+	intensity: number;
+	color: string; // '#rrggbb' (sRGB)
+}
+
+/**
+ * The lamp every room had before it could be changed: 40 nits, nearly white,
+ * slightly warm. A scene with no `lamp` gets exactly this, so scenes saved
+ * before the field existed render as they always did.
+ */
+export const DEFAULT_LAMP: Readonly<LabLamp> = Object.freeze({ intensity: 40, color: '#fffdf8' });
+
 /** A saved editor scene: room + per-object state + lights + camera. */
 export interface SceneData {
 	version: 1;
@@ -207,6 +225,8 @@ export interface SceneData {
 	objects: SceneObjectState[];
 	/** Absent in scenes saved before editor lights existed (= no lights). */
 	lights?: LabLight[];
+	/** Absent in scenes saved before the lamp could change (= DEFAULT_LAMP). */
+	lamp?: LabLamp;
 	camera: { position: [number, number, number]; target: [number, number, number] } | null;
 }
 
@@ -521,7 +541,8 @@ const ROOM_CEIL = 3;
 const ROOM_EYE = new Vector3(0, 1.5, 0);
 const PATCH_HALF_X = 0.25; // 0.5 m wide
 const PATCH_HALF_Z = 0.5; // 1 m long
-const PATCH_RADIANCE = 40;
+// The lamp's radiance and colour are this.lamp now (see LabLamp); the fixture's
+// SIZE is still fixed.
 // In the arealight room, the lamp's output is split: this fraction is emitted
 // by a visible emissive quad (the "fixture"), the rest by a RectAreaLight.
 // The pathtracer never intersects lights with rays (LIGHT_HIT is defined but
@@ -812,6 +833,8 @@ export class PathTracerLab {
 	private roomShell: Object3D | null = null;
 	private roomEnvTex: DataTexture | null = null;
 	private envIntensity = 1;
+	/** The room lamp, as the scene says. Multiplied by envIntensity. */
+	private lamp: LabLamp = { ...DEFAULT_LAMP };
 
 	// Editor object registry. Keyed by a stable per-session id (decoupled from
 	// the display name so imported duplicates never collide).
@@ -1186,8 +1209,8 @@ export class PathTracerLab {
 			// LTC lookup tables for the rasterized preview frames.
 			RectAreaLightUniformsLib.init();
 			this.rectLight = new RectAreaLight(
-				0xfffdf8,
-				PATCH_RADIANCE * (1 - FIXTURE_FRACTION),
+				this.lamp.color,
+				this.lamp.intensity * (1 - FIXTURE_FRACTION),
 				PATCH_HALF_X * 2,
 				PATCH_HALF_Z * 2,
 			);
@@ -1202,10 +1225,10 @@ export class PathTracerLab {
 		// the fixture quad, so the quad is behind it and never shadows the room.
 		this.roomProxy = makeProxyLight();
 		this.roomProxy.position.set(0, ROOM_CEIL - 0.02, 0);
-		this.roomProxy.color.set(0xfffdf8);
+		this.roomProxy.color.set(this.lamp.color);
 		group.add(this.roomProxy);
 
-		this.ambientFill = new AmbientLight(0xfffdf8, 0);
+		this.ambientFill = new AmbientLight(this.lamp.color, 0);
 		this.ambientFill.visible = false;
 		group.add(this.ambientFill);
 
@@ -1213,8 +1236,8 @@ export class PathTracerLab {
 		// or a small cosmetic share of it alongside the invisible RectAreaLight.
 		this.patchMat = new MeshPhysicalMaterial({
 			color: 0x000000,
-			emissive: 0xfffdf8, // nearly white, slightly warm
-			emissiveIntensity: PATCH_RADIANCE * (useAreaLight ? FIXTURE_FRACTION : 1),
+			emissive: this.lamp.color,
+			emissiveIntensity: this.lamp.intensity * (useAreaLight ? FIXTURE_FRACTION : 1),
 		});
 		const patch = new Mesh(
 			new PlaneGeometry(PATCH_HALF_X * 2, PATCH_HALF_Z * 2).rotateX(Math.PI / 2),
@@ -1239,6 +1262,18 @@ export class PathTracerLab {
 		const width = 1024;
 		const height = 512;
 		const data = new Float32Array(width * height * 4);
+
+		// The lamp as painted radiance. The default lamp paints exactly the
+		// (40, 39.5, 38.5) this room always had -- a ratio of the lamp to
+		// DEFAULT_LAMP, channel by channel, is 1 exactly for the default, so
+		// scenes that never set a lamp are unchanged to the bit.
+		const lampRadiance = (() => {
+			const base = [40, 39.5, 38.5];
+			const want = new Color(this.lamp.color);
+			const def = new Color(DEFAULT_LAMP.color);
+			const scale = this.lamp.intensity / DEFAULT_LAMP.intensity;
+			return [want.r / def.r, want.g / def.g, want.b / def.b].map((ratio, i) => base[i] * ratio * scale) as [number, number, number];
+		})();
 
 		const paint = (px: number, r: number, g: number, b: number) => {
 			data[px] = r;
@@ -1268,7 +1303,7 @@ export class PathTracerLab {
 					const hx = ROOM_EYE.x + t * dx;
 					const hz = ROOM_EYE.z + t * dz;
 					if (Math.abs(hx) <= PATCH_HALF_X && Math.abs(hz) <= PATCH_HALF_Z) {
-						paint(px, 40, 39.5, 38.5); // the light: nearly white, slightly warm
+						paint(px, ...lampRadiance); // the light
 					} else {
 						paint(px, 0.45, 0.45, 0.45); // ceiling
 					}
@@ -2042,7 +2077,7 @@ export class PathTracerLab {
 		if (this.patchMat) {
 			// The geometric rooms have no environment; the slider scales the lamp
 			// (both halves of the split, in the arealight room).
-			const radiance = intensity * PATCH_RADIANCE;
+			const radiance = intensity * this.lamp.intensity;
 			this.patchMat.emissiveIntensity = this.rectLight
 				? radiance * FIXTURE_FRACTION
 				: radiance;
@@ -2082,6 +2117,50 @@ export class PathTracerLab {
 
 	getRoom(): RoomKind | null {
 		return this.roomKind;
+	}
+
+	/** The room lamp, as the scene holds it (before setEnvironmentIntensity). */
+	getLamp(): LabLamp {
+		return { ...this.lamp };
+	}
+
+	/**
+	 * Change the room lamp. Partial: fields left out keep their value.
+	 *
+	 * The geometric rooms recolour and rescale their fixture in place. The
+	 * baked room paints its lamp into a generated environment, so there the
+	 * environment is regenerated -- a few milliseconds for a 1024x512 map.
+	 */
+	setLamp(l: Partial<LabLamp>) {
+		const next = { ...this.lamp, ...l };
+		if (!(Number.isFinite(next.intensity) && next.intensity >= 0)) {
+			throw new Error(`setLamp: intensity must be a number >= 0, not ${next.intensity}`);
+		}
+		if (!/^#[0-9a-f]{6}$/i.test(next.color)) {
+			throw new Error(`setLamp: color must be #rrggbb, not ${next.color}`);
+		}
+		this.lamp = { intensity: next.intensity, color: next.color.toLowerCase() };
+		if (!this.roomKind) return;
+		const syncTracer = this.ready && !this.editing && !this.buildingScene;
+		if (this.roomKind === 'room') {
+			const old = this.roomEnvTex;
+			const tex = this.makeRoomEnvironment();
+			tex.mapping = EquirectangularReflectionMapping;
+			this.roomEnvTex = tex;
+			this.scene.environment = tex;
+			this.scene.background = tex;
+			old?.dispose();
+			if (syncTracer) this.pathTracer.updateEnvironment();
+		} else {
+			this.rectLight?.color.set(this.lamp.color);
+			this.roomProxy?.color.set(this.lamp.color);
+			this.ambientFill?.color.set(this.lamp.color);
+			this.patchMat?.emissive.set(this.lamp.color);
+			// Re-derives every intensity from the lamp and the multiplier, and
+			// syncs the tracer's lights and materials.
+			this.setEnvironmentIntensity(this.envIntensity);
+		}
+		this.shadowsDirty = true;
 	}
 
 	/**
@@ -2145,6 +2224,7 @@ export class PathTracerLab {
 			room: this.roomKind ?? 'room-arealight',
 			objects,
 			lights: [...this.lights.values()].map((e) => copyLight(e.data)),
+			lamp: { ...this.lamp },
 			camera: {
 				position: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
 				target: [this.controls.target.x, this.controls.target.y, this.controls.target.z],
@@ -2316,6 +2396,8 @@ export class PathTracerLab {
 
 		// Instantiate the whole library (built-ins + imports), then apply state.
 		this.instantiateLibrary();
+		// Before the room is built, which reads it.
+		this.lamp = data.lamp ? { ...data.lamp } : { ...DEFAULT_LAMP };
 		this.applyRoom(data.room);
 
 		for (const [id, entry] of this.objects) {

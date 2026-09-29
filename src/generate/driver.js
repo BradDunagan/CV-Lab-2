@@ -118,7 +118,7 @@ function serveEditorImport(file) {
  * together, so neither can grow alone.
  */
 const EDITOR_METHODS = [
-  'refresh', 'dirty', 'open', 'newScene', 'save', 'select', 'setPreview', 'setDenoise', 'setSamples', 'setRoom',
+  'refresh', 'dirty', 'open', 'newScene', 'save', 'select', 'setPreview', 'setDenoise', 'setSamples', 'setRoom', 'setLamp',
   'setCamera', 'setIncluded', 'removeObject', 'setTransform', 'setMaterial',
   'importFromURL', 'importBundled', 'addLight', 'removeLight', 'setLight',
 ];
@@ -1229,9 +1229,12 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
      * really holds, defaults filled in, which is what the run should report.
      */
     const lights = await call(`lights(${JSON.stringify(resolveLights(opts, scene))})`);
+    // Read back, like the lights: what pt-lab holds, which for a scene saved
+    // without a lamp is its default rather than a gap.
+    const lamp = await call('lamp()');
     onProgress({
       type: 'ready', elapsedMs: Date.now() - started, status: info.status,
-      total: shots.length, scene: opts.scene, room, objects, lights,
+      total: shots.length, scene: opts.scene, room, objects, lights, lamp,
     });
 
     await call(`quality(${JSON.stringify({ samples: opts.samples })})`);
