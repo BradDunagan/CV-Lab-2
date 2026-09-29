@@ -775,11 +775,25 @@ left, and the tracer itself on the right, converging while the sweep runs.
 
 ### Composing a scene: Panes → Scene Editor…
 
-**Panes → Scene Editor…** (⌘E) opens pt-lab's scene editor in a frame of its
-own: room, objects, materials, transforms, lights and camera, with a raster
-view for editing and a path-traced preview of what Generate will render. It is
-pt-lab's editor and pt-lab's panels, running in the app, from the same bundle
-as the generator — so it needs the same build, and says so when it is missing.
+**Panes → Scene Editor…** (⌘E) opens pt-lab's scene editor in a frame split
+like the Generate frame's: controls on the left, the scene on the right. The
+right-hand pane is pt-lab's own view — a raster preview for editing, or a
+path-traced preview of what Generate will render — from the same bundle as the
+generator, so it needs the same build and says so when it is missing. Drag in
+it to orbit the camera.
+
+The controls are a column in three tabs, because there is more than fits one:
+
+| tab | what it holds |
+|---|---|
+| **Scene** | which scene is open; New, Save, and Save As with a name and a *private* box; the path-traced preview; the room; the camera and its target as numbers; and a status line — the file, whether there are unsaved changes, and what the last save or error said |
+| **Objects** | the object library, ● in the scene and ○ only in the library; Import .glb…; the bundled objects; and, for the selected object, Include/Exclude, Remove (imported objects only), colour as `#rrggbb`, shininess, metalness, and position, rotation (degrees) and scale |
+| **Lights** | the scene's lights; Add light and Remove; and, for the selected light, its name, type, colour, power (candela for point and spot, nits for area — changing type resets it to that type's default) and position |
+
+A number or a colour takes effect when you press Enter or leave the field; a
+slider as you drag it. The column shows what pt-lab holds rather than what was
+typed: every change goes to the scene and comes back, so a value pt-lab
+refuses — a colour that is not `#rrggbb` — simply does not change.
 
 What differs from pt-lab's own editor is where a scene goes. **Save writes
 `scenes/<name>.json`**, the file the Generate pane offers and the CLI takes as

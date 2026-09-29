@@ -51,8 +51,10 @@ pt-lab/              the path tracer + scene editor library, TypeScript, moved i
                      from its own repository — see pt-lab/README.md
 src/generate/        the generator: page (bundled separately) + main-process
                      driver shared by the CLI and the app's Generate frame;
-                     also the Scene Editor page (pt-lab's editor, saving to
-                     scenes/ through its own sandboxed preload)
+                     also the Scene Editor page (pt-lab's view and a
+                     `__editor` API, saving to scenes/ through its own
+                     sandboxed preload); its controls are a paneless column,
+                     src/renderer/panes/editor-controls.svelte.js
 src/menu.js          the application menu — global commands live here, not in the UI
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
@@ -68,7 +70,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — fifteen suites, ~444 tests
+npm test                # everything — fifteen suites, ~446 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless

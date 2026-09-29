@@ -1415,6 +1415,26 @@ test('the editor page is a build input, and its preload is not', () => {
     'the preload is loaded by Electron as it is, like driver.js');
 });
 
+test('the main process relays exactly the methods the editor page offers', () => {
+  /*
+   * The Scene Editor's controls live in the app window and act on pt-lab in
+   * another process, through the page's window.__editor -- and the main
+   * process relays a call only if the method is in EDITOR_METHODS. A method
+   * added to one list and not the other is a control that silently does
+   * nothing, or a name the relay allows that nothing implements. Read from
+   * the page's source, so neither list is retyped here.
+   */
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { EDITOR_METHODS } = require('../src/generate/driver');
+  const page = fs.readFileSync(path.join(__dirname, '..', 'src', 'generate', 'Editor.svelte'), 'utf8');
+  const block = /const api = \{([\s\S]*?)\n  \};/.exec(page);
+  assert.ok(block, 'no `const api = {...}` in Editor.svelte -- the check needs updating');
+  const offered = [...block[1].matchAll(/^    (\w+):/gm)].map((m) => m[1]);
+  assert.ok(offered.length > 10, `read nonsense out of the page's api: ${offered.join(', ')}`);
+  assert.deepEqual([...offered].sort(), [...EDITOR_METHODS].sort());
+});
+
 return drain();
 }).then(() => {
   console.log(failures === 0 ? '\nAll ground-truth tests passed.' : `\n${failures} failing.`);

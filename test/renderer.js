@@ -670,6 +670,44 @@ async function collect(win, swatch, linearPng, discImage) {
     }
 
     /*
+     * The column: split left of the render, built from the page's snapshot,
+     * and sending commands rather than keeping state. Opened a second time,
+     * when the stub says the editor is up (see editor:open above).
+     */
+    menu('scene-editor');
+    await sleep(400);
+    {
+      const paneId = editorPane()?.dataset.pane;
+      const parent = paneId ? lab2().paneStore.getPane(paneId)?.parentId : null;
+      const split = parent ? lab2().paneStore.getPane(parent) : null;
+      r.editor.isRightChild = !!split && split.rightChildId === paneId;
+      const data = split ? lab2().controlStore.getPaneData(split.leftChildId) : null;
+      const named = (n) => Object.values(data?.byId ?? {}).find((c) => c.name === n);
+      r.editor.column = {
+        tabs: named('tabs')?.tabs?.map((t) => t.label) ?? null,
+        scene: named('scene')?.selectedId,
+        objects: named('objects')?.items?.map((i) => i.icon + ' ' + i.label) ?? null,
+        selected: named('objects')?.selectedIds ?? null,
+        colour: named('color')?.value,
+        shininess: named('shininess')?.value,
+        position: [0, 1, 2].map((i) => named('position.' + i)?.value),
+        cameraX: named('camPos.0')?.value,
+        inspectorShown: named('objTitle')?.visible,
+        lightNoteShown: named('lightNone')?.visible,
+      };
+      // A person picking Table in the list: the column must ASK the page to
+      // select it, not decide on its own.
+      const list = named('objects');
+      if (list && split) {
+        lab2().controlEvents.emit({
+          type: 'listItemSelected', paneId: split.leftChildId, controlId: list.id,
+          value: { itemId: 'o1', selectedIds: ['o1'] },
+        });
+      }
+      await sleep(100);
+    }
+
+    /*
      * No control paints text outside itself.
      *
      * SVG does not clip to a group, so a caption longer than its control is
@@ -1058,9 +1096,45 @@ app.whenReady().then(async () => {
    * own sentence about why it cannot run.
    */
   const editorCalls = [];
-  ipcMain.handle('editor:open', () => { editorCalls.push('open'); return checkPrerequisites(); });
+  /*
+   * The first opening answers honestly -- in CI, where nothing is built, it
+   * explains why there is no editor. Later openings say the editor is up, so
+   * the control column attaches on every platform and can be driven.
+   */
+  let editorOpens = 0;
+  ipcMain.handle('editor:open', () => {
+    editorCalls.push('open');
+    return editorOpens++ === 0 ? checkPrerequisites() : null;
+  });
   ipcMain.handle('editor:close', () => { editorCalls.push('close'); return 'closed'; });
   ipcMain.handle('editor:view-bounds', () => { editorCalls.push('bounds'); });
+  /*
+   * The page's side of the column, played by hand: every command is
+   * recorded, and `refresh` answers with a snapshot built here, so what the
+   * column draws can be compared with what it was given.
+   */
+  const EDITOR_SNAPSHOT = {
+    ready: true, mode: 'pathtracing', samples: 0, scenes: ['cube-1'],
+    current: { name: 'cube-1', file: 'cube-1.json', local: false, shared: false },
+    dirty: true, saving: false, message: '', error: '', editMode: true, room: 'room-arealight',
+    camera: { position: [1, 2, 3], target: [0, 0.5, 0] },
+    objects: [
+      { id: 'o1', name: 'Table', included: false, removable: false },
+      { id: 'o2', name: 'Cube', included: true, removable: false },
+    ],
+    lights: [],
+    selected: { kind: 'object', id: 'o2' },
+    material: { color: '#b01818', shininess: 0.6, reflectivity: 0 },
+    transform: { position: [-0.3, 0.8, 0.2], rotation: [10, 10, 10], scale: [1, 1, 1] },
+    bundled: [], lightTypes: [],
+  };
+  const editorCommands = [];
+  ipcMain.handle('editor:call', (event, method, args) => {
+    editorCommands.push([method, ...args]);
+    if (method === 'refresh') event.sender.send('editor:state', EDITOR_SNAPSHOT);
+    return null;
+  });
+  ipcMain.handle('editor:import', () => null);
 
   const win = new BrowserWindow({
     show: false,
@@ -1516,6 +1590,24 @@ app.whenReady().then(async () => {
     assert.equal(r.editor.goneAfterClose, true);
     assert.ok(editorCalls.includes('close'),
       'closing the frame did not tell the main process, so the editor view would outlive it');
+  });
+
+  test('the Scene Editor is split, and its column draws the page\'s state and sends commands', () => {
+    assert.equal(r.editor.isRightChild, true,
+      'the render pane is not the right-hand child of the split -- the view would cover the controls');
+    const col = r.editor.column;
+    assert.deepEqual(col.tabs, ['Scene', 'Objects', 'Lights']);
+    assert.equal(col.scene, 'cube-1');
+    assert.deepEqual(col.objects, ['○ Table', '● Cube'], 'included and library-only must look different');
+    assert.deepEqual(col.selected, ['o2'], 'the selection comes from the snapshot');
+    assert.equal(col.colour, '#b01818');
+    assert.equal(col.shininess, 0.6);
+    assert.deepEqual(col.position, ['-0.30', '0.80', '0.20']);
+    assert.equal(col.cameraX, '1.00');
+    assert.equal(col.inspectorShown, true);
+    assert.equal(col.lightNoteShown, true, 'no light selected, so the Lights tab says how to pick one');
+    assert.deepEqual(editorCommands.find(([m]) => m === 'select'), ['select', 'object', 'o1'],
+      'picking an object in the list did not ask the page to select it');
   });
 
   test('no control paints its text outside itself', () => {

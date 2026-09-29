@@ -48,11 +48,11 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 /**
- * Every source that calls pt-lab: the generator page, and the scene editor
- * with its camera panel. The editor was the second caller, and a check that
- * read only the first would have passed over it.
+ * Every source that calls pt-lab: the generator page, and the scene editor's.
+ * The editor was the second caller, and a check that read only the first
+ * would have passed over it.
  */
-const PAGES = ['main.js', 'Editor.svelte', 'CameraControls.svelte']
+const PAGES = ['main.js', 'Editor.svelte']
   .map((f) => path.join(ROOT, 'src', 'generate', f));
 const OUT = path.join(ROOT, 'dist-generate');
 const BUNDLE = path.join(OUT, 'generate.js');

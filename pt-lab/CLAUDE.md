@@ -19,9 +19,9 @@ pt-lab/assets/                default model, HDR, denoiser weights — fetched b
 ```
 
 Consumers are in `src/generate/`: `main.js` (the generator's page) and
-`Editor.svelte` + `CameraControls.svelte` (the Scene Editor). Nothing else
-imports pt-lab, and nothing in `src/renderer/` may — the app window never hosts
-the tracer.
+`Editor.svelte` (the Scene Editor's view and its `__editor` API — its controls
+are a paneless column in the app window). Nothing else imports pt-lab, and
+nothing in `src/renderer/` may — the app window never hosts the tracer.
 
 ## Commands (from the repository root)
 

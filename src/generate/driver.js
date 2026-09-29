@@ -94,11 +94,46 @@ const servedModels = new Map();
  */
 const editorModels = new Map();
 
+/**
+ * Models picked from disk with Import .glb…, by a token the page fetches them
+ * under. The page cannot open a file dialog of its own that reaches the disk
+ * -- it is sandboxed, and its controls are not even in it -- so the main
+ * process picks the file and makes that one file fetchable, as it does a
+ * scene's models.
+ */
+const editorImports = new Map();
+let importCounter = 0;
+
+/** Serve one picked file to the editor page; returns the URL to fetch it by. */
+function serveEditorImport(file) {
+  const token = String(++importCounter);
+  editorImports.set(token, file);
+  return `${SCHEME}://editor/imports/${token}/${encodeURIComponent(path.basename(file))}`;
+}
+
+/**
+ * Every method the Scene Editor's controls may call on the page's
+ * `window.__editor`, and nothing else: the main process relays a call only if
+ * its name is here. test/groundtruth.js holds this list and the page's API
+ * together, so neither can grow alone.
+ */
+const EDITOR_METHODS = [
+  'refresh', 'dirty', 'open', 'newScene', 'save', 'select', 'setPreview', 'setRoom',
+  'setCamera', 'setIncluded', 'removeObject', 'setTransform', 'setMaterial',
+  'importFromURL', 'importBundled', 'addLight', 'removeLight', 'setLight',
+];
+
 function installHandler() {
   if (handlerInstalled) return;
   protocol.handle(SCHEME, (request) => {
     const url = new URL(request.url);
     const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+    if (url.host === 'editor' && rel.startsWith('imports/')) {
+      const file = editorImports.get(rel.split('/')[1]);
+      return file
+        ? net.fetch(pathToFileURL(file).toString())
+        : new Response('not a file the editor was given', { status: 404 });
+    }
     if (rel.startsWith('models/')) {
       const served = url.host === 'editor' ? editorModels : servedModels;
       const file = served.get(rel.slice('models/'.length));
@@ -1276,6 +1311,7 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
 module.exports = {
   generate, windowHost, plan, resolveScene, savedSceneNames, sceneFromData, readSavedScenes, registerScheme, checkPrerequisites, buildInputs,
   readSceneEntries, saveSceneFile, openSceneFile, openSceneForEditor, editorURL, scenesDir, modelsDir, SCENE_NAME,
+  serveEditorImport, EDITOR_METHODS,
   parseLight, resolveLights, requestedKeys, unbuiltObjects, resolveModels, modelProblems,
   DEFAULTS, SCENES, LIGHT_TYPES, MODELS_DIR, PAGE, PT_ASSETS, PT_SRC, BUNDLED_ASSETS, CORE_ASSETS,
   assetsDir, defaultOutputDir, isPackaged,

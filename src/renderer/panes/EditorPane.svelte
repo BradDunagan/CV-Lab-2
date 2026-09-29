@@ -1,11 +1,17 @@
 <script>
   /**
-   * The Scene Editor frame: where pt-lab's editor is shown.
+   * The Scene Editor frame's right-hand pane: where pt-lab renders.
    *
-   * Like the Generate frame's render pane, this draws nothing itself. pt-lab's
-   * editor runs in a view of its own, from dist-generate/, which the main
-   * process lays over this pane's rectangle -- so all this does is report
-   * that rectangle, and say plainly when there is no editor to show.
+   * Like the Generate frame's render pane, this draws nothing itself. pt-lab
+   * runs in a view of its own, from dist-generate/, which the main process
+   * lays over this pane's rectangle -- so this reports that rectangle, and
+   * says plainly when there is no editor to show.
+   *
+   * The controls are a paneless column in the pane next door, built by
+   * editor-controls.svelte.js, and this pane attaches it -- as GeneratePane
+   * attaches its own -- because this is the pane that knows when the editor
+   * is up. The column owns nothing: it sends commands to the editor page and
+   * draws the snapshots the page publishes, which arrive here.
    *
    * It is not the renderer's business to read or write a scene. The editor
    * page does that through a preload of its own, and the Generate pane hears
@@ -14,6 +20,7 @@
   import { onMount } from 'svelte';
   import { paneStore } from 'paneless';
   import { lab, setStatus } from '../lab.svelte.js';
+  import { attachEditorControls } from './editor-controls.svelte.js';
 
   let { paneId } = $props();
 
@@ -22,6 +29,15 @@
 
   /** @type {HTMLElement|undefined} */
   let box = $state();
+
+  /** The controls pane is this pane's sibling -- see GeneratePane. */
+  const controlsPaneId = () => {
+    const parent = paneStore.getPane(paneId)?.parentId;
+    return parent ? paneStore.getPane(parent)?.leftChildId ?? null : null;
+  };
+
+  /** @type {ReturnType<typeof attachEditorControls>|null} */
+  let controls = null;
 
   /**
    * Reported on resize AND on any pane-store change, for the reason
@@ -34,10 +50,25 @@
   }
 
   onMount(() => {
+    const offState = lab.editor.onState((snapshot) => controls?.update(snapshot));
+
     lab.editor.open().then((problem) => {
       unavailable = problem;
-      if (problem) setStatus(problem.split('\n')[0], 'error');
-      else queueMicrotask(reportBounds);
+      if (problem) {
+        setStatus(problem.split('\n')[0], 'error');
+        return;
+      }
+      queueMicrotask(reportBounds);
+      const target = controlsPaneId();
+      if (target) {
+        controls = attachEditorControls(target, lab.editor, {
+          onError: (message) => setStatus(message, 'error'),
+        });
+        controls.update(null);
+      }
+      // A frame reopened around an editor that was already running -- Keep
+      // Editing -- has missed every snapshot so far; ask for the current one.
+      lab.editor.call('refresh').catch(() => { /* not loaded yet; it will publish */ });
     }).catch((err) => setStatus(err.message, 'error'));
 
     const observer = new ResizeObserver(reportBounds);
@@ -50,6 +81,9 @@
       observer.disconnect();
       window.removeEventListener('resize', onWindowResize);
       unsubscribePanes();
+      offState();
+      controls?.dispose();
+      controls = null;
       /*
        * Only when the pane is really gone. paneless can unmount a pane's
        * component without closing it -- moving it, tabbing it -- and closing

@@ -4,7 +4,7 @@
  * The scene editor page's bridge to the main process.
  *
  * Sandboxed, unlike the app window's preload: this page runs three.js, a GPU
- * path tracer and a WASM denoiser, and needs nothing from Node but these three
+ * path tracer and a WASM denoiser, and needs nothing from Node but these four
  * messages. So it gets `electron`'s sandboxed subset and no more.
  *
  * Scenes are FILES, and this is the only way the page reaches them. pt-lab's
@@ -33,4 +33,12 @@ contextBridge.exposeInMainWorld('cvlab', {
    * with { name, file, models }; rejects with every reason it was refused.
    */
   save: (request) => ipcRenderer.invoke('editor:save-scene', request),
+
+  /**
+   * Everything the controls show, as one plain-data snapshot. The page
+   * publishes; the main process forwards it to the app window, where the
+   * Scene Editor's control column draws it. One way only -- the column's
+   * commands come back through `window.__editor`, not through here.
+   */
+  state: (snapshot) => ipcRenderer.send('editor:state', snapshot),
 });

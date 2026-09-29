@@ -353,6 +353,20 @@ contextBridge.exposeInMainWorld('lab', {
     /** The frame has gone. May ask about unsaved changes, and reopen it. */
     close: () => ipcRenderer.invoke('editor:close'),
     setViewBounds: (bounds) => ipcRenderer.invoke('editor:view-bounds', bounds),
+    /**
+     * One of the editor page's commands, by name -- the main process relays
+     * only the names it lists. Plain data in, plain data out; nothing here
+     * reads or writes a scene, the page does.
+     */
+    call: (method, ...args) => ipcRenderer.invoke('editor:call', method, args),
+    /** Import .glb…: the main process shows the dialog and hands the page the file. */
+    importModel: () => ipcRenderer.invoke('editor:import'),
+    /** The page's state, whenever it changes: what the control column draws. */
+    onState: (callback) => {
+      const listener = (_event, snapshot) => callback(snapshot);
+      ipcRenderer.on('editor:state', listener);
+      return () => ipcRenderer.removeListener('editor:state', listener);
+    },
   },
 
   /**

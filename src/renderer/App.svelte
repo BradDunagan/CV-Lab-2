@@ -24,6 +24,7 @@
   import { controlStore, controlEvents } from 'paneless';
   import { attachSlotControls, CONTROLS_WIDTH } from './panes/slot-controls.svelte.js';
   import { CONTROLS_WIDTH as GENERATE_CONTROLS_WIDTH } from './panes/generate-controls.svelte.js';
+  import { CONTROLS_WIDTH as EDITOR_CONTROLS_WIDTH } from './panes/editor-controls.svelte.js';
   import 'paneless/styles/theme.css';
 
   import SlotPane from './panes/SlotPane.svelte';
@@ -56,7 +57,10 @@
   // 'Render' is the Generate frame's right-hand pane, which is the one that
   // carries the component; 'Generate' is kept for a frame made before it split.
   const byTitle = {
-    Log: LogPane, Generate: GeneratePane, Render: GeneratePane, 'Scene Editor': EditorPane,
+    Log: LogPane, Generate: GeneratePane, Render: GeneratePane,
+    // 'Scene' is the Scene Editor's right-hand pane; 'Scene Editor' a frame
+    // made before it split.
+    'Scene Editor': EditorPane, Scene: EditorPane,
   };
   const isSlotTitle = (t) => typeof t === 'string' && (t === 'Slot' || t.startsWith('Slot '));
 
@@ -504,17 +508,38 @@
   /* ------------------------------------------------------------------ */
 
   /**
-   * One pane, no split: the editor brings its own sidebar, because it is
-   * pt-lab's editor running in a view of its own rather than paneless
-   * controls. Large, because composing a scene is looking at it -- and the
-   * sidebar alone takes 270px of the width.
+   * Split like the Generate frame, and for the same reason: the controls
+   * belong beside the thing they act on. Left, a paneless column the
+   * render pane attaches (editor-controls.svelte.js); right, the pane the
+   * main process lays pt-lab's view over. Large, because composing a scene
+   * is looking at it.
    */
   function newEditorFrame() {
     const box = contentBox();
-    const w = Math.min(box.width - GAP * 2, 1100);
+    const w = Math.min(box.width - GAP * 2, EDITOR_CONTROLS_WIDTH + SPLITTER_W + 900);
     const h = Math.min(box.height - GAP * 2, Math.round(box.height * 0.8));
-    return makeFrame('Scene Editor', EditorPane,
+    const rootId = makeFrame('Scene Editor', EditorPane,
       Math.round((box.width - w) / 2), Math.round((box.height - h) / 2), w, h);
+    if (!rootId) return null;
+
+    const split = splitHorizontally(rootId, controlsRatio(w, EDITOR_CONTROLS_WIDTH));
+    if (!split) return rootId;
+
+    contentRegistry.delete(split.leftId);
+    paneStore.updatePane(split.leftId, {
+      contentType: 'controls',
+      title: 'Controls',
+      titleVisible: false,
+      headerVisible: false,
+    });
+
+    contentRegistry.set(split.rightId, EditorPane);
+    paneStore.updatePane(split.rightId, {
+      title: 'Scene',
+      titleVisible: true,
+      headerVisible: false,
+    });
+    return split.rightId;
   }
 
   /* ------------------------------------------------------------------ */

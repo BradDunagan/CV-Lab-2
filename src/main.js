@@ -262,10 +262,16 @@ function createWindow() {
    * over a pane whose rectangle the renderer reports -- except that it lives
    * as long as the frame does rather than for one sweep.
    *
-   * Its page is pt-lab's editor from dist-generate/, served as gen://editor.
-   * It gets a preload of its own, sandboxed, whose only reach is the three
-   * editor:* channels below; each checks that the message really came from
-   * this view, because they read and write files in scenes/.
+   * Its page is pt-lab's view from dist-generate/, served as gen://editor.
+   * It gets a preload of its own, sandboxed, whose only reach is the
+   * editor:* channels below that it sends on; each checks that the message
+   * really came from this view, because they read and write files in scenes/.
+   *
+   * Its CONTROLS are not in it. They are a paneless column in this window's
+   * renderer, beside the view, and reach the page through `editor:call`,
+   * which relays a named method to the page's `window.__editor` -- only names
+   * in generator.EDITOR_METHODS, and only from this window. The page answers
+   * with snapshots of its state on `editor:state`, forwarded here unchanged.
    */
   let editorView = null;
   let editorBounds = null;
@@ -380,6 +386,47 @@ function createWindow() {
   ipcMain.handle('editor:view-bounds', (_event, bounds) => {
     editorBounds = bounds;
     applyEditorBounds();
+  });
+
+  /** Call one of the page's __editor methods, by name, with plain-data args. */
+  const callEditor = (method, args = []) => {
+    if (!editorView) throw new Error('the Scene Editor is not open');
+    if (!generator.EDITOR_METHODS.includes(method)) {
+      throw new Error(`"${method}" is not something the Scene Editor does`);
+    }
+    return editorView.webContents.executeJavaScript(
+      `window.__editor.${method}(...${JSON.stringify(args)})`);
+  };
+
+  ipcMain.removeHandler('editor:call');
+  ipcMain.handle('editor:call', (event, method, args) => {
+    if (event.sender !== win.webContents) throw new Error('only the app window may do that');
+    return callEditor(String(method), Array.isArray(args) ? args : []);
+  });
+
+  ipcMain.removeAllListeners('editor:state');
+  ipcMain.on('editor:state', (event, snapshot) => {
+    if (!editorView || event.sender !== editorView.webContents || win.isDestroyed()) return;
+    win.webContents.send('editor:state', snapshot);
+  });
+
+  /*
+   * Import .glb… The column asks; the dialog belongs to this window, and the
+   * picked file is made fetchable to the page by one token rather than by
+   * handing the page a path.
+   */
+  ipcMain.removeHandler('editor:import');
+  ipcMain.handle('editor:import', async (event) => {
+    if (event.sender !== win.webContents) throw new Error('only the app window may do that');
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Import a model into the Scene Editor',
+      properties: ['openFile'],
+      filters: [{ name: 'glTF binary', extensions: ['glb'] }],
+    });
+    if (canceled || filePaths.length === 0) return null;
+    const file = filePaths[0];
+    const name = path.basename(file).replace(/\.glb$/i, '');
+    return callEditor('importFromURL', [generator.serveEditorImport(file), name]);
   });
 
   ipcMain.removeHandler('editor:scenes');

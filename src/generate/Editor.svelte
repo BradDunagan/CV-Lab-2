@@ -1,34 +1,41 @@
 <script>
   /**
-   * The scene editor: pt-lab's editor, with scenes that are files.
+   * The scene editor's page: pt-lab's view, and the scene model behind it.
    *
-   * Ported from pt-lab's demo App.svelte, which is one consumer of pt-lab's
-   * editor API; this is another. What it keeps is the composing -- room,
-   * objects, materials, transforms, lights, camera -- and pt-lab's own panels
-   * for all of it. What it leaves out is everything that PRODUCES images:
+   * It draws nothing but the render. The controls are a paneless column in
+   * the app window, beside this view -- src/renderer/panes/editor-controls --
+   * the same arrangement the Generate frame has. This page is the other half:
+   * it owns everything that needs pt-lab or this origin's storage, and the
+   * column reaches it through `window.__editor`, which the main process calls
+   * on the column's behalf.
+   *
+   * Two directions, deliberately asymmetric:
+   *
+   *   - commands come IN as `__editor.<method>(...)`, relayed by the main
+   *     process against a list of names it allows;
+   *   - state goes OUT as one snapshot of everything the column shows,
+   *     published through window.cvlab whenever it changes.
+   *
+   * The selection lives here, not in the column, so a snapshot describes the
+   * whole UI and the column holds no state of its own to disagree with it.
+   *
+   * What the page leaves out is everything that PRODUCES images: pt-lab's
    * Save PNG, the depth-pass and rotation-series exports, the demo scenes.
-   * Images come from the Generate frame, as a sweep with provenance, and a
-   * second way to make one here would be a way to make one without it.
+   * Images come from the Generate frame, as a sweep with provenance.
    *
-   * What it changes is where a scene lives. pt-lab saves to localStorage,
-   * per origin, where nothing else can read it; this saves to scenes/ through
-   * window.cvlab (editor-preload.js), as the file the Generate pane renders.
-   * So there is no Export step and no copying: Save, and the scene is
-   * offered in Generate.
+   * Where a scene lives: pt-lab saves to localStorage, per origin, where
+   * nothing else can read it; this saves to scenes/ through window.cvlab
+   * (editor-preload.js), as the file the Generate pane renders.
    */
   import { onMount } from 'svelte';
   import {
     PathTracerViewer,
-    TransformPanel,
-    MaterialPanel,
-    LightPanel,
-    BundleTree,
     bundledTree,
-    bundledIsEmpty,
     getImport,
     newSceneData,
+    LIGHT_TYPES,
+    lightTypeInfo,
   } from 'pt-lab';
-  import CameraControls from './CameraControls.svelte';
 
   const host = window.cvlab;
 
@@ -38,18 +45,32 @@
   });
   const ready = $derived(!!lab && status.mode !== 'loading' && status.mode !== 'building-bvh');
 
-  /* --- which scene, and whether it has changed -------------------------- */
+  /* --- the model --------------------------------------------------------- */
 
   /** The scenes in scenes/, by name. */
-  let scenes = $state([]);
-  /** The scene open now: { name, file, local } -- or null for an unsaved one. */
-  let current = $state(null);
-  /** For a new scene, or Save As: the name to save under, and whether private. */
-  let saveName = $state('');
-  let saveLocal = $state(false);
-  let saving = $state(false);
-  let message = $state('');
-  let error = $state('');
+  let scenes = [];
+  /** The scene open now: { name, file, local, shared } -- or null for an unsaved one. */
+  let current = null;
+  let saving = false;
+  let message = '';
+  let error = '';
+  let editMode = true;
+  /** { kind: 'object' | 'light', id } or null. */
+  let selected = null;
+
+  /**
+   * The bundled importable objects, flattened. pt-lab enumerates them as a
+   * tree at build time; the column offers them as one list, by path.
+   */
+  const bundled = (() => {
+    const out = [];
+    const walk = (dir, prefix) => {
+      for (const d of dir.dirs) walk(d, `${prefix}${d.name}/`);
+      for (const f of dir.files) out.push({ name: f.name, path: `${prefix}${f.name}`, url: f.url });
+    };
+    walk(bundledTree, '');
+    return out;
+  })();
 
   /**
    * The scene as last opened or saved, to tell whether it has changed since.
@@ -59,21 +80,23 @@
    * of events forgot. Rounded, so a camera that merely settled does not count.
    */
   let baseline = null;
-  let dirty = $state(false);
 
-  function snapshot() {
+  function serialized() {
     return JSON.stringify(lab.serializeScene(), (_k, v) =>
       typeof v === 'number' ? Math.round(v * 1e5) / 1e5 : v);
   }
 
+  function isDirty() {
+    return ready && baseline !== null && serialized() !== baseline;
+  }
+
   function markClean() {
-    baseline = snapshot();
-    dirty = false;
+    baseline = serialized();
   }
 
   /** Nothing to lose, or the person said to lose it. */
   function mayDiscard(what) {
-    if (!dirty) return true;
+    if (!isDirty()) return true;
     return confirm(`${current ? `"${current.name}"` : 'This new scene'} has unsaved changes. ` +
       `Discard them and ${what}?`);
   }
@@ -87,14 +110,86 @@
   }
 
   async function refreshScenes() {
+    scenes = await host.scenes();
+  }
+
+  /* --- publishing -------------------------------------------------------- */
+
+  /**
+   * Everything the column shows, as plain data.
+   *
+   * Built fresh each time from pt-lab rather than mirrored field by field, so
+   * there is one source for each value and nothing here can go stale.
+   */
+  function snapshot() {
+    if (!lab) return { ready: false, mode: status.mode };
+    const objects = lab.listObjects();
+    const lights = lab.listLights();
+    // A selection whose object or light has gone -- removed, or replaced by
+    // opening a scene -- is no selection.
+    if (selected?.kind === 'object' && !objects.some((o) => o.id === selected.id)) selected = null;
+    if (selected?.kind === 'light' && !lights.some((l) => l.id === selected.id)) selected = null;
+    const obj = selected?.kind === 'object' ? selected.id : null;
+    return {
+      ready,
+      mode: status.mode,
+      samples: status.samples,
+      scenes,
+      current,
+      dirty: isDirty(),
+      saving,
+      message,
+      error,
+      editMode,
+      room: lab.getRoom(),
+      camera: { position: lab.getCameraPosition(), target: lab.getCameraTarget() },
+      objects,
+      lights,
+      selected,
+      material: obj ? lab.getObjectMaterial(obj) : null,
+      transform: obj ? lab.getObjectTransform(obj) : null,
+      bundled: bundled.map(({ name, path }) => ({ name, path })),
+      lightTypes: LIGHT_TYPES,
+    };
+  }
+
+  /*
+   * Coalesced, and only when something differs. The status callback fires
+   * every frame while the tracer accumulates, and a snapshot per frame would
+   * be sixty IPC messages a second for a sample count.
+   */
+  let lastSent = '';
+  let pending = null;
+  function publish() {
+    if (pending) return;
+    pending = setTimeout(() => {
+      pending = null;
+      const s = JSON.stringify(snapshot());
+      if (s === lastSent) return;
+      lastSent = s;
+      host.state(JSON.parse(s));
+    }, 120);
+  }
+
+  $effect(() => {
+    void status;
+    publish();
+  });
+
+  /** Run a command, then say what it changed -- or why it failed. */
+  async function command(fn) {
     try {
-      scenes = await host.scenes();
+      error = '';
+      return await fn();
     } catch (err) {
       error = reason(err);
+      return undefined;
+    } finally {
+      publish();
     }
   }
 
-  /* --- opening ----------------------------------------------------------- */
+  /* --- opening and saving ------------------------------------------------ */
 
   /**
    * Open a scene from scenes/.
@@ -107,54 +202,38 @@
    */
   async function openScene(name) {
     if (!lab || !mayDiscard(`open "${name}"`)) return;
-    error = '';
     message = '';
-    try {
-      const scene = await host.open(name);
-      for (const m of scene.models) {
-        const res = await fetch(m.url);
-        if (!res.ok) throw new Error(`${m.glb}: ${res.status} ${res.statusText}`);
-        try {
-          const sha256 = await lab.registerImport(m.key, m.name, await res.arrayBuffer());
-          if (sha256 !== m.sha256) throw new Error(`${m.glb} arrived with a different hash`);
-        } catch (err) {
-          // Already in the library: imported here earlier, or opened before
-          // in this session. Same key, and the key is what applyScene reads.
-          if (!/already in the library/.test(err.message)) throw err;
-        }
+    const scene = await host.open(name);
+    for (const m of scene.models) {
+      const res = await fetch(m.url);
+      if (!res.ok) throw new Error(`${m.glb}: ${res.status} ${res.statusText}`);
+      try {
+        const sha256 = await lab.registerImport(m.key, m.name, await res.arrayBuffer());
+        if (sha256 !== m.sha256) throw new Error(`${m.glb} arrived with a different hash`);
+      } catch (err) {
+        // Already in the library: imported here earlier, or opened before
+        // in this session. Same key, and the key is what applyScene reads.
+        if (!/already in the library/.test(err.message)) throw err;
       }
-      lab.applyScene(scene.data);
-      roomKind = scene.data.room;
-      selectedId = null;
-      selectedLightId = null;
-      current = { name: scene.name, file: scene.file, local: scene.local };
-      saveName = scene.name;
-      markClean();
-      if (scene.shared) {
-        message = `${scene.file} holds several scenes, so this one cannot be saved back ` +
-          `into it. Save it under a new name.`;
-      }
-    } catch (err) {
-      error = reason(err);
+    }
+    lab.applyScene(scene.data);
+    selected = null;
+    current = { name: scene.name, file: scene.file, local: scene.local, shared: scene.shared };
+    markClean();
+    if (scene.shared) {
+      message = `${scene.file} holds several scenes, so this one cannot be saved back ` +
+        `into it. Save it under a new name.`;
     }
   }
 
   function newScene() {
     if (!lab || !mayDiscard('start a new one')) return;
-    const data = newSceneData();
-    lab.applyScene(data);
-    roomKind = data.room;
-    selectedId = null;
-    selectedLightId = null;
+    lab.applyScene(newSceneData());
+    selected = null;
     current = null;
-    saveName = '';
-    saveLocal = false;
-    error = '';
     message = '';
     markClean();
   }
-
-  /* --- saving ------------------------------------------------------------ */
 
   /**
    * The bytes of every included import this page holds itself.
@@ -176,144 +255,120 @@
   }
 
   /**
-   * Save. Back to the file the scene came from when `asNew` is false and
-   * there is one; otherwise under `saveName`, which must not already exist.
+   * Save. With no `name`, back to the file the scene came from; with one, as
+   * a new scene, which must not already exist.
    */
-  async function save(asNew) {
+  async function save({ name, local = false } = {}) {
     if (!lab || saving) return;
-    const name = asNew || !current ? saveName.trim() : current.name;
-    if (!name) {
-      error = 'Give the scene a name to save it under.';
-      return;
-    }
+    const asNew = !!name;
+    const target = asNew ? String(name).trim() : current?.name;
+    if (!target) throw new Error('Give the scene a name to save it under.');
     saving = true;
-    error = '';
     message = '';
+    publish();
     try {
       const data = lab.serializeScene();
-      const replace = !asNew && !!current && current.name === name;
       const saved = await host.save({
-        name, data, local: saveLocal, replace, models: await heldModels(data),
+        name: target, data, local, replace: !asNew, models: await heldModels(data),
       });
       const file = saved.file.split(/[\\/]/).pop();
-      current = { name, file, local: /\.local\.json$/.test(file) };
-      saveName = name;
+      current = { name: target, file, local: /\.local\.json$/.test(file), shared: false };
       markClean();
       await refreshScenes();
       message = `Saved ${file}` +
         (saved.models.length ? ` and ${saved.models.length} model(s)` : '') +
-        `. It is offered in Generate as "${name}".`;
-    } catch (err) {
-      error = reason(err);
+        `. It is offered in Generate as "${target}".`;
     } finally {
       saving = false;
     }
   }
 
-  /* --- the editor proper, as pt-lab's demo has it ----------------------- */
+  /* --- the API the column drives ---------------------------------------- */
 
-  let editMode = $state(true);
-  let objects = $state([]);
-  let selectedId = $state(null);
-  let lights = $state([]);
-  let selectedLightId = $state(null);
-  let importError = $state('');
-  let fileInput = $state();
-
-  const ROOM_OPTIONS = [
-    { value: 'room', label: 'Baked HDR env' },
-    { value: 'room-emissive', label: 'Emissive mesh' },
-    { value: 'room-arealight', label: 'Rect area light' },
-  ];
-  /*
-   * Set by the select's change handler, not pushed by an effect as the demo
-   * does: an effect also fires when a scene is opened and when the lab first
-   * becomes ready, and setRoom on pt-lab's startup scene would build a room
-   * around the helmet a moment before the real scene replaced it.
+  /**
+   * Every method here is one the main process may call, and main.js lists
+   * the same names -- a name missing there is refused, a name missing here
+   * is an error, and test/renderer.js holds the two lists together.
    */
-  let roomKind = $state('room-arealight');
+  const api = {
+    refresh: () => command(async () => { lastSent = ''; await refreshScenes(); }),
+    dirty: () => isDirty(),
 
-  function selectObject(id) {
-    selectedId = id;
-    selectedLightId = null;
-  }
-  function selectLight(id) {
-    selectedLightId = id;
-    selectedId = null;
-  }
-  function removeObject(id) {
-    if (selectedId === id) selectedId = null;
-    lab?.removeLibraryObject(id);
-  }
-  function addLight() {
-    if (lab) selectLight(lab.addLight());
-  }
-  function removeLight(id) {
-    if (selectedLightId === id) selectedLightId = null;
-    lab?.removeLight(id);
-  }
+    open: (name) => command(() => openScene(String(name))),
+    newScene: () => command(() => newScene()),
+    save: (request) => command(() => save(request ?? {})),
 
-  async function onImportFile(e) {
-    const input = e.currentTarget;
-    const file = input.files?.[0];
-    if (!file || !lab) return;
-    importError = '';
-    try {
-      await lab.importGLB(await file.arrayBuffer(), file.name);
-    } catch (err) {
-      importError = err?.name === 'QuotaExceededError'
-        ? 'Storage full -- remove some imported objects.'
-        : 'Import failed -- is it a valid .glb?';
-    }
-    input.value = '';
-  }
+    select: (kind, id) => command(() => {
+      selected = kind && id ? { kind, id } : null;
+    }),
+    setPreview: (on) => command(() => {
+      editMode = !on;
+      lab.setEditMode(editMode);
+    }),
+    setRoom: (kind) => command(() => lab.setRoom(kind)),
+    setCamera: ({ position, target } = {}) => command(() => {
+      if (position) lab.setCameraPosition(...position);
+      if (target) lab.setCameraTarget(...target);
+    }),
 
-  const importedNames = $derived(new Set(objects.map((o) => o.name)));
+    setIncluded: (id, included) => command(() => lab.setObjectIncluded(id, !!included)),
+    removeObject: (id) => command(() => {
+      if (selected?.id === id) selected = null;
+      lab.removeLibraryObject(id);
+    }),
+    /** Partial: whatever fields are given replace those of the current transform. */
+    setTransform: (id, t) => command(() => {
+      lab.setObjectTransform(id, { ...lab.getObjectTransform(id), ...t });
+    }),
+    /** Partial, so a texture the column cannot show is kept rather than dropped. */
+    setMaterial: (id, m) => command(() => {
+      lab.setObjectMaterial(id, { ...lab.getObjectMaterial(id), ...m });
+    }),
+    /** A .glb the main process has made fetchable -- picked from disk, or bundled. */
+    importFromURL: (url, name) => command(async () => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${name}: ${res.status} ${res.statusText}`);
+      try {
+        await lab.importGLB(await res.arrayBuffer(), name);
+      } catch (err) {
+        throw new Error(err?.name === 'QuotaExceededError'
+          ? 'Storage full -- remove some imported objects.'
+          : `Import failed -- is ${name} a valid .glb?`);
+      }
+    }),
+    importBundled: (path) => command(async () => {
+      const b = bundled.find((x) => x.path === path);
+      if (!b) throw new Error(`no bundled object "${path}"`);
+      if (lab.listObjects().some((o) => o.name === b.name)) {
+        throw new Error(`${b.name} is already in the library.`);
+      }
+      const res = await fetch(b.url);
+      if (!res.ok) throw new Error(`${b.name}: ${res.status}`);
+      await lab.importGLB(await res.arrayBuffer(), b.name);
+    }),
 
-  async function importBundled(file) {
-    if (!lab || importedNames.has(file.name)) return;
-    importError = '';
-    try {
-      const res = await fetch(file.url);
-      if (!res.ok) throw new Error(`fetch ${res.status}`);
-      await lab.importGLB(await res.arrayBuffer(), file.name);
-    } catch {
-      importError = `Couldn't import ${file.name}.`;
-    }
-  }
-
-  $effect(() => {
-    if (!lab) return;
-    lab.setOnObjectsChanged((list) => (objects = list));
-    objects = lab.listObjects();
-    lab.setOnLightsChanged((list) => (lights = list));
-    lights = lab.listLights();
-  });
-
-  $effect(() => {
-    lab?.setEditMode(editMode);
-  });
-
-  // Recomputed when the selection changes or edit mode is re-entered, which is
-  // when the keyed panels remount and re-seed -- see pt-lab's demo for why
-  // reading editMode here matters.
-  const selectedName = $derived(objects.find((o) => o.id === selectedId)?.name ?? '');
-  const selectedTransform = $derived.by(() => {
-    void editMode;
-    return selectedId && lab ? lab.getObjectTransform(selectedId) : null;
-  });
-  const selectedMaterial = $derived.by(() => {
-    void editMode;
-    return selectedId && lab ? lab.getObjectMaterial(selectedId) : null;
-  });
-  const selectedLight = $derived(lights.find((l) => l.id === selectedLightId) ?? null);
-
-  const cameraState = $derived.by(() => {
-    void status;
-    return lab
-      ? { position: lab.getCameraPosition(), target: lab.getCameraTarget() }
-      : null;
-  });
+    addLight: () => command(() => {
+      selected = { kind: 'light', id: lab.addLight() };
+    }),
+    removeLight: (id) => command(() => {
+      if (selected?.id === id) selected = null;
+      lab.removeLight(id);
+    }),
+    /**
+     * Partial. Changing the type resets the intensity to that type's default,
+     * as pt-lab's own light panel does: candela and nits are different units,
+     * and a spot at 80 cd is not an area light at 80 nt.
+     */
+    setLight: (id, l) => command(() => {
+      const was = lab.getLight(id);
+      if (!was) throw new Error(`no light "${id}"`);
+      const next = { ...was, ...l };
+      if (l.type && l.type !== was.type && l.intensity === undefined) {
+        next.intensity = lightTypeInfo(l.type).defaultIntensity;
+      }
+      lab.setLight(id, next);
+    }),
+  };
 
   /* --- startup ----------------------------------------------------------- */
 
@@ -327,293 +382,36 @@
   $effect(() => {
     if (!ready || started) return;
     started = true;
-    refreshScenes().then(() => (scenes.length > 0 ? openScene(scenes[0]) : newScene()));
+    // pt-lab starts path tracing; the editor starts editing. Said once, here,
+    // rather than left to whichever control happens to be touched first --
+    // the column's preview checkbox reads this state, it does not set it.
+    lab.setEditMode(editMode);
+    command(async () => {
+      await refreshScenes();
+      if (scenes.length > 0) await openScene(scenes[0]);
+      else newScene();
+    });
+  });
+
+  $effect(() => {
+    if (!lab) return;
+    lab.setOnObjectsChanged(() => publish());
+    lab.setOnLightsChanged(() => publish());
   });
 
   onMount(() => {
-    const timer = setInterval(() => {
-      if (ready && baseline !== null) dirty = snapshot() !== baseline;
-    }, 1000);
-    // For the main process, which asks before the frame closes.
-    window.__editor = { dirty: () => (ready && baseline !== null ? snapshot() !== baseline : false) };
+    window.__editor = api;
+    // Dirtiness has no event of its own; a slow poll is what notices a
+    // camera dragged or a panel edit the column did not make.
+    const timer = setInterval(publish, 1000);
     return () => clearInterval(timer);
   });
-
-  const title = $derived(current ? current.name : 'New scene');
 </script>
 
 <main>
   <PathTracerViewer bind:lab bind:status />
-
-  <aside>
-    <div class="scene-bar">
-      <select
-        value={current?.name ?? ''}
-        disabled={!ready}
-        onchange={(e) => {
-          const name = e.currentTarget.value;
-          e.currentTarget.value = current?.name ?? '';
-          if (name) openScene(name);
-        }}
-      >
-        {#if !current}<option value="">New scene</option>{/if}
-        {#each scenes as name (name)}
-          <option value={name}>{name}</option>
-        {/each}
-      </select>
-      <button onclick={newScene} disabled={!ready} title="Start an empty room">New</button>
-    </div>
-
-    <div class="scene-name">
-      {title}{#if dirty}<span class="dirty" title="Unsaved changes"> ●</span>{/if}
-      {#if current}<div class="file">{current.file}</div>{/if}
-    </div>
-
-    <div class="save">
-      {#if current}
-        <button class="primary" onclick={() => save(false)} disabled={!ready || saving}>
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-      {/if}
-      <div class="save-as">
-        <input
-          type="text"
-          placeholder="name"
-          bind:value={saveName}
-          disabled={!ready || saving}
-          onkeydown={(e) => { if (e.key === 'Enter') save(true); }}
-        />
-        <button onclick={() => save(true)} disabled={!ready || saving || !saveName.trim()}>
-          {current ? 'Save As' : 'Save'}
-        </button>
-      </div>
-      <label class="toggle">
-        <input type="checkbox" bind:checked={saveLocal} disabled={!ready || saving} />
-        <span>private: <code>.local.json</code>, not committed</span>
-      </label>
-      {#if message}<p class="hint">{message}</p>{/if}
-      {#if error}<pre class="hint error">{error}</pre>{/if}
-    </div>
-
-    <button class="mode-toggle" onclick={() => (editMode = !editMode)} disabled={!ready}>
-      {editMode ? 'Preview path-traced →' : '← Back to editing'}
-    </button>
-
-    {#if editMode}
-      <label>
-        Room
-        <select
-          value={roomKind}
-          onchange={(e) => { roomKind = e.currentTarget.value; lab?.setRoom(roomKind); }}
-        >
-          {#each ROOM_OPTIONS as r (r.value)}
-            <option value={r.value}>{r.label}</option>
-          {/each}
-        </select>
-      </label>
-
-      {#if cameraState}
-        <details class="group">
-          <summary>Camera</summary>
-          <CameraControls {lab} position={cameraState.position} target={cameraState.target} />
-        </details>
-      {/if}
-
-      <details class="group" open>
-        <summary>Objects</summary>
-        {#if objects.length}
-          <ul class="object-list">
-            {#each objects as obj (obj.id)}
-              <li class="obj-row" class:selected={obj.id === selectedId}>
-                <input
-                  type="checkbox"
-                  checked={obj.included}
-                  onchange={(e) => lab?.setObjectIncluded(obj.id, e.currentTarget.checked)}
-                />
-                <button class="obj-name" onclick={() => selectObject(obj.id)}>{obj.name}</button>
-                {#if obj.removable}
-                  <button class="obj-remove" title="Remove from library" onclick={() => removeObject(obj.id)}>×</button>
-                {/if}
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <p class="hint pad">No objects yet -- import one below.</p>
-        {/if}
-        <div class="obj-import">
-          <button onclick={() => fileInput?.click()}>Import .glb…</button>
-          {#if importError}<p class="hint error">{importError}</p>{/if}
-        </div>
-      </details>
-      <input type="file" accept=".glb" bind:this={fileInput} onchange={onImportFile} hidden />
-
-      <details class="group" open>
-        <summary>Lights</summary>
-        {#if lights.length}
-          <ul class="object-list">
-            {#each lights as light (light.id)}
-              <li class="obj-row" class:selected={light.id === selectedLightId}>
-                <span class="light-swatch" style:background={light.color}></span>
-                <button class="obj-name" onclick={() => selectLight(light.id)}>{light.name}</button>
-                <span class="light-type">{light.type}</span>
-                <button class="obj-remove" title="Remove light" onclick={() => removeLight(light.id)}>×</button>
-              </li>
-            {/each}
-          </ul>
-        {:else}
-          <p class="hint pad">No lights added -- the room's own lighting still applies.</p>
-        {/if}
-        <div class="obj-import">
-          <button onclick={addLight}>Add light</button>
-        </div>
-      </details>
-
-      {#if !bundledIsEmpty}
-        <details class="group">
-          <summary>Bundled objects</summary>
-          <div class="bundle-tree">
-            <BundleTree node={bundledTree} {importedNames} onimport={importBundled} />
-          </div>
-        </details>
-      {/if}
-
-      {#if selectedId && selectedMaterial}
-        <details class="group" open>
-          <summary>Material — {selectedName}</summary>
-          {#key selectedId}
-            <MaterialPanel
-              material={selectedMaterial}
-              onchange={(m) => selectedId && lab?.setObjectMaterial(selectedId, m)}
-            />
-          {/key}
-        </details>
-      {/if}
-
-      {#if selectedId && selectedTransform}
-        <details class="group" open>
-          <summary>Transform — {selectedName}</summary>
-          {#key selectedId}
-            <TransformPanel
-              transform={selectedTransform}
-              onchange={(t) => selectedId && lab?.setObjectTransform(selectedId, t)}
-            />
-          {/key}
-        </details>
-      {/if}
-
-      {#if selectedLightId && selectedLight}
-        <details class="group" open>
-          <summary>Light — {selectedLight.name}</summary>
-          {#key selectedLightId}
-            <LightPanel
-              light={selectedLight}
-              onchange={(l) => selectedLightId && lab?.setLight(selectedLightId, l)}
-            />
-          {/key}
-        </details>
-      {/if}
-
-      <p class="hint">
-        Raster preview. Drag to orbit; the camera is saved with the scene and is
-        where Generate's sweep starts. Lights show as small spheres here only.
-      </p>
-    {:else}
-      <div class="status">
-        <div><span class="key">Mode</span><span>{status.mode}</span></div>
-        <div><span class="key">Samples</span><span>{status.samples}</span></div>
-      </div>
-      <p class="hint">
-        What Generate will render, before any lighting multiplier. Nothing here
-        is saved as an image -- use Generate for that.
-      </p>
-    {/if}
-  </aside>
 </main>
 
 <style>
   main { display: flex; width: 100vw; height: 100vh; }
-
-  aside {
-    flex: 0 0 270px;
-    padding: 0.8rem;
-    display: flex; flex-direction: column; gap: 0.75rem;
-    background: #16161c;
-    border-left: 1px solid #2a2a33;
-    overflow-y: auto;
-  }
-
-  label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: #bbb; }
-  .toggle { flex-direction: row; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #999; }
-  code { font-size: 0.72rem; }
-
-  select, input[type='text'] {
-    padding: 0.35rem;
-    border: 1px solid #3a3a45; border-radius: 6px;
-    background: #22222b; color: #eee; font-size: 0.85rem;
-    min-width: 0;
-  }
-  input[type='checkbox'] { accent-color: #7c6cf4; }
-
-  button {
-    padding: 0.4rem 0.5rem;
-    border: 1px solid #3a3a45; border-radius: 6px;
-    background: #22222b; color: #eee; cursor: pointer; font-size: 0.85rem;
-  }
-  button:hover:not(:disabled) { background: #2c2c37; }
-  button:disabled { opacity: 0.4; cursor: default; }
-  button.primary { background: #2a2440; border-color: #4a3f7a; color: #d9d2ff; font-weight: 600; }
-
-  .scene-bar { display: flex; gap: 0.4rem; }
-  .scene-bar select { flex: 1; }
-
-  .scene-name {
-    padding: 0.45rem 0.7rem; border-radius: 6px;
-    background: #101016; color: #f0f0f4; font-weight: 600; font-size: 0.9rem;
-  }
-  .scene-name .file { font-weight: 400; font-size: 0.72rem; color: #888; margin-top: 0.15rem; }
-  .dirty { color: #e0a060; }
-
-  .save { display: flex; flex-direction: column; gap: 0.4rem; }
-  .save-as { display: flex; gap: 0.4rem; }
-  .save-as input { flex: 1; }
-
-  .mode-toggle { background: #2a2440; border-color: #4a3f7a; font-weight: 600; color: #d9d2ff; }
-
-  .group { border: 1px solid #2a2a33; border-radius: 6px; background: #101016; }
-  .group > summary {
-    padding: 0.45rem 0.7rem; cursor: pointer;
-    font-size: 0.72rem; font-weight: 600; color: #aaa;
-    text-transform: uppercase; letter-spacing: 0.05em; user-select: none;
-  }
-  .group[open] > summary { border-bottom: 1px solid #2a2a33; }
-
-  .object-list { list-style: none; margin: 0; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.15rem; }
-  .obj-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0.35rem; border-radius: 4px; }
-  .obj-row.selected { background: #2a2440; }
-  .obj-name {
-    flex: 1; text-align: left; padding: 0.1rem 0.2rem;
-    border: none; background: none; color: #ddd; font-size: 0.85rem;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .obj-row.selected .obj-name { color: #f0f0f4; font-weight: 600; }
-  .obj-name:hover { color: #fff; background: none; }
-  .obj-remove { padding: 0 0.3rem; border: none; background: none; color: #888; font-size: 1.1rem; line-height: 1; }
-  .obj-remove:hover { color: #e77; background: none; }
-  .obj-import { padding: 0.5rem 0.7rem; border-top: 1px solid #2a2a33; }
-  .obj-import button { width: 100%; }
-  .light-swatch { flex: 0 0 auto; width: 0.8rem; height: 0.8rem; border: 1px solid #3a3a45; border-radius: 50%; }
-  .light-type { font-size: 0.7rem; color: #777; }
-  .bundle-tree { padding: 0.4rem 0.6rem 0.6rem; max-height: 40vh; overflow-y: auto; }
-
-  .status {
-    display: flex; flex-direction: column; gap: 0.25rem;
-    padding: 0.6rem; border-radius: 6px; background: #101016;
-    font-size: 0.85rem; color: #eee; font-variant-numeric: tabular-nums;
-  }
-  .status div { display: flex; justify-content: space-between; }
-  .status .key { color: #888; }
-
-  .hint { margin: 0; font-size: 0.75rem; color: #777; line-height: 1.45; }
-  .hint.pad { padding: 0.6rem 0.7rem; }
-  .hint.error { color: #e88; white-space: pre-wrap; font-family: inherit; }
 </style>
