@@ -1461,6 +1461,55 @@ and in Node, usable as a general deep-copy utility.
 
 ---
 
+## Sweep
+
+**Running the same measurement many times while one input changes in steps
+across a range, with everything else held fixed, so the result can be read as a
+curve against that input.**
+
+The parts of a sweep:
+
+- **the swept input**: one parameter, such as a sample offset, a light's
+  intensity or the distance between two parts
+- **its range and steps**: often finer where the result is expected to change
+  fastest, as with a gap stepped 20, 10, 5, 2, 1, 0.5, 0 mm toward contact
+- **what is held fixed**: everything else, because a second input that also
+  changes makes the curve impossible to attribute
+- **what is recorded at each step**: the same measurements every time
+
+What comes out is where the curve bends or breaks, which a single run cannot
+show.
+
+**Nested sweeps make a grid.** Sweeping one input at each value of another gives
+a table or heat map instead of a curve. Each cell still changes one input
+relative to its neighbours.
+
+**Not random variation.** Randomising pose and lighting asks how a pipeline does
+on average. A sweep asks where the result changes and why. The two complement
+each other.
+
+**Not a trajectory.** A sweep over distance looks like an approach, but each
+step is an independent render with nothing carried from the one before.
+
+**Why it matters here.** Two uses:
+
+- **Generate's sweep** is a grid of `--positions` camera positions ×
+  `--lighting` light intensities, planned by `plan()` in
+  `src/generate/driver.js`. The contact sheet shows one thumbnail per cell.
+- **Measurement sweeps** settle what caused a number. Sweeping `explain`'s
+  `offset` over 1.0–8 px showed the occlusion share tracking the offset,
+  57% → 92%, on every subject. So the share was set by the measurement, not by
+  the scene (`design-lab-model.md` §11).
+
+**Not the same word as `fitArcs`'s `sweep`**, which is the angle an arc spans,
+from `angle0` to `angle1`.
+
+**Elsewhere**: a *parameter sweep* in simulation and circuit design (SPICE's
+`.DC` and `.STEP`); an *ablation* in machine learning is a sweep where the input
+is present or absent; a *frequency sweep* in audio and RF testing.
+
+---
+
 ## T-junction
 
 **A place where one edge runs into another in the image and stops, forming a
