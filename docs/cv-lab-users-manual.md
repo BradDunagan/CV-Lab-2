@@ -1313,6 +1313,48 @@ invisible in the tally and obvious in one overlay image. Pass `--min-angle` to
 match whatever you gave `match`, or the picture will disagree with the table for
 reasons that are nobody's fault.
 
+### `npm run gap-sweep`
+
+```bash
+npm run gap-sweep -- --name gap-1-front --scene saved:gap-1-front
+```
+
+Steps one part toward another down to contact, renders each step with ground
+truth and passes, runs `pipelines/explained.lab` over them, and writes one row
+per gap to `results/<name>/gap-sweep.csv` (and `.json`), with an overlay per
+step in `results/<name>/overlays/`. Only the moving part's position changes;
+the camera is the scene's saved camera and the lighting is the scene's own. It
+needs a GPU, and takes about 20 s per step.
+
+The measured quantity is the gap **in the image** between the moving part's
+leading edge and the target's facing edge, detected against true, taken at
+the middle of where the two truth edges overlap. It is not a 6-DoF pose; the
+lab has no pose estimator, and one would put its own error into the result.
+
+| column | |
+|---|---|
+| `trueGapPx`, `measuredGapPx`, `errorPx`, `errorMm` | the gap, and the error; `errorMm` uses the sweep's own pixels per millimetre of gap |
+| `pairFound` | both facing edges detected AND reaching the measuring point; when false, `reason` says which failed and the error columns are empty |
+| `spansBoth` | detected segments lying along both parts' edges: the merge failure |
+| `CubeFound`, `TableFound` | findable truth edges of each part that were found |
+| `inGap_<cause>` | `explain` causes of the detections in the gap |
+
+A detection that stops short of the measuring point is not extrapolated: a
+long edge is often found in pieces, and a gap read off a piece 60 px away is an
+error that looks like the detector's and is not.
+
+`scenes/gap-1.json` rests the Cube on the Table with its front face flush with
+the table's front edge, lit by the room's overhead lamp alone.
+`scenes/gap-1-front.json` is the same scene with an area light on the camera
+side. Under the lamp alone, the cube's own shadow takes the contrast out of
+both facing edges, and no gap is measured at any step.
+
+`--moving`, `--target`, `--axis` and `--gaps` name the parts and the steps;
+the moving part's position in the scene file is contact. `--skip-render`
+reruns the lab and the analysis over renders already made, and refuses if they
+were made from different shots. Under the hood it hands the generator a shot
+list with `npm run generate -- --shots <file>`, which any other sweep can use.
+
 ---
 
 ## 8. Reading the output

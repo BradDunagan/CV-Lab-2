@@ -41,12 +41,16 @@ src/lab/groundtruth.js   reads a renderer's ground truth in as features
 src/lab/match.js     scores detected features against it (pure JS)
 src/lab/explain.js   what put each edge in the picture — reads the AOV
                      passes: occlusion, crease, texture, or shading
+src/lab/gapsweep.js  the image gap between two parts, detected against
+                     true, one row per step of a gap sweep (pure JS)
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
 scripts/generate-cli.js  drives pt-lab to render varied images (needs a GPU)
 scripts/score.js     tallies match records: precision, recall, and which
                      corner field actually discriminates
 scripts/overlay.js   draws ground truth and detections over an image — every
                      defect in the scoring machinery was found this way
+scripts/gap-sweep.js steps one part toward another, renders each step, runs
+                     the lab over them and tabulates the gap (needs a GPU)
 pt-lab/              the path tracer + scene editor library, TypeScript, moved in
                      from its own repository — see pt-lab/README.md
 src/generate/        the generator: page (bundled separately) + main-process
@@ -59,7 +63,7 @@ src/menu.js          the application menu — global commands live here, not in 
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
-test/                fifteen suites; fourteen run under plain node
+test/                seventeen suites; sixteen run under plain node
 pipelines/           .lab scripts for the batch runner
 ```
 
@@ -70,12 +74,13 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — fifteen suites, ~447 tests
+npm test                # everything — seventeen suites, ~462 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
 npm run score -- results/           # found, against what is really there
 npm run overlay -- <img> results/   # ...and the same thing as a picture
+npm run gap-sweep -- --name gap-1   # a part closing on another, down to contact
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run check:pt-lab    # type-check pt-lab/ — the build strips types unchecked
