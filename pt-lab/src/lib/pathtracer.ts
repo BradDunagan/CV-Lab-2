@@ -1739,6 +1739,24 @@ export class PathTracerLab {
 		this.shadowsDirty = true;
 	}
 
+	/**
+	 * Rebuild the traced scene now if an object moved while rendering.
+	 *
+	 * setObjectTransform only marks objects dirty, so dragging one in edit mode
+	 * costs nothing until the return to render. A caller that moves objects
+	 * between exports without ever entering edit mode -- cv-lab's generator --
+	 * would otherwise export the old position. The same rebuild exportSeries
+	 * does after each step, and setEditMode(false) does on the way back.
+	 */
+	commitObjectChanges() {
+		if (!this.objectsDirty || !this.ready || this.editing || this.buildingScene) return;
+		this.objectsDirty = false;
+		this.materialsDirty = false;
+		this.lightsDirty = false;
+		this.pathTracer.setScene(this.scene, this.camera);
+		this.lastResetAt = performance.now();
+	}
+
 	/** Every standard/physical material under an object (deduped). */
 	private materialsOf(obj: Object3D): MeshStandardMaterial[] {
 		const found = new Set<MeshStandardMaterial>();
