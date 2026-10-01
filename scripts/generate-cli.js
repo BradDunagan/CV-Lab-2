@@ -29,6 +29,7 @@
  * falling back to the convention.
  */
 
+const fs = require('node:fs');
 const { app } = require('electron');
 const {
   generate, registerScheme, checkPrerequisites, parseLight, resolveLights, resolveScene,
@@ -58,6 +59,10 @@ CV-Lab image generator — renders from pt-lab
   --crease-angle <d> how sharp a fold counts as an edge  (default 20)
   --denoise          run OIDN over each export (off in pt-lab by default)
   --show             show the render window and watch it converge
+  --shots <file>     render these shots instead of the scene's own plan: a
+                     JSON array of {name, camera, target, intensity,
+                     transforms?}. --positions and --lighting are ignored.
+                     See SHOTS below
   --dry-run          set everything up, render nothing
 
 SCENES
@@ -103,6 +108,21 @@ the lamp, so it renders the same lighting at a different brightness.
 --room none uses pt-lab's default scene, which lights the subject with a
 photographic HDR environment. It looks better and is a poor CV fixture: the
 blurred background and textured tabletop dominate the edge count.
+
+SHOTS
+
+The scenes' own plans step the camera round the subject and the lighting
+through a few intensities. Anything else -- a sweep of the gap between two
+parts, say -- is a list of shots computed elsewhere. Each is
+
+  { "name": "gap-5mm.png", "camera": [x, y, z], "target": [x, y, z],
+    "intensity": 1, "transforms": { "Cube": { "position": [x, y, z] } } }
+
+transforms is optional. It maps an object's name to a partial position /
+rotation (degrees) / scale, merged over where the object is now; placements
+are absolute, so no shot depends on the one before. The whole list is checked
+before anything renders, and moving an object the scene does not include is
+refused. scripts/gap-sweep.js writes one.
 
 GROUND TRUTH
 
@@ -164,6 +184,15 @@ function parseArgs(argv) {
       case '--denoise': opts.denoise = true; break;
       case '--truth': opts.truth = true; break;
       case '--show': opts.show = true; break;
+      case '--shots': {
+        const file = argv[++i];
+        try {
+          opts.shots = JSON.parse(fs.readFileSync(file, 'utf8'));
+        } catch (err) {
+          throw new Error(`--shots ${file}: ${err.message}`);
+        }
+        break;
+      }
       case '--dry-run': opts.dryRun = true; break;
       case '--help': case '-h': opts.help = true; break;
       default: throw new Error(`unknown option ${arg}`);
@@ -235,6 +264,21 @@ function describeLight(l) {
   return `${l.type}${l.intensity !== undefined ? `:${l.intensity}` : ''}${at}${l.color ?? ''}`;
 }
 
+/**
+ * What varies in a shot. A planned one steps yaw and offset; one from --shots
+ * carries neither and may place objects instead, which is then what matters.
+ */
+function describeShot(shot) {
+  const parts = [];
+  if (Number.isFinite(shot.yaw)) parts.push(`yaw=${shot.yaw.toFixed(2)}`);
+  if (Number.isFinite(shot.offset)) parts.push(`offset=${shot.offset.toFixed(2)}`);
+  for (const [name, t] of Object.entries(shot.transforms ?? {})) {
+    for (const [k, v] of Object.entries(t)) parts.push(`${name}.${k}=${v.map((x) => +x.toFixed(4)).join(',')}`);
+  }
+  parts.push(`intensity=${shot.intensity}`);
+  return parts.join(' ');
+}
+
 app.whenReady().then(async () => {
   console.log('Initialising the path tracer (loads a model and builds a BVH)…');
   // A dry run never reaches 'ready', which is where the lights are reported
@@ -259,15 +303,13 @@ app.whenReady().then(async () => {
         ? '  no editor lights -- the room lights the scene'
         : event.lights.map((l) => `  light  ${describeLight(l)}  ${l.name}`).join('\n'));
     } else if (event.type === 'shot' && event.dryRun) {
-      console.log(`  (dry run) ${event.name}  yaw=${event.yaw.toFixed(2)} ` +
-        `offset=${event.offset.toFixed(2)} intensity=${event.intensity}`);
+      console.log(`  (dry run) ${event.name}  ${describeShot(event)}`);
     } else if (event.type === 'shot') {
       const gt = event.truth
         ? `  gt ${event.truth.visibleEdges}/${event.truth.edges} edges, ` +
           `${event.truth.visibleVertices}/${event.truth.vertices} vertices`
         : '';
-      console.log(`  ok   ${event.name}  yaw=${event.yaw.toFixed(2)} ` +
-        `offset=${event.offset.toFixed(2)} intensity=${event.intensity}  ` +
+      console.log(`  ok   ${event.name}  ${describeShot(event)}  ` +
         `${(event.elapsedMs / 1000).toFixed(1)}s${gt}`);
     }
   });

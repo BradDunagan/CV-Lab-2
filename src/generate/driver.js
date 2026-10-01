@@ -1046,6 +1046,68 @@ function plan(options) {
 }
 
 /**
+ * A shot list handed in by the caller instead of planned from the scene.
+ *
+ * The scenes' own plans vary the camera and the lighting. A sweep over
+ * anything else -- the gap between two parts, say -- is a list of shots the
+ * caller computes, and each may also place objects: `transforms` maps an
+ * object's NAME (as listObjects reports it, "Cube") to a partial LabTransform
+ * merged over where the object currently is. Placements are absolute, so a
+ * shot does not depend on the one before it.
+ *
+ * Checked whole before anything renders: a typo in shot 7 found after six
+ * renders is two minutes wasted and a directory that looks complete.
+ */
+function checkShots(shots) {
+  if (!Array.isArray(shots) || shots.length === 0) {
+    throw new Error('shots: expected a non-empty array');
+  }
+  const vec3 = (v) => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
+  const names = new Set();
+  shots.forEach((shot, i) => {
+    const at = `shots[${i}]`;
+    if (!shot || typeof shot !== 'object') throw new Error(`${at}: not an object`);
+    if (typeof shot.name !== 'string' || !/^[\w.-]+\.png$/.test(shot.name)) {
+      throw new Error(`${at}: name must be a plain <name>.png, not ${JSON.stringify(shot.name)}`);
+    }
+    if (names.has(shot.name)) throw new Error(`${at}: name ${shot.name} is used twice`);
+    names.add(shot.name);
+    if (!vec3(shot.camera)) throw new Error(`${at}: camera must be [x, y, z]`);
+    if (!vec3(shot.target)) throw new Error(`${at}: target must be [x, y, z]`);
+    if (!Number.isFinite(shot.intensity) || shot.intensity < 0) {
+      throw new Error(`${at}: intensity must be a number >= 0`);
+    }
+    for (const [name, t] of Object.entries(shot.transforms ?? {})) {
+      if (!t || typeof t !== 'object') throw new Error(`${at}: transforms.${name} is not an object`);
+      for (const key of Object.keys(t)) {
+        if (!['position', 'rotation', 'scale'].includes(key)) {
+          throw new Error(`${at}: transforms.${name}.${key} is not position, rotation or scale`);
+        }
+        if (!vec3(t[key])) throw new Error(`${at}: transforms.${name}.${key} must be [x, y, z]`);
+      }
+    }
+  });
+  return shots;
+}
+
+/**
+ * Every object name the shots move, resolved to pt-lab's ids -- or the error
+ * naming the ones the scene does not have. An excluded object is refused too:
+ * moving something that is not in the picture measures nothing.
+ */
+function resolveShotObjects(shots, objects) {
+  const byName = new Map();
+  for (const o of objects ?? []) if (o.included) byName.set(o.name, o.id);
+  const wanted = new Set(shots.flatMap((s) => Object.keys(s.transforms ?? {})));
+  const missing = [...wanted].filter((n) => !byName.has(n));
+  if (missing.length > 0) {
+    throw new Error(`shots move ${missing.join(', ')}, which the scene does not include `
+      + `(it has: ${[...byName.keys()].join(', ') || 'nothing'})`);
+  }
+  return byName;
+}
+
+/**
  * A hidden window of pt-lab's own: the default place to render.
  *
  * The three things a host has to provide are the three the sweep touches --
@@ -1105,7 +1167,7 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
   const aovDir = path.join(opts.out, 'aov');
   if (opts.aovs) fs.mkdirSync(aovDir, { recursive: true });
 
-  const shots = plan(opts);
+  const shots = opts.shots ? checkShots(opts.shots) : plan(opts);
   if (opts.dryRun) {
     for (const shot of shots) onProgress({ type: 'shot', dryRun: true, ...shot });
     return { files: [], truth: [], errors: [] };
@@ -1222,6 +1284,9 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
       const refused = unbuiltObjects(opts.scene, requestedKeys(scene), await call('includedKeys()'));
       if (refused) throw new Error(refused);
     }
+    // Read back rather than trusted from applyScene's return: what is
+    // included now is what the shots can move.
+    const movable = resolveShotObjects(shots, await call('objects()'));
     /*
      * Always applied, even when they are the scene's own and applyScene has
      * just built them: this is the one call that works for every scene --
@@ -1251,6 +1316,9 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
     for (const [index, shot] of shots.entries()) {
       await call(`camera(${JSON.stringify(shot.camera)}, ${JSON.stringify(shot.target)})`);
       await call(`lighting(${JSON.stringify({ intensity: shot.intensity })})`);
+      for (const [name, t] of Object.entries(shot.transforms ?? {})) {
+        await call(`transform(${JSON.stringify(movable.get(name))}, ${JSON.stringify(t)})`);
+      }
 
       const at = Date.now();
       const base = shot.name.replace(/\.png$/, '');
@@ -1312,7 +1380,7 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
 }
 
 module.exports = {
-  generate, windowHost, plan, resolveScene, savedSceneNames, sceneFromData, readSavedScenes, registerScheme, checkPrerequisites, buildInputs,
+  generate, windowHost, plan, checkShots, resolveShotObjects, resolveScene, savedSceneNames, sceneFromData, readSavedScenes, registerScheme, checkPrerequisites, buildInputs,
   readSceneEntries, saveSceneFile, openSceneFile, openSceneForEditor, editorURL, scenesDir, modelsDir, SCENE_NAME,
   serveEditorImport, EDITOR_METHODS,
   parseLight, resolveLights, requestedKeys, unbuiltObjects, resolveModels, modelProblems,
