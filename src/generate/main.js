@@ -86,6 +86,10 @@ const api = {
     const current = lab.getObjectTransform(id);
     if (!current) throw new Error(`no object "${id}"`);
     lab.setObjectTransform(id, { ...current, ...t });
+    // The generator never enters edit mode, which is where pt-lab would
+    // otherwise rebuild the traced scene -- without this the export shows the
+    // object where it was.
+    lab.commitObjectChanges();
   },
 
   /**
