@@ -79,6 +79,8 @@ The two sliders together span a wide range — shiny+reflective = chrome, shiny+
 
 Why edits behave differently: material changes are cheap (`updateMaterials()` keeps the BVH); moving/scaling geometry needs a BVH refit, so it applies live in raster and rebuilds via `setScene()` on return to Render.
 
+That deferral assumes the caller returns from Edit mode. A host that moves objects while staying in Render mode must call **`commitObjectChanges()`** after `setObjectTransform`, or the traced image keeps the old placement while `groundTruthGeometry`, which reads the mesh matrices directly, follows the new one. cv-lab's generator does this in its `transform()`, between renders of a gap sweep. `exportSeries` makes the same rebuild after each step.
+
 ### Lights
 
 **Add light** (in the Lights group) adds a light to the scene; a scene can hold any number, alongside the room's own lighting. Select one to edit it in the **Light** inspector, and remove it with **×**:
