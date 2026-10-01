@@ -895,6 +895,40 @@ test('every prerequisite message leads with a headline the pane can show', () =>
   assert.match(message, /Run: npm run build:generate/);
 });
 
+/** One shot as --shots takes it: what the generator renders instead of a plan. */
+const SHOT = { name: 'gap-5mm.png', camera: [0, 1, 1], target: [0, 0.8, 0], intensity: 1 };
+
+test('a well-formed shot list passes through unchanged', () => {
+  const { checkShots } = require('../src/generate/driver');
+  const shots = [{ ...SHOT, transforms: { Cube: { position: [0, 0.805, 0] } } }];
+  assert.equal(checkShots(shots), shots);
+});
+
+test('a malformed shot is refused by index and field before anything renders', () => {
+  const { checkShots } = require('../src/generate/driver');
+  assert.throws(() => checkShots([]), /non-empty/);
+  assert.throws(() => checkShots([SHOT, { ...SHOT, name: '../x.png' }]), /shots\[1\]: name/);
+  assert.throws(() => checkShots([SHOT, SHOT]), /used twice/);
+  assert.throws(() => checkShots([{ ...SHOT, camera: [0, 1] }]), /camera/);
+  assert.throws(() => checkShots([{ ...SHOT, transforms: { Cube: { position: [0, NaN, 0] } } }]),
+    /transforms\.Cube\.position/);
+  assert.throws(() => checkShots([{ ...SHOT, transforms: { Cube: { pos: [0, 0, 0] } } }]),
+    /not position, rotation or scale/);
+});
+
+test('moving an object the scene does not include is refused, naming what it has', () => {
+  const { resolveShotObjects } = require('../src/generate/driver');
+  const objects = [
+    { id: 'obj-1', name: 'Table', included: true },
+    { id: 'obj-2', name: 'Cube', included: true },
+    { id: 'obj-3', name: 'Ball', included: false },
+  ];
+  const ok = resolveShotObjects([{ ...SHOT, transforms: { Cube: { position: [0, 0, 0] } } }], objects);
+  assert.equal(ok.get('Cube'), 'obj-2');
+  assert.throws(() => resolveShotObjects([{ ...SHOT, transforms: { Ball: { position: [0, 0, 0] } } }], objects),
+    /move Ball.*it has: Table, Cube/);
+});
+
 test('a light spec parses to exactly what it says, and nothing it does not', () => {
   /*
    * Round trip rather than recorded output: write each light out in the form

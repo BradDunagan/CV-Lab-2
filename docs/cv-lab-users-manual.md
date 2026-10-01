@@ -983,6 +983,7 @@ you are editing pt-lab and cv-lab-2 together.
 | `--crease-angle <d>` | 20° | how sharp a fold counts as an edge |
 | `--denoise` | off | run OIDN over each export |
 | `--show` | off | show pt-lab's window and watch it converge |
+| `--shots <file>` | — | render this JSON list of shots instead of the scene's plan; each may place objects. See `npm run generate -- --help` |
 | `--dry-run` | off | print the sweep, render nothing |
 
 About **20 s per image**. `--dry-run` before committing several minutes.
