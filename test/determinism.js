@@ -141,6 +141,12 @@ const EXPECTED_CURVES = {
   arcs: '074247795a62595f6c75f14079c3bdd5971f2a26c14d28433c24350201bbd287',
 };
 
+/*
+ * The `edge-pair` list from the fixture built in its own test below. Produced
+ * on arm64 macOS under node 22; the matrix is what says it holds elsewhere.
+ */
+const EXPECTED_PAIRS = '0183e9c8a756b80fea22845827115b7860b37c709409f5949fcd56083d4ab8ef';
+
 async function run() {
   const session = new Session({ registry: createRegistry() });
   await session.run(SCRIPT);
@@ -327,6 +333,77 @@ async function run() {
     }
     assert.equal(actual.chain, EXPECTED_CURVES.chain, 'chain label map');
     assert.equal(actual.arcs, EXPECTED_CURVES.arcs, 'fitArcs feature list');
+  });
+
+  /* --- the pair fit ---------------------------------------------------- */
+
+  /*
+   * `fitPairs` is JavaScript, not C, and that is not a reason to trust it
+   * across platforms: its records hash full-precision doubles that come out
+   * of forty-odd iterations of a solver, and `fit` diverged on less. What it
+   * leans on is that everything on the way to a position is +, -, *, / and
+   * sqrt, summed in pixel order -- and Math.hypot, which is V8's own code
+   * rather than the platform's libm. This is the check that all of that is
+   * true on the three runners.
+   *
+   * Not in the script above: `pattern` draws nothing slanted, and an
+   * axis-aligned pair is the degenerate case, not the ordinary one. So the
+   * fixture is built here, in integers -- each pixel is 64 sub-samples
+   * counted against three lines of slope 1/8, so its value is a sum of at
+   * most four products and means the same bits everywhere.
+   */
+  await test('fitPairs places a pair identically on every platform', () => {
+    const { hashFeatures } = require('../src/lab/session');
+    const W = 96, H = 64;
+    const Q = [2560, 2860, 5120];           // 8Y - X at each line, in 1/16 px
+    const LEVEL = [0.6, 0.12, 0.31, 0.05];
+    const values = new Float32Array(W * H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const count = [0, 0, 0, 0];
+        for (let j = 0; j < 8; j++) {
+          for (let i = 0; i < 8; i++) {
+            const q = 8 * (16 * y + 2 * j - 7) - (16 * x + 2 * i - 7);
+            count[q < Q[0] ? 0 : q < Q[1] ? 1 : q < Q[2] ? 2 : 3]++;
+          }
+        }
+        values[y * W + x] = (count[0] * LEVEL[0] + count[1] * LEVEL[1]
+          + count[2] * LEVEL[2] + count[3] * LEVEL[3]) / 64;
+      }
+    }
+    const image = native.createBuffer({ width: W, height: H, channels: 1, dtype: 'f32' });
+    native.bufferWrite(image, values);
+
+    // The two close edges, each detected 0.6 px away from the other as blur
+    // leaves them, and the lone third for the aperture to be measured on.
+    const seg = (id, x0, y0, x1, y1) => ({ type: 'edge-segment', id, x0, y0, x1, y1 });
+    const features = [
+      seg(1, 10, 20.65, 86, 30.15),
+      seg(2, 14, 24.69375, 82, 33.19375),
+      seg(3, 10, 41.45, 86, 50.95),
+    ];
+    const op = createRegistry().get('fitPairs');
+    const params = Object.fromEntries(op.params.map((p) => [p.name, p.default]));
+    const { features: pairs } = op.kernel({
+      inputs: [{ kind: 'features', features, width: W, height: H }, { kind: 'buffer', handle: image }],
+      params,
+    });
+    native.bufferRelease(image);
+
+    // Guards the hash: the fit has to have done its work for the bits to mean
+    // anything. The lines are 300/16 apart in q, which is 300/(16*sqrt(65)) px.
+    assert.equal(pairs.length, 1, `expected one pair, got ${pairs.length}`);
+    const [pair] = pairs;
+    assert.equal(pair.apertureFrom, 'segments');
+    assert.ok(Math.abs(pair.gap - 300 / (16 * Math.sqrt(65))) < 0.02, `gap ${pair.gap}`);
+    assert.ok(pair.a.shift > 0.5 && pair.b.shift < -0.5, 'the edges were not moved back together');
+
+    const actual = hashFeatures(pairs, null);
+    if (EXPECTED_PAIRS === null) {
+      console.error(`\n  the pair hash is unpinned. Paste into EXPECTED_PAIRS:\n\n    '${actual}'\n`);
+      throw new Error('unpinned');
+    }
+    assert.equal(actual, EXPECTED_PAIRS, 'fitPairs feature list');
   });
 
   /* --- reporting ------------------------------------------------------- */
