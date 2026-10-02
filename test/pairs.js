@@ -15,7 +15,7 @@
 
 const assert = require('node:assert/strict');
 const {
-  fitPairs, pairFrame, loneFrame, bandSamples, fitBand, measureAperture,
+  fitPairs, findPairs, pairFrame, loneFrame, bandSamples, fitBand, measureAperture, loneApertures,
   coverage, density, solve, DEFAULTS,
 } = require('../src/lab/pairs');
 
@@ -381,6 +381,176 @@ test('the frame puts the longer segment on its own axis and the other across it'
   assert.deepEqual([f.ox, f.oy], [50, 10]);
   assert.equal(f.half, 30 - DEFAULTS.inset);
   assert.deepEqual(f.edges, [{ id: 1, c: 0, m: 0 }, { id: 2, c: 3, m: 0 }]);
+});
+
+/* ---- a strip inside one segment ------------------------------------- */
+
+/** The aperture held at the one the fixtures are drawn through. */
+const HELD = { aperture: 'held', apertureWidth: 1 };
+
+/**
+ * What the detector leaves of two edges a pixel apart: ONE segment, on the
+ * stronger step and a little toward the other. Here the stronger step is `lo`.
+ */
+const merged = (id, lo, t0 = -60, t1 = 60) => segOn(id, lo, t0, t1, 0.15);
+
+test('a strip a pixel wide inside one segment is found, and placed where it was drawn', () => {
+  const { lo, hi, raster } = scene(1.0, { noise: 0.01 });
+  const [p] = findPairs([merged(7, lo)], raster, HELD);
+  assert.ok(p, 'nothing found');
+  assert.equal(p.type, 'edge-pair');
+  assert.deepEqual([p.a.segment, p.b.segment], [7, 7]);
+  near(p.gap, 1.0, 0.03, 'gap');
+  near(offsetFrom(lo, p.a), 0, 0.03, 'the edge the detector was on');
+  near(offsetFrom(hi, p.b), 0, 0.03, 'the edge nothing detected');
+  near(p.a.shift, -0.15, 0.03, 'a, from the detected line');
+  near(p.b.shift, 0.85, 0.03, 'b, from the detected line');
+  near(p.levels[1], LEVELS[1], 0.02, 'strip level');
+  assert.equal(p.detectedGap, 0);
+  assert.ok(p.gain >= DEFAULTS.minGain, `gain ${p.gain}`);
+});
+
+test('it is found whichever side of the detection it lies on, dark or bright', () => {
+  for (const levels of [LEVELS, [0.31, 0.12, 0.6], [0.2, 0.7, 0.35]]) {
+    const { lo, hi, raster } = scene(1.2, { noise: 0.01, levels });
+    // The detection sits on whichever step is taller.
+    const onLo = Math.abs(levels[1] - levels[0]) > Math.abs(levels[2] - levels[1]);
+    const seg = onLo ? segOn(1, lo, -60, 60, 0.15) : segOn(1, hi, -60, 60, -0.15);
+    const [p] = findPairs([seg], raster, HELD);
+    assert.ok(p, `nothing found for ${levels}`);
+    near(p.gap, 1.2, 0.04, `gap for ${levels}`);
+    near(offsetFrom(lo, p.a), 0, 0.04, `a for ${levels}`);
+  }
+});
+
+test('one step is one step: nothing is found in a clean edge, however noisy', () => {
+  const lo = lineAt(80, 60, 8), far = lineAt(80, 400, 8);
+  for (const noise of [0, 0.02, 0.08]) {
+    const raster = strip(160, 120, lo, far, [0.6, 0.2, 0.2], noise);
+    assert.deepEqual(findPairs([merged(1, lo)], raster, HELD), [], `noise ${noise}`);
+  }
+});
+
+test('a strip under part of a segment is found there and not along the rest', () => {
+  // The gap sweep's case: the table's edge is one long segment, and the cube
+  // sits over the middle of it. Columns 50..110 have the strip; outside them
+  // the same edge has the strip's far side's level right up against it.
+  const { lo, raster } = scene(1.0, { noise: 0.01 });
+  const far = lineAt(80, 400, 8);
+  const plain = strip(160, 120, lo, far, [LEVELS[0], 0.25, 0.25], 0.01);
+  for (let y = 0; y < 120; y++) {
+    for (let x = 0; x < 160; x++) if (x < 50 || x > 110) raster.data[y * 160 + x] = plain.data[y * 160 + x];
+  }
+  const out = findPairs([merged(1, lo, -75, 75)], raster, HELD);
+  assert.equal(out.length, 1, `${out.length} records`);
+  const [p] = out;
+  near(p.gap, 1.0, 0.04, 'gap');
+  const xs = [p.a.x0, p.a.x1].sort((a, b) => a - b);
+  assert.ok(xs[0] >= 50 && xs[1] <= 110, `the stretch ${xs} runs past the strip's ends`);
+  // And it is most of the strip: short by no more than half a window an end.
+  assert.ok(xs[1] - xs[0] >= 60 - DEFAULTS.window, `only ${xs[1] - xs[0]} px of 60 found`);
+});
+
+test('a soft edge is not a strip: softness looks like a level BETWEEN its neighbours', () => {
+  // One step, drawn through an aperture of 2.5 and fitted through 1. Two
+  // steps with a middle level fit that far better than one sharp step does,
+  // and the gain alone would report it.
+  const lo = lineAt(80, 60, 8), far = lineAt(80, 400, 8);
+  const raster = strip(160, 120, lo, far, [0.6, 0.2, 0.2], 0.005, 2.5);
+  assert.deepEqual(findPairs([merged(1, lo)], raster, HELD), []);
+});
+
+test('a real strip between its neighbours\' levels is not found either, and that is the price', () => {
+  const { lo, raster } = scene(1.2, { noise: 0.01, levels: [0.6, 0.4, 0.2] });
+  assert.deepEqual(findPairs([merged(1, lo)], raster, HELD), []);
+  // Held at its level, the caller has said what it is, and it is found.
+  const [p] = findPairs([merged(1, lo)], raster, { ...HELD, strip: 'held', stripLevel: 0.4 });
+  assert.ok(p, 'not found with the level held');
+  near(p.gap, 1.2, 0.05, 'gap, level held');
+});
+
+test('a second edge further off than reach is the detector\'s to find, not this', () => {
+  const { lo, raster } = scene(3.5, { noise: 0.01 });
+  assert.deepEqual(findPairs([merged(1, lo)], raster, HELD), []);
+  const [p] = findPairs([merged(1, lo)], raster, { ...HELD, reach: 4 });
+  assert.ok(p, 'not found with the reach widened');
+  near(p.gap, 3.5, 0.05, 'gap');
+});
+
+test('segments already in a pair are fitPairs\'s, and are not searched', () => {
+  const { lo, hi, raster } = scene(1.0, { noise: 0.01 });
+  const both = [segOn(1, lo, -60, 60, -0.5), segOn(2, hi, -60, 60, 0.5)];
+  assert.deepEqual(findPairs(both, raster, HELD), []);
+  assert.equal(fitPairs(both, raster, HELD).length, 1);
+});
+
+test('the aperture is measured on the image\'s other segments, not assumed', () => {
+  const drawn = 1.4;
+  const { lo, raster } = scene(1.0, { noise: 0.005, aperture: drawn });
+  const lone = lineAt(80, 100, -6), far = lineAt(80, 400, -6);
+  const below = strip(160, 120, lone, far, [LEVELS[2], 0.05, 0.05], 0.005, drawn);
+  for (let i = 160 * 85; i < raster.data.length; i++) raster.data[i] = below.data[i];
+  // One clean segment beside it. The segment hiding the strip is lone too,
+  // and reads SHARPER than the truth -- so it is left out of its own aperture.
+  const segs = [merged(1, lo), segOn(2, lone, -50, 50, 0.3)];
+  const own = measureAperture([segs[0]], raster, new Set(), DEFAULTS);
+  assert.ok(own.width < drawn - 0.2, `the hiding segment alone read ${own.width}`);
+  const [p] = findPairs(segs, raster);
+  assert.ok(p, 'nothing found');
+  assert.equal(p.apertureFrom, 'segments');
+  near(p.aperture, drawn, 0.06, 'aperture');
+  near(p.gap, 1.0, 0.06, 'gap');
+  assert.equal(p.a.segment, 1);
+});
+
+test('a segment reading sharper than the image does not set the aperture either: the median, not the minimum', () => {
+  // The quartile's mistake. Three lone segments in an image drawn through
+  // 1.4: two on a clean step, one with a dark strip hidden against it.
+  const drawn = 1.4;
+  const { lo, raster } = scene(1.0, { noise: 0.005, aperture: drawn });
+  const lone = lineAt(80, 100, -6), far = lineAt(80, 400, -6);
+  const below = strip(160, 120, lone, far, [LEVELS[2], 0.05, 0.05], 0.005, drawn);
+  for (let i = 160 * 85; i < raster.data.length; i++) raster.data[i] = below.data[i];
+  const segs = [merged(1, lo), segOn(2, lone, -70, -5, 0.3), segOn(3, lone, 5, 70, 0.3)];
+  const each = loneApertures(segs, raster, new Set(), DEFAULTS);
+  assert.equal(each.length, 3);
+  assert.ok(each[0].aperture < drawn - 0.2, `the hiding segment read ${each[0].aperture}`);
+  near(measureAperture(segs, raster, new Set(), DEFAULTS).width, drawn, 0.06, 'median');
+});
+
+test('a strip too faint to pay for its parameters is not reported, and minGain is what says so', () => {
+  // A real dip, 0.03 below its darker neighbour, under noise of the same size.
+  const { lo, raster } = scene(1.0, { noise: 0.03, levels: [0.6, 0.17, 0.2] });
+  assert.deepEqual(findPairs([merged(1, lo)], raster, HELD), []);
+  const loose = findPairs([merged(1, lo)], raster, { ...HELD, minGain: 1 });
+  assert.ok(loose.length > 0, 'nothing found even with the gain gate open');
+  assert.ok(loose.every((p) => p.gain < DEFAULTS.minGain), 'a record cleared the default gain after all');
+});
+
+test('a hidden pair does not depend on which way its segment was written', () => {
+  const { lo, raster } = scene(1.0, { noise: 0.02 });
+  const s = merged(1, lo);
+  const flipped = { ...s, x0: s.x1, y0: s.y1, x1: s.x0, y1: s.y0 };
+  assert.deepEqual(findPairs([flipped], raster, HELD), findPairs([s], raster, HELD));
+});
+
+test('a segment along the pixel grid is not searched: its pixels all cross the edge at one place', () => {
+  // The same strip, found at 8 degrees and at 3; not looked for at 1 or at 0,
+  // where a 24 px window climbs less than one pixel.
+  const found = (deg) => {
+    const { lo, raster } = scene(1.0, { noise: 0.01, deg });
+    return findPairs([merged(1, lo)], raster, HELD).length;
+  };
+  assert.equal(found(8), 1);
+  assert.equal(found(3), 1);
+  assert.equal(found(1), 0);
+  assert.equal(found(0), 0);
+  assert.equal(found(89.5), 0);
+});
+
+test('a segment shorter than one window is not searched', () => {
+  const { lo, raster } = scene(1.0);
+  assert.deepEqual(findPairs([merged(1, lo, -10, 10)], raster, HELD), []);
 });
 
 (async () => {

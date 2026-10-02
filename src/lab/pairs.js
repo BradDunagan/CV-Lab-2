@@ -62,14 +62,24 @@
  * two renders of each (2026-10-02), with the aperture measured:
  *
  *   true gap   strip fitted          strip held at its level from 5 mm
- *   1.16 px    0.97, 0.97  ±0.04     0.97, 0.97  ±0.02
- *   0.58 px    none, 0.91  ±0.13     0.25, 0.28  ±0.02
+ *   2.32 px    2.22, 2.25  ±0.02     2.24, 2.23  ±0.02
+ *   1.16 px    0.92, 0.86  ±0.04     0.99, 1.02  ±0.02
+ *   0.58 px    1.02, 0.99  ±0.15     0.37, 0.40  ±0.02
  *
- * At 1.16 px the fit finds the strip's level itself, to 0.002. At 0.58 px it
- * does not, and `gapSigma` is how the record says so: it comes from the
- * curvature of the fit and grows as the answer leaves the image. A gap the
- * fit cannot tell from none produces no record at all. A caller who knows the
- * strip's level -- measured while the gap was still wide -- can hold it.
+ * At 2.32 px holding the level changes nothing. At 1.16 px the fitted level
+ * comes out at 0.10 and 0.08 where the wider frames all say 0.12, and the gap
+ * 0.1 px narrower for it. At 0.58 px the fit has gone the other way, to a
+ * shallow strip twice as wide as the true one. `gapSigma` follows that, which
+ * is what it is for: it comes from the curvature of the fit and grows as the
+ * answer leaves the image. It does not follow it far enough. A gap the fit
+ * cannot tell from none produces no record at all. A caller who knows the
+ * strip's level -- measured while the gap was still wide -- should hold it
+ * for anything under about a pixel and a half.
+ *
+ * (For a day this table read 0.97, 0.97 at 1.16 px and concluded that the fit
+ * finds the level itself there. That was the lower-quartile aperture, which
+ * happened to be 1.26 and 1.21 in those two frames. The reading moves 0.07 px
+ * for 0.08 of aperture.)
  *
  * Pure JavaScript, handed one decoded raster and the fitted segments, like
  * explain.js. Nothing transcendental is evaluated on the way to a position:
@@ -88,9 +98,21 @@ const DEFAULTS = {
   aperture: 'fit',  // measured on this image's lone segments; or 'held'
   apertureWidth: 1, // the value held, and the one used when none can be measured
   minSigmas: 3,     // a gap under this many gapSigma is not told from none
+  // findPairs only:
+  window: 24,       // px of a segment tested at a time for a strip inside it
+  reach: 2.4,       // px to one side that the second edge is looked for
+  minGain: 1.3,     // two steps must beat one step's rms by this factor
 };
 
 const MAX_ITERATIONS = 200;
+/*
+ * findPairs asks a few hundred windows a yes-or-no question before it fits
+ * anything it reports, and most of them are no: a second edge with nothing to
+ * find wanders until the iterations run out. Capped here, the search is 2.5
+ * times faster and found exactly what it found uncapped, on every frame of
+ * the gap sweep. The fit that is reported runs to MAX_ITERATIONS.
+ */
+const SCREEN_ITERATIONS = 40;
 /** A fitted aperture at either end of this is not a measurement of one. */
 const APERTURE_RANGE = [0.25, 8];
 /** A lone segment shorter than this says too little about the aperture. */
@@ -268,7 +290,7 @@ function bandSamples(raster, frame, opts) {
  * inside it, or some parameter has no effect on any pixel, so that nothing can
  * be said about how well the rest are known.
  */
-function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = null }) {
+function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = null, maxIterations = MAX_ITERATIONS }) {
   const { t, h, v } = samples;
   const n = v.length;
   const E = frame.edges.length;
@@ -364,7 +386,7 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
   let lambda = 1e-3;
   let iterations = 0;
   let converged = false;
-  while (iterations < MAX_ITERATIONS && !converged) {
+  while (iterations < maxIterations && !converged) {
     iterations++;
     const d = scaleOf(state.JtJ);
     const A = state.JtJ.map((row, c) => row.map((x, e) => {
@@ -452,6 +474,11 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
  * the range; both are left out. Returns null when nothing is left.
  */
 function measureAperture(segments, raster, paired, opts) {
+  return medianAperture(loneApertures(segments, raster, paired, opts));
+}
+
+/** What each lone segment says the aperture is: [{ id, aperture }], in id order. */
+function loneApertures(segments, raster, paired, opts) {
   const found = [];
   for (const seg of segments) {
     if (paired.has(seg.id)) continue;
@@ -461,11 +488,53 @@ function measureAperture(segments, raster, paired, opts) {
       { aperture: opts.apertureWidth, fitAperture: true });
     if (!fit || !fit.converged) continue;
     if (!(fit.aperture > APERTURE_RANGE[0]) || !(fit.aperture < APERTURE_RANGE[1])) continue;
-    found.push(fit.aperture);
+    found.push({ id: seg.id, aperture: fit.aperture });
   }
-  if (found.length === 0) return null;
-  found.sort((a, b) => a - b);
-  return { width: found[Math.floor((found.length - 1) / 2)], segments: found.length };
+  return found;
+}
+
+/** The median of those, leaving out segment `except` if given. Null if none. */
+function medianAperture(found, except = null) {
+  const values = found.filter((f) => f.id !== except).map((f) => f.aperture).sort((a, b) => a - b);
+  if (values.length === 0) return null;
+  return { width: values[Math.floor((values.length - 1) / 2)], segments: values.length };
+}
+
+/* ---- what both operations start from -------------------------------- */
+
+/**
+ * The segments in id order, every pair's frame, and which segments are in one.
+ * fitPairs and findPairs both begin here, so they agree on which segments are
+ * pairs -- and therefore on which are lone, which is what the aperture is
+ * measured on.
+ */
+function candidates(segments, opts) {
+  const segs = segments
+    .filter((s) => s.type === 'edge-segment')
+    .sort((p, q) => p.id - q.id);
+  const frames = [];
+  const paired = new Set();
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) {
+      const frame = pairFrame(segs[i], segs[j], opts);
+      if (!frame) continue;
+      frames.push(frame);
+      paired.add(segs[i].id); paired.add(segs[j].id);
+    }
+  }
+  return { segs, frames, paired };
+}
+
+/** The aperture a call works through, and where it came from. */
+function apertureOf(segs, raster, paired, opts) {
+  if (opts.aperture === 'held') return { width: opts.apertureWidth, from: 'held', segments: 0 };
+  return apertureFrom(measureAperture(segs, raster, paired, opts), opts);
+}
+
+function apertureFrom(measured, opts) {
+  return measured
+    ? { width: measured.width, from: 'segments', segments: measured.segments }
+    : { width: opts.apertureWidth, from: 'default', segments: 0 };
 }
 
 /* ---- the records ---------------------------------------------------- */
@@ -491,29 +560,9 @@ function measureAperture(segments, raster, paired, opts) {
  */
 function fitPairs(segments, raster, options = {}) {
   const opts = { ...DEFAULTS, ...options };
-  const segs = segments
-    .filter((s) => s.type === 'edge-segment')
-    .sort((p, q) => p.id - q.id);
-
-  const frames = [];
-  const paired = new Set();
-  for (let i = 0; i < segs.length; i++) {
-    for (let j = i + 1; j < segs.length; j++) {
-      const frame = pairFrame(segs[i], segs[j], opts);
-      if (!frame) continue;
-      frames.push(frame);
-      paired.add(segs[i].id); paired.add(segs[j].id);
-    }
-  }
+  const { segs, frames, paired } = candidates(segments, opts);
   if (frames.length === 0) return [];
-
-  let aperture = { width: opts.apertureWidth, from: 'held', segments: 0 };
-  if (opts.aperture !== 'held') {
-    const measured = measureAperture(segs, raster, paired, opts);
-    aperture = measured
-      ? { width: measured.width, from: 'segments', segments: measured.segments }
-      : { width: opts.apertureWidth, from: 'default', segments: 0 };
-  }
+  const aperture = apertureOf(segs, raster, paired, opts);
 
   const out = [];
   for (const frame of frames) {
@@ -558,7 +607,187 @@ function fitPairs(segments, raster, options = {}) {
   return out;
 }
 
+/* ---- a strip inside one segment ------------------------------------- */
+
+/**
+ * One stretch of one segment, asked whether it is one step or two.
+ *
+ * `from` and `to` are px along the segment's line `l`. The single step is
+ * fitted first, on its own band, to say where the edge is. Then, to each
+ * side in turn, a second edge is tried within `reach` of it, and the one-step
+ * and two-step models are scored on the SAME pixels -- a wider band always has
+ * a different rms, and a ratio of two rms values over different pixels says
+ * nothing.
+ *
+ * Returns the better side that passes every gate, or null:
+ *
+ *   - the two steps fit better than the one by `minGain`. Two steps have
+ *     three more parameters and always fit a little better: along 400 px of a
+ *     table edge with nothing hidden in it, 1.00 to 1.05 a window. Under the
+ *     cube at 1 mm, 1.35 to 2.57. The default sits between them -- two renders
+ *     of one scene, which is a calibration and not a law. It does not keep
+ *     out a 0.58 px gap in another scene, read as 1.02 px at a gain of 1.31.
+ *   - the gap is told from none, as for a detected pair.
+ *   - the strip is darker than both its neighbours, or brighter than both.
+ *     One BETWEEN them is what a single soft edge looks like, and an edge
+ *     softer than the aperture -- a shadow's, a rounded corner's -- is common.
+ *     A dip or a bump is not something softness produces. With the strip held
+ *     this gate is the caller's: the level is what they said it was.
+ */
+function hiddenIn(raster, l, from, to, aperture, opts, maxIterations) {
+  const mid = (from + to) / 2;
+  const base = {
+    ox: l.x0 + l.ux * mid, oy: l.y0 + l.uy * mid,
+    ux: l.ux, uy: l.uy, nx: -l.uy, ny: l.ux, half: (to - from) / 2,
+  };
+  const loneEdges = [{ c: 0, m: 0 }];
+  const lone = fitBand(bandSamples(raster, { ...base, edges: loneEdges }, opts),
+    { ...base, edges: loneEdges }, { aperture, maxIterations });
+  if (!lone) return null;
+  const { c, m } = lone.edges[0];
+  const heldStrip = opts.strip === 'held' ? opts.stripLevel : null;
+
+  let best = null;
+  for (const side of [-1, 1]) {
+    const pairAt = (g) => (side > 0 ? [{ c, m }, { c: c + g, m }] : [{ c: c - g, m }, { c, m }]);
+    const samples = bandSamples(raster, { ...base, edges: pairAt(opts.reach) }, opts);
+    const one = fitBand(samples, { ...base, edges: [{ c, m }] }, { aperture, maxIterations });
+    if (!one) continue;
+    // Three starting widths, because a start far from the answer closes the
+    // strip up instead of finding it; the best of them is the fit.
+    let two = null;
+    for (const g of [opts.reach / 4, opts.reach / 2, opts.reach]) {
+      const fit = fitBand(samples, { ...base, edges: pairAt(g) }, { aperture, heldStrip, maxIterations });
+      if (fit && (!two || fit.rms < two.rms)) two = fit;
+    }
+    if (!two || !(two.rms > 0)) continue;
+    const gain = one.rms / two.rms;
+    const gap = two.edges[1].c - two.edges[0].c;
+    const [below, strip, above] = two.levels;
+    const outside = strip < Math.min(below, above) || strip > Math.max(below, above);
+    if (!(gain >= opts.minGain)) continue;
+    // Past `reach` the second edge has left the pixels it was looked for in
+    // and found something else: 4 to 15 px away, when this was not checked.
+    if (!(gap <= opts.reach)) continue;
+    if (!(gap > opts.minSigmas * two.gapSigma)) continue;
+    if (heldStrip === null && !outside) continue;
+    if (!best || gain > best.gain) best = { side, gain, gap, fit: two, base };
+  }
+  return best;
+}
+
+/**
+ * Find the pairs the detector reported as one segment.
+ *
+ * Below about a pixel and a half apart, two edges are detected as one: the
+ * blur that finds edges merges them. The gap sweep's Cube at 1 mm (1.16 px)
+ * over the Table leaves a single 512 px segment along the table's edge, with
+ * the strip under the cube hidden in 114 px of it. So every segment that is
+ * in no pair is walked in windows, each window is asked whether it is one
+ * step or two (`hiddenIn`), runs of windows that say two on the same side are
+ * joined, and each run is fitted once more as a whole.
+ *
+ * The records are `edge-pair`, as fitPairs writes them, with both edges
+ * naming the SAME segment and a `gain` beside them. `shift` is each edge's
+ * distance from the detected line, so one of the two is small -- the edge the
+ * detector found -- and the other is about the gap. `aperture` is measured
+ * on the lone segments OTHER than the one searched, so unlike fitPairs's it
+ * can differ from one record to the next.
+ *
+ * The stretch reported is where the strip was fitted, not where it ends: see
+ * the trimming below.
+ */
+function findPairs(segments, raster, options = {}) {
+  const opts = { ...DEFAULTS, ...options };
+  const { segs, paired } = candidates(segments, opts);
+  const lone = segs.filter((s) => !paired.has(s.id));
+  if (lone.length === 0) return [];
+  const held = opts.aperture === 'held';
+  const apertures = held ? [] : loneApertures(segs, raster, paired, opts);
+
+  const out = [];
+  for (const seg of lone) {
+    const l = lineOf(seg);
+    if (!l || l.len - 2 * opts.inset < opts.window) continue;
+    /*
+     * A sub-pixel strip is read off pixels that cross the edge at different
+     * places across their width. Along a segment nearly on the pixel grid
+     * they all cross at the same place, and a window that climbs less than
+     * one pixel from end to end has nothing to read it from: on a cube's
+     * edge 0.9 degrees off vertical, one render of two reported a bright
+     * strip half a pixel wide. Not searched.
+     */
+    if (opts.window * Math.min(Math.abs(l.ux), Math.abs(l.uy)) < 1) continue;
+    /*
+     * Measured on the OTHER lone segments. The one being searched is the one
+     * that may be hiding a strip, and a segment with a dark strip against it
+     * reads sharper than the image is: 0.93 where it was drawn through 1.4.
+     * Among a dozen segments the median shrugs that off; between two it IS
+     * the median.
+     */
+    const aperture = held
+      ? { width: opts.apertureWidth, from: 'held', segments: 0 }
+      : apertureFrom(medianAperture(apertures, seg.id), opts);
+
+    // Windows half overlapping, so a strip's end falls well inside one.
+    const runs = [];
+    let run = null;
+    for (let from = opts.inset; from + opts.window <= l.len - opts.inset; from += opts.window / 2) {
+      const hit = hiddenIn(raster, l, from, from + opts.window, aperture.width, opts, SCREEN_ITERATIONS);
+      if (hit && run && run.side === hit.side) { run.to = from + opts.window; continue; }
+      if (run) runs.push(run);
+      run = hit ? { side: hit.side, from, to: from + opts.window } : null;
+    }
+    if (run) runs.push(run);
+
+    for (const r of runs) {
+      /*
+       * A window half on the strip can pass or fail, so a run's ends are
+       * uncertain by half a window either way -- and a stretch that runs past
+       * the strip fits two steps to pixels that hold one. A run long enough
+       * to spare it gives up half a window at each end.
+       */
+      if (r.to - r.from >= 2 * opts.window) { r.from += opts.window / 2; r.to -= opts.window / 2; }
+      const hit = hiddenIn(raster, l, r.from, r.to, aperture.width, opts);
+      if (!hit || hit.side !== r.side) continue;
+      const { fit, base } = hit;
+      const at = (edge, t) => {
+        const hh = edge.c + edge.m * t;
+        return [base.ox + base.ux * t + base.nx * hh, base.oy + base.uy * t + base.ny * hh];
+      };
+      const edge = (k) => {
+        const [x0, y0] = at(fit.edges[k], -base.half);
+        const [x1, y1] = at(fit.edges[k], base.half);
+        return { segment: seg.id, x0, y0, x1, y1, shift: fit.edges[k].c };
+      };
+      out.push({
+        type: 'edge-pair',
+        id: out.length + 1,
+        a: edge(0),
+        b: edge(1),
+        x: base.ox, y: base.oy,
+        nx: base.nx, ny: base.ny,
+        gap: hit.gap,
+        gapSigma: fit.gapSigma,
+        detectedGap: 0,
+        levels: fit.levels,
+        strip: opts.strip,
+        aperture: aperture.width,
+        apertureFrom: aperture.from,
+        apertureSegments: aperture.segments,
+        gain: hit.gain,
+        rms: fit.rms,
+        samples: fit.samples,
+        iterations: fit.iterations,
+        converged: fit.converged,
+      });
+    }
+  }
+  return out;
+}
+
 module.exports = {
-  fitPairs, pairFrame, loneFrame, bandSamples, fitBand, measureAperture,
+  fitPairs, findPairs, hiddenIn, candidates, pairFrame, loneFrame, bandSamples, fitBand,
+  measureAperture, loneApertures, medianAperture,
   coverage, density, solve, DEFAULTS,
 };
