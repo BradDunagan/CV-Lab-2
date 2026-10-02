@@ -18,6 +18,7 @@ import {
 	MeshPhysicalMaterial,
 	MeshStandardMaterial,
 	NoToneMapping,
+	LinearToneMapping,
 	PCFSoftShadowMap,
 	PerspectiveCamera,
 	PlaneGeometry,
@@ -113,6 +114,18 @@ const BUILTIN_LIBRARY: LibraryItem[] = [
 	{ key: 'Cube', name: 'Cube', kind: 'builtin' },
 	{ key: 'Ball', name: 'Ball', kind: 'builtin' },
 ];
+
+/**
+ * How linear radiance becomes a display value before sRGB encoding.
+ *
+ * 'aces' is three.js's ACES Filmic: an S-curve, which is what makes a render
+ * look like a photograph. 'linear' multiplies by the exposure and clamps --
+ * no curve. The curve matters for measurement: an edge pixel is averaged in
+ * linear light BEFORE the curve, so under ACES its value is not the midpoint
+ * of its two sides, and a detector reading the image places the edge up to
+ * ~0.2 px off the geometry (cv-lab, design-lab-model.md §5).
+ */
+export type LabToneMapping = 'aces' | 'linear';
 
 /** An object's transform, in editor-friendly units (meters, degrees, factor). */
 export interface LabTransform {
@@ -1737,6 +1750,29 @@ export class PathTracerLab {
 		// Live in the raster view; the traced BVH refits on return to render.
 		this.objectsDirty = true;
 		this.shadowsDirty = true;
+	}
+
+	/**
+	 * Choose the tone mapping and exposure applied to every view and export
+	 * of the beauty image. The AOV exports switch tone mapping off for their
+	 * own passes and restore this afterwards; they are unaffected.
+	 */
+	setToneMapping(kind: LabToneMapping, exposure = 1) {
+		if (kind !== 'aces' && kind !== 'linear') throw new Error(`unknown tone mapping "${kind}"`);
+		if (!(exposure > 0) || !Number.isFinite(exposure)) throw new Error(`exposure must be a positive number, not ${exposure}`);
+		this.renderer.toneMapping = kind === 'linear' ? LinearToneMapping : ACESFilmicToneMapping;
+		this.renderer.toneMappingExposure = exposure;
+		// The accumulated samples are linear and stay valid; only the display
+		// transform changed. Restart anyway, so no frame mixes the two.
+		this.pathTracer?.reset();
+		this.lastResetAt = performance.now();
+	}
+
+	getToneMapping(): { kind: LabToneMapping; exposure: number } {
+		return {
+			kind: this.renderer.toneMapping === LinearToneMapping ? 'linear' : 'aces',
+			exposure: this.renderer.toneMappingExposure,
+		};
 	}
 
 	/**

@@ -339,7 +339,29 @@ const DEFAULTS = {
   out: null, size: 512, samples: 96, positions: 3, lighting: 2,
   room: undefined, lights: undefined, scene: 'helmet', aovs: false, truth: false,
   creaseAngle: 20, denoise: false, show: false, dryRun: false,
+  toneMapping: 'aces', exposure: 1,
 };
+
+const TONE_MAPPINGS = ['aces', 'linear'];
+
+/**
+ * The tone mapping a run asks for, checked before anything starts.
+ *
+ * 'aces' is how every render here was made until 2026-10-01, and stays the
+ * default so they remain comparable. 'linear' is for measurement: under ACES
+ * an edge pixel, averaged in linear light before the curve, is not the
+ * midpoint of its two sides, and edges land up to ~0.2 px off the geometry
+ * (design-lab-model.md §5). Under 'linear', exposure decides what clips --
+ * choose it so the surfaces being measured stay below 1.
+ */
+function checkToneMapping({ toneMapping, exposure }) {
+  if (!TONE_MAPPINGS.includes(toneMapping)) {
+    throw new Error(`tone mapping must be ${TONE_MAPPINGS.join(' or ')}, not ${JSON.stringify(toneMapping)}`);
+  }
+  if (typeof exposure !== 'number' || !Number.isFinite(exposure) || !(exposure > 0)) {
+    throw new Error(`exposure must be a positive number, not ${JSON.stringify(exposure)}`);
+  }
+}
 
 /** pt-lab's editor light kinds. It has no directional light, on purpose. */
 const LIGHT_TYPES = ['point', 'spot', 'area'];
@@ -1167,6 +1189,7 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
   const aovDir = path.join(opts.out, 'aov');
   if (opts.aovs) fs.mkdirSync(aovDir, { recursive: true });
 
+  checkToneMapping(opts);
   const shots = opts.shots ? checkShots(opts.shots) : plan(opts);
   if (opts.dryRun) {
     for (const shot of shots) onProgress({ type: 'shot', dryRun: true, ...shot });
@@ -1303,6 +1326,10 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
     });
 
     await call(`quality(${JSON.stringify({ samples: opts.samples })})`);
+    // Read back, like the lights and the lamp: what pt-lab applied is what
+    // each image's ground truth records.
+    const tone = await call(`toneMapping(${JSON.stringify({ kind: opts.toneMapping, exposure: opts.exposure })})`);
+    onProgress({ type: 'tone', ...tone });
     /*
      * Denoising is OFF in pt-lab by default, so every image generated here so
      * far has carried path-tracing noise -- and grain on a flat wall fires an
@@ -1346,7 +1373,9 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
         })})`);
         if (gt) {
           const gtFile = path.join(opts.out, `${base}.gt.json`);
-          fs.writeFileSync(gtFile, JSON.stringify({ ...gt, image: shot.name }, null, 2));
+          // The tone mapping travels with the truth: a render's edges sit where
+          // they do partly because of it, and nothing in the PNG says which.
+          fs.writeFileSync(gtFile, JSON.stringify({ ...gt, image: shot.name, toneMapping: tone }, null, 2));
           truthFiles.push(gtFile);
           extra.truth = {
             file: gtFile,
@@ -1380,7 +1409,7 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
 }
 
 module.exports = {
-  generate, windowHost, plan, checkShots, resolveShotObjects, resolveScene, savedSceneNames, sceneFromData, readSavedScenes, registerScheme, checkPrerequisites, buildInputs,
+  generate, windowHost, plan, checkShots, checkToneMapping, resolveShotObjects, resolveScene, savedSceneNames, sceneFromData, readSavedScenes, registerScheme, checkPrerequisites, buildInputs,
   readSceneEntries, saveSceneFile, openSceneFile, openSceneForEditor, editorURL, scenesDir, modelsDir, SCENE_NAME,
   serveEditorImport, EDITOR_METHODS,
   parseLight, resolveLights, requestedKeys, unbuiltObjects, resolveModels, modelProblems,

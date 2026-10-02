@@ -958,6 +958,17 @@ test('moving an object the scene does not include is refused, naming what it has
     /move Ball.*it has: Table, Cube/);
 });
 
+test('tone mapping is aces or linear with a positive exposure, refused otherwise', () => {
+  const { checkToneMapping, DEFAULTS } = require('../src/generate/driver');
+  // The default is what every render before 2026-10-01 was made with.
+  assert.deepEqual([DEFAULTS.toneMapping, DEFAULTS.exposure], ['aces', 1]);
+  checkToneMapping({ toneMapping: 'linear', exposure: 0.5 });
+  assert.throws(() => checkToneMapping({ toneMapping: 'filmic', exposure: 1 }), /aces or linear/);
+  for (const exposure of [0, -1, NaN, Infinity, '1']) {
+    assert.throws(() => checkToneMapping({ toneMapping: 'linear', exposure }), /exposure/, `${exposure} was accepted`);
+  }
+});
+
 test('a light spec parses to exactly what it says, and nothing it does not', () => {
   /*
    * Round trip rather than recorded output: write each light out in the form

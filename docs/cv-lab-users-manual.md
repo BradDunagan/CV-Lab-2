@@ -982,6 +982,8 @@ you are editing pt-lab and cv-lab-2 together.
 | `--truth` | off | also write `<name>.gt.json` |
 | `--crease-angle <d>` | 20° | how sharp a fold counts as an edge |
 | `--denoise` | off | run OIDN over each export |
+| `--tone-mapping <k>` | `aces` | `aces` or `linear`. Use `linear` for measurement; see below |
+| `--exposure <x>` | 1 | multiplies radiance before tone mapping |
 | `--show` | off | show pt-lab's window and watch it converge |
 | `--shots <file>` | — | render this JSON list of shots instead of the scene's plan; each may place objects. See `npm run generate -- --help` |
 | `--dry-run` | off | print the sweep, render nothing |
