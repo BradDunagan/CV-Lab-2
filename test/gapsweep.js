@@ -188,6 +188,20 @@ test('a fragment matched to the other edge does not hide the pair inside the lon
   assert.ok(Math.abs(row.refit.gapPx - 1.2) < 1e-9, `refit gap ${row.refit.gapPx}`);
 });
 
+test('two detections that both reach the measuring point are the pair, whatever is inside one of them', () => {
+  // Both edges detected, 6.5 px apart: too far for fitPairs, so no record of
+  // the two. findPairs found a 2 px strip inside the lower one -- a shadow's
+  // edge beside it. That is not this gap.
+  const segments = [seg(10, 100, 103.5, 200, 103.5), seg(11, 50, 110, 250, 110)];
+  const pairs = [pairRecord(1, [11, 102, 108, 198, 108], [11, 102, 110, 198, 110])];
+  const wide = [gt(1, ['Cube'], 100, 104, 200, 104), TRUTH[1]];
+  const row = gapRow({ truth: wide, segments, explained: segments, matches: [hit(10, 1), hit(11, 2)], pairs },
+    { gapMm: 5 }, PARTS);
+  assert.equal(row.pairFound, true);
+  assert.ok(Math.abs(row.errorPx - 0.5) < 1e-9, `detected error ${row.errorPx}`);
+  assert.equal(row.refit, null);
+});
+
 test('a hidden pair in some other segment, or away from the measuring point, is not a reading', () => {
   const segments = [seg(11, 50, 110, 250, 110), seg(12, 50, 140, 250, 140)];
   const near = [gt(1, ['Cube'], 100, 108.5, 200, 108.5), TRUTH[1]];
