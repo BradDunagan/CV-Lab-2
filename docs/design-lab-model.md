@@ -1043,6 +1043,30 @@ gain of 1.40. Such segments are skipped.
   wanders until the iterations run out; capping those at 40 made it 2.5 times
   faster and changed no result on any frame of the sweep.
 
+**The cheaper answer is more pixels.** Everything above is one regime: gaps
+under about a pixel and a half. The same shots rendered at 2048 px, where 1 mm
+is 4.6 px and 0.5 mm is 2.3, are ordinary detected pairs for `fitPairs`:
+
+| gap | 512 px (1.16 px/mm) | 2048 px (4.65 px/mm) |
+|---|---|---|
+| 1 mm | −0.22 mm, found inside one segment | −0.011 mm |
+| 0.5 mm | no reading | −0.017 mm |
+| contact | no reading | no reading |
+
+The 0.5 mm row at 2048 px is the 2 mm row at 512 over again, in pixels:
+detected +1.19 px, refit −0.08. One render set, so no second sample.
+
+**The strip keeps its level, so holding it is sound.** Read off the pixels in
+its middle at 2048 px, with no model: 0.119, 0.122 and 0.116 at 5, 2 and 1 mm,
+and 0.104 at 0.5 mm. That last 13% would move a 0.58 px reading by +0.06 px.
+
+**But the strip is not flat.** Across its width it is about 0.136 for the 60%
+nearest the Table's edge and falls to half that at the Cube's, where the table
+top is deepest under it. The shape is the same fraction of the width at 20 mm
+and at 1 mm, which is why the mean holds. The model fits one level to it. That
+is the first suspect for the Cube's edge reading toward the gap, and it is
+untested.
+
 **It found one nobody was looking for.** At 2 mm, in one render (and at a gain
 of 1.29 in the other, just under the gate): 16 px of the detection along the
 Cube's right-hand bottom edge, with a strip 1.7 px wide inside it. It is the

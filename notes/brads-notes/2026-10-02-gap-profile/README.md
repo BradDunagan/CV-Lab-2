@@ -32,7 +32,11 @@ node 01-profile.js                                      # the note's tables; ~3 
 node 01-profile.js profile gap-1-front-linear gap-1mm   # one frame's raw profile
 node 02-seeded.js                                       # fitPairs, seeded from truth
 node 03-windows.js                                      # one step or two, per window
+node 04-strip-level.js gap-1-front-2048 pairs           # the strip's level, read directly
 ```
+
+`04-strip-level.js` takes a run and, optionally, the results subdirectory a
+non-default script wrote to. It needs no pairs: only the truth slot `T`.
 
 `03-windows.js` belongs to the note's last section: for each 24 px window
 along the table's front edge, how much better two steps fit than one. With no
