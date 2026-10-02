@@ -473,7 +473,10 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
 
     defineOp({
       name: 'fitPairs',
-      version: 1,
+      // v2: the aperture is the MEDIAN of the lone segments', not their lower
+      // quartile. Over sixteen frames from one renderer the quartile ranged
+      // 1.06 to 1.31 and the median 1.31 to 1.39; see pairs.js.
+      version: 2,
       summary: 'Place two close parallel segments again, jointly, against the unblurred image.',
       /*
        * Features in, features out, with the image alongside -- the shape
@@ -517,7 +520,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
          * the camera's, not the pair's, and fitting it per pair turns one
          * soft edge into two sharp ones half a pixel apart. `fit` measures
          * it on this image's LONE segments and holds it for every pair;
-         * pt-lab's renders come out at 1.1 to 1.3. `apertureWidth` is the
+         * pt-lab's 512 px renders come out at 1.3 to 1.4. `apertureWidth` is the
          * value held, and the fallback when no segment can say.
          */
         { name: 'aperture', type: 'enum', values: ['fit', 'held'], default: 'fit' },

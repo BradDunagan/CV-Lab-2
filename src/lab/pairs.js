@@ -43,10 +43,16 @@
  *
  * So it is measured where it CAN be -- on the image's lone segments, each a
  * single step with nothing near it -- and then held for every pair. The
- * lower quartile is taken, not the middle: nothing in an image is sharper than
- * the aperture allows, and plenty is softer (a shadow's edge, a rounded
- * corner), so the sharp end of the distribution is the camera and the rest is
- * the scene.
+ * MEDIAN of what they return is taken.
+ *
+ * It was the lower quartile for a day, on an argument: nothing in an image is
+ * sharper than the aperture allows and plenty is softer, so the sharp end is
+ * the camera. The argument assumed nothing reads sharper than the truth, and
+ * things do -- a segment with a dark strip hidden against it fits a step
+ * 0.93 wide in an image drawn through 1.4. Measured over sixteen frames from
+ * one renderer, where the answer is a constant, the quartile ranged 1.06 to
+ * 1.31 (sd 0.081) and the median 1.31 to 1.39 (sd 0.022). Shadow edges, at 5
+ * and more, are a minority in every frame seen and do not reach the median.
  *
  * WHAT THE PIXELS DO NOT DETERMINE
  *
@@ -436,8 +442,9 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
  * The aperture this image was made through, from its lone segments.
  *
  * Each segment that is in no pair, and long enough, is fitted as ONE step with
- * the aperture free. The lower quartile of what they return is the answer:
- * the sharpest edges are the camera, the rest are the scene.
+ * the aperture free. The median of what they return is the answer (the lower
+ * of the middle two, for an even count); see the top of this file for why it
+ * is not the lower quartile.
  *
  * An axis-aligned segment says nothing -- every pixel along it crosses the
  * step at the same phase, so one soft step and a sharper one a little to the
@@ -458,7 +465,7 @@ function measureAperture(segments, raster, paired, opts) {
   }
   if (found.length === 0) return null;
   found.sort((a, b) => a - b);
-  return { width: found[Math.floor((found.length - 1) / 4)], segments: found.length };
+  return { width: found[Math.floor((found.length - 1) / 2)], segments: found.length };
 }
 
 /* ---- the records ---------------------------------------------------- */
