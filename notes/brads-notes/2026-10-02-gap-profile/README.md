@@ -31,7 +31,13 @@ chosen with the determinism rules in mind.
 node 01-profile.js                                      # the note's tables; ~3 m 45 s
 node 01-profile.js profile gap-1-front-linear gap-1mm   # one frame's raw profile
 node 02-seeded.js                                       # fitPairs, seeded from truth
+node 03-windows.js                                      # one step or two, per window
 ```
+
+`03-windows.js` belongs to the note's last section: for each 24 px window
+along the table's front edge, how much better two steps fit than one. With no
+arguments it prints the summary the note quotes; with a run and a frame, every
+window.
 
 `02-seeded.js` belongs to the note's later section. It calls `fitPairs` from
 `src/lab/pairs.js` as it was on 10-02, with the two truth edges standing in
