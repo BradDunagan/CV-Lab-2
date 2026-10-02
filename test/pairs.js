@@ -259,7 +259,7 @@ test('an axis-aligned segment says nothing about the aperture, and a short one i
   assert.equal(measureAperture([segOn(1, slanted, -8, 8)], r2, new Set(), DEFAULTS), null);
 });
 
-test('the sharp end of the lone segments is taken: a soft shadow edge does not set the aperture', () => {
+test('a soft shadow edge among the lone segments does not set the aperture', () => {
   // Four segments on one sharp step, and one on a step drawn four times softer.
   const lo = lineAt(80, 40, 8), far = lineAt(80, 400, 8);
   const sharp = strip(160, 120, lo, far, [0.6, 0.2, 0.2], 0.01, 1);
