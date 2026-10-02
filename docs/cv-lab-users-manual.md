@@ -1360,11 +1360,17 @@ byte-reproducible, so a second render replaces the images the first run's
 numbers came from, and a later `--skip-render` would report different numbers
 under the same name. For another sample of the same shots, use a new `--name`.
 
+`--script <file>` runs a different pipeline over the same renders, for
+example a copy of `explained.lab` with another `sigma`. It must bind `T`, `F`,
+`EF` and `MF` as `explained.lab` does. Its results go to
+`results/<name>/<script name>/`, so a variant never overwrites the default's.
+
 `gap-sweep.json` records a SHA-256 of every file the lab read for each shot:
 the render, its ground truth and the three passes. If a `--skip-render` finds
 different ones than the previous analysis measured, it says which shots
 changed and keeps the previous record as `gap-sweep.replaced-<time>.json`
-instead of overwriting it. Under the hood it hands the generator a shot
+instead of overwriting it. The pipeline script is recorded and checked the same
+way. Under the hood it hands the generator a shot
 list with `npm run generate -- --shots <file>`, which any other sweep can use.
 
 ---

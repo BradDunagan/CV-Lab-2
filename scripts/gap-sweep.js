@@ -12,6 +12,7 @@
  *   1. generate   one render per gap, with ground truth and AOV passes,
  *                 from a shot list this script writes   -> generated/<name>/
  *   2. lab        pipelines/explained.lab over them      -> results/<name>/
+ *                 (or --script <file>: results/<name>/<script name>/)
  *   3. analyse    one row per gap (src/lab/gapsweep.js)  -> results/<name>/gap-sweep.{csv,json}
  *
  * plus an overlay per step, because a table reports numbers whether or not
@@ -35,6 +36,7 @@ const { resolveScene } = require('../src/generate/driver');
 const { gapRow, pxPerMm, changedInputs } = require('../src/lab/gapsweep');
 
 const ROOT = path.join(__dirname, '..');
+const DEFAULT_SCRIPT = 'pipelines/explained.lab';
 
 const USAGE = `
 CV-Lab gap sweep -- the gap between two parts, stepped down to contact
@@ -49,6 +51,10 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
   --gaps <mm,...>    the steps, in millimetres            (default 50,20,10,5,2,1,0.5,0)
   --size <px>        render size                          (default 512)
   --samples <n>      path-tracing samples per image       (default 96)
+  --script <file>    the pipeline to run         (default pipelines/explained.lab)
+                     It must bind T, F, EF and MF as explained.lab does. Any
+                     other script writes to results/<run>/<script name>/, so a
+                     variant never overwrites the default's results
   --skip-render      reuse generated/<run>/, re-run the lab and the analysis
   --overwrite        render into generated/<run>/ even though it holds a sweep
   --dry-run          print the shots and stop
@@ -67,6 +73,7 @@ function parseArgs(argv) {
   const opts = {
     name: null, scene: 'saved:gap-1', moving: 'Cube', target: 'Table', axis: [0, 1, 0],
     gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], size: 512, samples: 96, skipRender: false, overwrite: false,
+    script: DEFAULT_SCRIPT,
     dryRun: false,
   };
   const list = (s, what) => {
@@ -97,6 +104,7 @@ function parseArgs(argv) {
       case '--samples': opts.samples = list(argv[++i], '--samples')[0]; break;
       case '--skip-render': opts.skipRender = true; break;
       case '--overwrite': opts.overwrite = true; break;
+      case '--script': opts.script = argv[++i]; break;
       case '--dry-run': opts.dryRun = true; break;
       case '--help': case '-h': opts.help = true; break;
       default: throw new Error(`unknown option ${arg}`);
@@ -144,7 +152,7 @@ function slots(file) {
   const lists = JSON.parse(fs.readFileSync(file, 'utf8'));
   const by = Object.fromEntries(lists.map((l) => [l.slot, l.features]));
   for (const s of ['T', 'F', 'EF', 'MF']) {
-    if (!by[s]) throw new Error(`${file} has no ${s} slot -- was it run with pipelines/explained.lab?`);
+    if (!by[s]) throw new Error(`${file} has no ${s} slot -- does the --script bind it as pipelines/explained.lab does?`);
   }
   return { truth: by.T, segments: by.F, explained: by.EF, matches: by.MF };
 }
@@ -174,7 +182,7 @@ function inputHashes(gen, shots) {
  * inputs differ its numbers do not carry over, so it is kept beside the new
  * one rather than overwritten, and the run says which shots changed.
  */
-function checkPrevious(recordFile, inputs) {
+function checkPrevious(recordFile, inputs, script) {
   if (!fs.existsSync(recordFile)) return;
   const previous = JSON.parse(fs.readFileSync(recordFile, 'utf8'));
   const stamp = (previous.analysedAt ?? fs.statSync(recordFile).mtime.toISOString()).replace(/[:.]/g, '-');
@@ -186,9 +194,16 @@ function checkPrevious(recordFile, inputs) {
     return;
   }
   const changed = changedInputs(previous.inputs, inputs);
+  // The pipeline is an input too: the same renders through a different
+  // script are a different measurement. Records from before scripts were
+  // recorded all ran explained.lab, and are not second-guessed.
+  if (previous.script && previous.script.sha256 !== script.sha256) {
+    const was = previous.script.path === script.path ? `${script.path}, edited` : `${previous.script.path} -> ${script.path}`;
+    changed.unshift({ shot: 'the pipeline', files: [was] });
+  }
   if (changed.length === 0) return;
   fs.renameSync(recordFile, kept);
-  console.log(`\nTHESE ARE NOT THE RENDERS THE PREVIOUS ANALYSIS MEASURED -- its numbers do not\n`
+  console.log(`\nTHIS IS NOT WHAT THE PREVIOUS ANALYSIS MEASURED -- its numbers do not\n`
     + `carry over. Changed: ${changed.map((c) => `${c.shot} (${c.files.join(', ')})`).join('; ')}.\n`
     + `The previous analysis is kept as ${path.relative(ROOT, kept)}.`);
 }
@@ -209,7 +224,13 @@ function main() {
   }
 
   const gen = path.join('generated', opts.name);
-  const res = path.join('results', opts.name);
+  // A non-default script gets its own results directory, so a variant can
+  // never overwrite the default's numbers under the same run name.
+  if (!fs.existsSync(path.resolve(ROOT, opts.script))) throw new Error(`no such script: ${opts.script}`);
+  const scriptName = path.basename(opts.script).replace(/\.lab$/, '');
+  const res = path.resolve(ROOT, opts.script) === path.join(ROOT, DEFAULT_SCRIPT)
+    ? path.join('results', opts.name)
+    : path.join('results', opts.name, scriptName);
   const shots = gapShots(opts);
 
   if (opts.dryRun) {
@@ -250,7 +271,7 @@ function main() {
 
   const images = shots.map((s) => path.join(gen, s.name));
   electron('scripts/lab-cli.js', [
-    '--script', 'pipelines/explained.lab', '--as', 'linear',
+    '--script', opts.script, '--as', 'linear',
     '--truth', gen, '--aovs', gen, '--out', res, '--quiet', ...images,
   ]);
 
@@ -269,11 +290,15 @@ function main() {
 
   const inputs = inputHashes(gen, shots);
   const recordFile = path.join(ROOT, res, 'gap-sweep.json');
-  checkPrevious(recordFile, inputs);
+  const script = {
+    path: path.relative(ROOT, path.resolve(ROOT, opts.script)),
+    sha256: crypto.createHash('sha256').update(fs.readFileSync(path.resolve(ROOT, opts.script))).digest('hex'),
+  };
+  checkPrevious(recordFile, inputs, script);
   const record = {
     scene: opts.scene, ...parts, axis: opts.axis, size: opts.size, samples: opts.samples,
     camera: shots[0].camera, look: shots[0].target, pxPerMm: scale,
-    analysedAt: new Date().toISOString(), inputs, rows,
+    analysedAt: new Date().toISOString(), script, inputs, rows,
   };
   fs.writeFileSync(recordFile, JSON.stringify(record, null, 2));
 
