@@ -289,7 +289,9 @@ const scene = ({ depth, normal, albedo, camera }) => ({
 
 test('slant is measured from the line of sight, not from the image plane', () => {
   const g = viewGeometry(CAMERA, S, S);
-  assert.ok(Math.abs(slantAt(g, facingPass(), S / 2, S / 2)) < 1e-6,
+  // At the optical centre, wherever the pixel convention puts it: on the
+  // axis, a surface facing the camera is square to the line of sight.
+  assert.ok(Math.abs(slantAt(g, facingPass(), g.cx, g.cy)) < 1e-6,
     'a surface facing the camera is not at zero slant');
   const grazed = slantAt(g, grazingPass(), S / 2, S / 2);
   assert.ok(Math.abs(grazed - 80) < 0.5, `an 80° surface measured ${grazed.toFixed(1)}°`);

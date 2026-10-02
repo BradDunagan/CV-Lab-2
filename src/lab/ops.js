@@ -472,7 +472,9 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
 
     defineOp({
       name: 'groundTruth',
-      version: 1,
+      // 2: coordinates move by -0.5 into the lab's pixel-centre convention
+      // (src/lab/groundtruth.js). Same file, different features.
+      version: 2,
       summary: 'Read a renderer\'s ground truth: where the edges really are.',
       // A source, like load and pattern -- it takes no slot, it takes a file.
       inputs: [],
@@ -539,7 +541,9 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       // away from the camera as a step -- 241 of 282 `occlusion` calls on the
       // helmet were that, measured. What slant accounts for is subtracted
       // first; see explain.js and design-lab-model.md §11.
-      version: 2,
+      // v3: view rays through the optical centre in the lab's pixel
+      // convention, (w-1)/2 rather than w/2 -- half a pixel, ~0.05 deg.
+      version: 3,
       summary: 'Say what put each detected feature in the picture, from the renderer\'s AOV passes.',
       /*
        * Features in, features out, with three auxiliary passes alongside.

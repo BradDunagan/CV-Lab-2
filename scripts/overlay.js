@@ -34,6 +34,9 @@ const { encodePNG } = require('./png');
 // The same threshold the matcher scores with, so the picture and the tally
 // cannot disagree about which edges were findable.
 const { MIN_VISIBLE } = require('../src/lab/match');
+// Through the lab's own loader, so the truth drawn is the truth that was
+// scored -- in the lab's pixel convention, like every detection here.
+const { parseGroundTruth, PIXEL_CENTRE } = require('../src/lab/groundtruth');
 
 const USAGE = `
 cv-lab-2 overlay
@@ -273,7 +276,13 @@ for (const [label, file] of [['image', opts.image], ['ground truth', truthFile],
 }
 
 const source = decodePNG(opts.image);
-const truth = JSON.parse(fs.readFileSync(truthFile, 'utf8'));
+const truthDoc = JSON.parse(fs.readFileSync(truthFile, 'utf8'));
+const truthFeatures = parseGroundTruth(truthDoc, truthFile).features;
+const truth = {
+  size: truthDoc.size,
+  edges: truthFeatures.filter((f) => f.type === 'gt-edge'),
+  vertices: truthFeatures.filter((f) => f.type === 'gt-vertex'),
+};
 const slots = new Map(
   JSON.parse(fs.readFileSync(featuresFile, 'utf8')).map((e) => [e.slot, e.features])
 );
@@ -288,6 +297,14 @@ if (truth.size !== source.width || source.width !== source.height) {
 
 const canvas = makeCanvas(source, opts.scale, opts.dim);
 const S = opts.scale;
+/*
+ * Lab coordinates to canvas. Pixel i's centre is at i in the lab and at
+ * (i + 0.5) * S on the canvas, where source pixel i covers [i*S, (i+1)*S).
+ * Drawing x * S instead put every detection half a source pixel up and left
+ * of what it was fitted to -- and drew pt-lab's raw truth correctly, which is
+ * why the two looked a little apart in every overlay ever made.
+ */
+const P = (v) => (v + PIXEL_CENTRE) * S;
 
 /*
  * Order matters: ground truth underneath, detections on top. What is being
@@ -295,7 +312,7 @@ const S = opts.scale;
  * are what must stay legible where the two coincide.
  */
 for (const e of truth.edges) {
-  line(canvas, e.x0 * S, e.y0 * S, e.x1 * S, e.y1 * S,
+  line(canvas, P(e.x0), P(e.y0), P(e.x1), P(e.y1),
     e.visible >= MIN_VISIBLE ? COLOURS.truthVisible : COLOURS.truthHidden);
 }
 
@@ -316,7 +333,7 @@ const segmentVerdict = verdicts('segment');
 for (const [, features] of slots) {
   for (const f of features) {
     if (f.type !== 'edge-segment') continue;
-    line(canvas, f.x0 * S, f.y0 * S, f.x1 * S, f.y1 * S,
+    line(canvas, P(f.x0), P(f.y0), P(f.x1), P(f.y1),
       segmentVerdict.get(f.id) === 'hit' ? COLOURS.matched : COLOURS.unmatched, 1);
   }
 }
@@ -326,7 +343,7 @@ for (const [, features] of slots) {
   for (const f of features) {
     if (f.type !== 'edge-arc') continue;
     const role = arcVerdict.get(f.id);
-    arc(canvas, f.cx * S, f.cy * S, f.r * S, f.angle0, f.sweep,
+    arc(canvas, P(f.cx), P(f.cy), f.r * S, f.angle0, f.sweep,
       role === undefined ? COLOURS.arc
         : role === 'hit' ? COLOURS.matched : COLOURS.unmatched, 1);
   }
@@ -341,14 +358,14 @@ for (const [, features] of slots) {
  */
 for (const v of truth.vertices) {
   if (!v.visible || v.onFrame === false || v.angle < opts.minAngle) continue;
-  ring(canvas, v.x * S, v.y * S, (5 * S) / 2, COLOURS.truthCorner);
+  ring(canvas, P(v.x), P(v.y), (5 * S) / 2, COLOURS.truthCorner);
 }
 
 const cornerVerdict = verdicts('corner');
 for (const [, features] of slots) {
   for (const f of features) {
     if (f.type !== 'edge-corner') continue;
-    dot(canvas, f.x * S, f.y * S,
+    dot(canvas, P(f.x), P(f.y),
       cornerVerdict.get(f.id) === 'hit' ? COLOURS.matchedCorner : COLOURS.unmatched, 2);
   }
 }

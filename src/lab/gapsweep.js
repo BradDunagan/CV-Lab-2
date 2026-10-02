@@ -309,13 +309,10 @@ function gapRow({ truth, segments, explained, matches }, shot, { moving, target 
    * the two frames differ by the cosine of a small angle, and the gap itself
    * is still measured as it always was, along the detected target edge.
    *
-   * READ THESE WITH THE PIXEL CONVENTIONS IN MIND. Detections put pixel i's
-   * centre at i; pt-lab's ground truth puts it at i + 0.5. Every detection
-   * therefore sits near (-0.5, -0.5) px from its truth -- fitted over all
-   * matched edges of cube1 it is (-0.507, -0.457), and removing it takes the
-   * rms offset from 0.50 to 0.07 px. Both offsets here carry that shift,
-   * projected on the normal (about +0.45 px for a near-horizontal pair). It
-   * cancels exactly in the gap, and not in either offset alone.
+   * These found the pixel-convention mismatch between pt-lab's truth and the
+   * lab's detections: both edges displaced the same way by about half a
+   * pixel. The truth is converted at load now (PIXEL_CENTRE in
+   * groundtruth.js), so what is left here is each edge's own offset.
    */
   const T = pair.facing;
   const ca = crossing(da.line, T.at, T.normal);

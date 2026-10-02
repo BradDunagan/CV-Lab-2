@@ -698,6 +698,15 @@ geometric ground truth has to be read with these in view:
 So the honest reading of a match rate here is *how much of what the pipeline
 found is explained by geometry* — not *how often the pipeline is right*.
 
+**A fourth limit, now removed: the coordinate convention.** Two systems that
+both say "pixel (10, 20)" can mean points half a pixel apart. One puts a
+pixel's centre at its index; the other puts its corner there, so the centre is
+at index + 0.5. pt-lab writes truth in the second convention and the lab
+detects in the first. Until 2026-10-01 they were compared without conversion,
+and every match distance carried about 0.5 px per axis. The loader now converts
+the truth (`design-lab-model.md` §5). The general lesson: ground truth is only
+as good as the agreement about what its numbers mean.
+
 **Related terms.** A **fixture** is the input a test runs on; ground truth is
 the answer it is graded against. **Annotation** or **labelling** is ground truth
 produced by people. **Synthetic data** is the approach this project takes: build

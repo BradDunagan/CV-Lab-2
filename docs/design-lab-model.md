@@ -719,6 +719,52 @@ after the fix.
 Neither shows up in a scoring table, which reports a number either way. Both
 were obvious in one overlay image, which is what `npm run overlay` is for.
 
+#### A third, which every overlay drew and nobody saw
+
+**The truth and the detections disagreed about where a pixel is.** The
+detections are fitted through pixel *indices*, so pixel *i*'s centre is at
+*x* = *i*. pt-lab projects the frame onto [0, size], so pixel *i* spans
+[*i*, *i*+1] and its centre is at *i* + 0.5. Every detection was compared with
+truth half a pixel down and right of it.
+
+It was found on 2026-10-01 by splitting a gap measurement into its two edges.
+Both edges came out displaced the same way by about half a pixel, which no
+property of a single edge would do. Fitting one translation to every matched
+segment of `cube1` gave (−0.507, −0.457). Removing it took the RMS offset of
+those matches from 0.50 to 0.07 px.
+
+It hid three ways:
+
+- **`match` accepts anything within 3 px,** so no count moved enough to notice.
+- **Every gap and every relative measurement cancels it,** to within 0.02 px.
+- **The overlays drew it faithfully.** They put truth at *x*·scale, which is
+  right for pt-lab's convention, and detections at the same, which is half a
+  source pixel up and left. Every overlay ever made showed the detections
+  slightly off their edges. It read as detector imprecision.
+
+**The fix is at the one place truth enters the lab.** `parseGroundTruth` moves
+every coordinate by −0.5 into the convention every kernel already used
+(`groundTruth` v2). The `.gt.json` files keep pt-lab's. Both overlays now
+draw lab coordinates at (*v* + 0.5)·scale. `explain`'s view rays had the same
+half pixel in their optical centre, `w/2` instead of `(w − 1)/2` (`explain` v3).
+That changed 1 cause in 983 on `helmet-256` and none elsewhere.
+
+Re-measured over every existing result set. Detections were byte-identical
+before and after; only the comparison moved:
+
+| set | segment-hit distance, median | corner-hit distance, median |
+|---|---|---|
+| `cube1` | 0.527 → **0.062** px | 0.681 → 0.124 px |
+| `cube` | 0.482 → 0.102 px | 0.725 → 0.224 px |
+| `clutter` | 0.482 → 0.106 px | 0.722 → 0.179 px |
+| `helmet-512` | 0.531 → 0.428 px | 1.584 → 1.594 px |
+
+On the clean cube, the detector puts an edge to within about 0.06 px of the
+geometry. A few counts move as edges that sat near the tolerance fall inside it:
+segment misses on `cube` go from 84 to 79 and on `clutter` from 83 to 76. The
+helmet barely changes, because its matches are loose against a dense mesh,
+and that, not the convention, is its limit.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

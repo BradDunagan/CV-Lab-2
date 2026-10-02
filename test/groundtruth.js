@@ -126,6 +126,19 @@ const corner = (id, x, y, extra = {}) => ({
 
 const doc = (edges, vertices, size = 256) => ({ size, edges, vertices });
 
+/**
+ * A document as pt-lab would write it for truth stated in LAB coordinates.
+ * pt-lab puts pixel i's centre at i + 0.5 and the loader moves it back, so a
+ * test that means "an edge along row 50" writes 50.5 to the file. Writing 50
+ * passed for years inside match's tolerance and said something false.
+ */
+const toFile = (f) => ({
+  ...f,
+  ...(f.x0 !== undefined ? { x0: f.x0 + 0.5, y0: f.y0 + 0.5, x1: f.x1 + 0.5, y1: f.y1 + 0.5 } : {}),
+  ...(f.x !== undefined ? { x: f.x + 0.5, y: f.y + 0.5 } : {}),
+});
+const docInLab = (edges, vertices, size) => doc(edges.map(toFile), vertices.map(toFile), size);
+
 console.log('cv-lab-2 ground-truth and generator-packaging tests');
 
 /* --- the loader -------------------------------------------------------- */
@@ -136,6 +149,22 @@ test('a well-formed document becomes namespaced feature records', () => {
   assert.equal(width, 256);
   assert.equal(height, 256);
   assert.deepEqual(features.map((f) => f.type), ['gt-edge', 'gt-vertex']);
+});
+
+test('truth moves into the lab\'s pixel convention: every coordinate by -0.5, nothing else', () => {
+  /*
+   * pt-lab puts pixel i's centre at i + 0.5; the lab's detections put it at
+   * i. A truth edge from (10.5, 20.5) to (30.5, 20.5) runs through the centres
+   * of row 20, columns 10..30 -- which the lab calls (10, 20) to (30, 20).
+   */
+  const { features } = parseGroundTruth(doc(
+    [gtEdge(1, 10.5, 20.5, 30.5, 20.5)], [gtVertex(1, 10.5, 20.5)]));
+  const [edge, vertex] = features;
+  assert.deepEqual([edge.x0, edge.y0, edge.x1, edge.y1], [10, 20, 30, 20]);
+  assert.deepEqual([vertex.x, vertex.y], [10, 20]);
+  // A translation: length and angle are what they were.
+  assert.equal(edge.length, 20);
+  assert.equal(edge.angle, 0);
 });
 
 test('objects are sorted, so the record hashes the same however it arrived', () => {
@@ -205,7 +234,7 @@ test('point-to-segment distance is clamped to the segment', () => {
 
 test('a segment lying along an edge is a hit, and carries the cause', () => {
   const out = matchFeatures([seg(1, 10, 50, 90, 50)],
-    parseGroundTruth(doc([gtEdge(1, 10, 50, 90, 50)], [])).features);
+    parseGroundTruth(docInLab([gtEdge(1, 10, 50, 90, 50)], [])).features);
   const hit = out.find((r) => r.role === 'hit');
   assert.ok(hit, 'expected a hit');
   assert.equal(hit.cause, 'silhouette');
@@ -214,7 +243,7 @@ test('a segment lying along an edge is a hit, and carries the cause', () => {
 
 test('a segment far from any geometry is a false positive, and says how far', () => {
   const out = matchFeatures([seg(1, 10, 200, 90, 200)],
-    parseGroundTruth(doc([gtEdge(1, 10, 50, 90, 50)], [])).features);
+    parseGroundTruth(docInLab([gtEdge(1, 10, 50, 90, 50)], [])).features);
   const fp = out.find((r) => r.role === 'false-positive');
   assert.ok(fp);
   assert.equal(fp.truth, null);
@@ -225,7 +254,7 @@ test('a segment far from any geometry is a false positive, and says how far', ()
 test('a segment at the right place but the wrong angle does not match', () => {
   // Two edges crossing at the same midpoint. Distance alone would accept it.
   const out = matchFeatures([seg(1, 50, 10, 50, 90)],
-    parseGroundTruth(doc([gtEdge(1, 10, 50, 90, 50)], [])).features);
+    parseGroundTruth(docInLab([gtEdge(1, 10, 50, 90, 50)], [])).features);
   assert.equal(out.filter((r) => r.role === 'hit').length, 0);
   const fp = out.find((r) => r.role === 'false-positive');
   assert.ok(fp.angleDiff > 80, `angleDiff ${fp.angleDiff}`);
@@ -242,7 +271,7 @@ test('one segment covering a polyline credits every facet it covers', () => {
   const facets = [];
   for (let i = 0; i < 12; i++) facets.push(gtEdge(i + 1, i * 5, 50, (i + 1) * 5, 50));
   const out = matchFeatures([seg(1, 0, 50, 60, 50)],
-    parseGroundTruth(doc(facets, [])).features);
+    parseGroundTruth(docInLab(facets, [])).features);
   assert.equal(out.filter((r) => r.role === 'miss').length, 0,
     'every facet the segment lies along should count as found');
   assert.equal(summarise(out).recall, 1);
@@ -251,7 +280,7 @@ test('one segment covering a polyline credits every facet it covers', () => {
 test('a hidden edge is not held against the detector', () => {
   // It exists, so the renderer reports it; it cannot be seen, so missing it is
   // not a failure. minVisible is where that line gets drawn.
-  const truth = parseGroundTruth(doc([
+  const truth = parseGroundTruth(docInLab([
     gtEdge(1, 10, 50, 90, 50),
     gtEdge(2, 10, 80, 90, 80, { visible: 0 }),
   ], [])).features;
@@ -272,7 +301,7 @@ test('one arc over a fan of truth chords finds all of them', () => {
    * one hit in twelve. It does not, because recall walks the truth -- the same
    * two-pass structure the ball's silhouette forced on segments.
    */
-  const truth = parseGroundTruth(doc(gtArcChords(50, 50, 40, 0, 90, 12), [])).features;
+  const truth = parseGroundTruth(docInLab(gtArcChords(50, 50, 40, 0, 90, 12), [])).features;
   const out = matchFeatures([arc(1, 50, 50, 40, 0, 90)], truth);
   assert.equal(out.filter((r) => r.role === 'hit').length, 1, 'the arc should be a hit');
   assert.equal(out.filter((r) => r.role === 'miss').length, 0,
@@ -295,7 +324,7 @@ test('an arc is measured as a curve, never as its chord', () => {
   assert.equal(chordOut.filter((r) => r.role === 'hit').length, 0,
     'an edge along the chord was treated as if it were on the arc');
 
-  const onTheArc = parseGroundTruth(doc(gtArcChords(50, 50, 40, 0, 180, 16), [])).features;
+  const onTheArc = parseGroundTruth(docInLab(gtArcChords(50, 50, 40, 0, 180, 16), [])).features;
   assert.equal(matchFeatures([half], onTheArc).filter((r) => r.role === 'hit').length, 1);
 });
 
@@ -312,7 +341,7 @@ test('distance to an arc is clamped to the arc, not to its whole circle', () => 
 });
 
 test('an arc far from any geometry is a false positive, and says how far', () => {
-  const truth = parseGroundTruth(doc([gtEdge(1, 10, 10, 90, 10)], [])).features;
+  const truth = parseGroundTruth(docInLab([gtEdge(1, 10, 10, 90, 10)], [])).features;
   const out = matchFeatures([arc(1, 50, 200, 40, 0, 90)], truth);
   const fp = out.find((r) => r.role === 'false-positive');
   assert.ok(fp, 'expected a false positive');
@@ -328,7 +357,7 @@ test('the angle an arc is judged on is its tangent, not one angle for the whole'
    * a single whole-arc angle could not be: this arc's tangent turns through
    * ninety degrees between its ends.
    */
-  const truth = parseGroundTruth(doc(gtArcChords(50, 50, 40, 0, 90, 12), [])).features;
+  const truth = parseGroundTruth(docInLab(gtArcChords(50, 50, 40, 0, 90, 12), [])).features;
   const hit = matchFeatures([arc(1, 50, 50, 40, 0, 90)], truth).find((r) => r.role === 'hit');
   assert.ok(hit.angleDiff < 5, `angleDiff ${hit.angleDiff} over a 90° turn`);
   assert.ok(Math.abs(arcTangent(arc(1, 50, 50, 40, 0, 90), 0) - 90) < 1e-9);
@@ -347,14 +376,14 @@ test('arc records carry the middle of the arc, not the middle of the chord', () 
   // On a half circle those are a radius apart, and this is the point the
   // overlay draws a verdict on.
   const out = matchFeatures([arc(1, 50, 50, 40, 0, 180)],
-    parseGroundTruth(doc(gtArcChords(50, 50, 40, 0, 180, 16), [])).features);
+    parseGroundTruth(docInLab(gtArcChords(50, 50, 40, 0, 180, 16), [])).features);
   const hit = out.find((r) => r.role === 'hit');
   assert.ok(Math.abs(hit.x - 50) < 1e-6 && Math.abs(hit.y - 90) < 1e-6,
     `midpoint reported at ${hit.x}, ${hit.y}; the chord's midpoint is 50, 50`);
 });
 
 test('matching arcs does not depend on the order they arrive in', () => {
-  const truth = parseGroundTruth(doc(gtArcChords(50, 50, 40, 0, 120, 16), [])).features;
+  const truth = parseGroundTruth(docInLab(gtArcChords(50, 50, 40, 0, 120, 16), [])).features;
   const detected = [arc(1, 50, 50, 40, 0, 60), arc(2, 50, 50, 40, 60, 60)];
   const forward = matchFeatures(detected, truth);
   const backward = matchFeatures([...detected].reverse(), [...truth].reverse());
@@ -366,7 +395,7 @@ test('matching arcs does not depend on the order they arrive in', () => {
 
 test('a corner on a real vertex is a hit', () => {
   const out = matchFeatures([corner(1, 40, 40)],
-    parseGroundTruth(doc([], [gtVertex(1, 41, 40)])).features);
+    parseGroundTruth(docInLab([], [gtVertex(1, 41, 40)])).features);
   const hit = out.find((r) => r.role === 'hit');
   assert.ok(hit);
   assert.ok(Math.abs(hit.distance - 1) < 1e-9);
@@ -379,7 +408,7 @@ test('two candidates on one vertex cannot both be right', () => {
    * a detector that fires everywhere as highly accurate. The nearest wins.
    */
   const out = matchFeatures([corner(1, 40, 40), corner(2, 42, 40)],
-    parseGroundTruth(doc([], [gtVertex(1, 41.5, 40)])).features);
+    parseGroundTruth(docInLab([], [gtVertex(1, 41.5, 40)])).features);
   assert.equal(out.filter((r) => r.role === 'hit').length, 1);
   assert.equal(out.find((r) => r.role === 'hit').detected, 2, 'the nearer one wins');
   assert.equal(out.filter((r) => r.role === 'false-positive').length, 1);
@@ -393,7 +422,7 @@ test('a bend in a silhouette polyline is not expected to be found', () => {
    * detector should be marked down for missing one. `angle` is what separates
    * them: a cube's vertices sit near 90, a sphere's facets bend by a few.
    */
-  const truth = parseGroundTruth(doc([], [
+  const truth = parseGroundTruth(docInLab([], [
     gtVertex(1, 40, 40, { angle: 88 }),
     gtVertex(2, 90, 90, { angle: 7, degree: 2, visibleDegree: 2 }),
   ], 256)).features;
@@ -403,7 +432,7 @@ test('a bend in a silhouette polyline is not expected to be found', () => {
 });
 
 test('an off-frame or occluded vertex is not expected either', () => {
-  const truth = parseGroundTruth(doc([], [
+  const truth = parseGroundTruth(docInLab([], [
     gtVertex(1, 400, 40, { onFrame: false }),
     gtVertex(2, 40, 40, { visible: false }),
   ])).features;
@@ -414,7 +443,7 @@ test('a false positive still reports how near the nearest real corner was', () =
   // 4 px is a near miss and 60 px is an invention; both are false positives
   // and they are not the same finding.
   const out = matchFeatures([corner(1, 100, 40)],
-    parseGroundTruth(doc([], [gtVertex(1, 40, 40)])).features);
+    parseGroundTruth(docInLab([], [gtVertex(1, 40, 40)])).features);
   const fp = out.find((r) => r.role === 'false-positive');
   assert.ok(Math.abs(fp.distance - 60) < 1e-9, `distance ${fp.distance}`);
 });
@@ -436,7 +465,7 @@ test('an unrecognised feature kind is refused, saying what it expects', () => {
 });
 
 test('the result does not depend on the order the inputs arrived in', () => {
-  const truth = parseGroundTruth(doc(
+  const truth = parseGroundTruth(docInLab(
     [gtEdge(1, 10, 50, 90, 50), gtEdge(2, 50, 10, 50, 90), gtEdge(3, 10, 10, 90, 90)],
     [gtVertex(1, 50, 50)]
   )).features;
@@ -448,7 +477,7 @@ test('the result does not depend on the order the inputs arrived in', () => {
 });
 
 test('an empty detection list reports every visible edge as missed', () => {
-  const out = matchFeatures([], parseGroundTruth(doc([gtEdge(1, 10, 50, 90, 50)], [])).features);
+  const out = matchFeatures([], parseGroundTruth(docInLab([gtEdge(1, 10, 50, 90, 50)], [])).features);
   assert.equal(out.length, 1);
   assert.equal(out[0].role, 'miss');
   assert.equal(summarise(out).recall, 0);
