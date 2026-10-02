@@ -60,6 +60,10 @@
     truth: false,
     aovs: false,
     denoise: false,
+    // The driver's defaults: what every render was made with before the
+    // choice existed. Pick `linear` to measure edges -- see the controls.
+    toneMapping: 'aces',
+    exposure: 1,
   };
 
   /** Whatever the controls currently say. The column owns the fields; this is
