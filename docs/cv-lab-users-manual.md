@@ -1501,7 +1501,21 @@ error that looks like the detector's and is not.
 `scenes/gap-1.json` rests the Cube on the Table with its front face flush with
 the table's front edge, lit by the room's overhead lamp alone.
 `scenes/gap-1-front.json` is the same scene with an area light on the camera
-side. Under the lamp alone, the cube's own shadow takes the contrast out of
+side. `scenes/stack-1.json` is a different fixture: a cube on the table and a
+second, `Cube2`, the same size, lowered onto it, seen from a corner so that two
+faces of each show.
+
+```bash
+npm run gap-sweep -- --name stack-1 --scene saved:stack-1 --moving Cube2 --target Cube \
+                     --script pipelines/pairs.lab
+```
+
+**A fixture with more than one facing pair gets a row for each.** The stack
+has two, one down each side of its near vertical edge, and the table gains a
+`pair` column numbering them left to right, with `pxPerMm` and `overlapPx`
+per pair. Two edges are a pair when each is the other's nearest facing edge.
+With the camera held still, pair 1 is the same pair in every shot; from a
+different view it need not be. Under the lamp alone, the cube's own shadow takes the contrast out of
 both facing edges, and no gap is measured at any step.
 
 `--moving`, `--target`, `--axis` and `--gaps` name the parts and the steps;

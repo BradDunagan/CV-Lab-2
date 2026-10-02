@@ -40,7 +40,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { resolveScene } = require('../src/generate/driver');
-const { gapRow, pxPerMm, changedInputs, orbitViews } = require('../src/lab/gapsweep');
+const { gapRows, pxPerMm, changedInputs, orbitViews } = require('../src/lab/gapsweep');
 
 const ROOT = path.join(__dirname, '..');
 const DEFAULT_SCRIPT = 'pipelines/explained.lab';
@@ -275,6 +275,7 @@ const fmt = (v, d = 2) => (v === null || v === undefined ? '' : Number(v).toFixe
 function gridMaps(rows, opts) {
   const yaws = [...new Set(rows.map((r) => r.yaw))];
   const elevations = [...new Set(rows.map((r) => r.elevation))];
+  // Of a fixture with several pairs, the maps show the first; the CSV has all.
   const cell = (elevation, yaw, gapMm) => rows.find((r) => r.elevation === elevation && r.yaw === yaw && r.gapMm === gapMm);
   const table = (title, gapMm, value) => {
     const lines = [title, `  elev \\ yaw ${yaws.map((y) => String(y).padStart(8)).join('')}`];
@@ -380,17 +381,21 @@ function main() {
   }
 
   const parts = { moving: opts.moving, target: opts.target };
-  const rows = shots.map((s) => ({
-    ...(s.view ?? {}),
-    ...gapRow(slots(path.join(ROOT, res, s.name.replace(/\.png$/, '.features.json'))), s, parts),
-  }));
+  // One row per facing pair per shot: a fixture with two pairs -- a cube
+  // stacked on a cube -- gets two rows a shot, and each is its own measurement.
+  const rows = shots.flatMap((s) => gapRows(
+    slots(path.join(ROOT, res, s.name.replace(/\.png$/, '.features.json'))), s, parts,
+  ).map((r) => ({ ...(s.view ?? {}), ...r })));
+  const paired = rows.some((r) => r.pair > 1);
   /*
    * Pixels per millimetre is a property of the VIEW: the same gap is fewer
    * pixels the more nearly the camera looks along it. So it is taken per view,
-   * and an error in millimetres is that view's error.
+   * and an error in millimetres is that view's error. And of the PAIR, where
+   * there is more than one: two pairs at right angles see the same gap from
+   * different sides.
    */
   const gridded = shots.some((s) => s.view);
-  const viewKey = (r) => (gridded ? `${r.yaw},${r.elevation}` : '');
+  const viewKey = (r) => `${gridded ? `${r.yaw},${r.elevation}` : ''}/${r.pair ?? ''}`;
   const scales = new Map();
   for (const key of new Set(rows.map(viewKey))) scales.set(key, pxPerMm(rows.filter((r) => viewKey(r) === key)));
   for (const r of rows) {
@@ -399,7 +404,7 @@ function main() {
     r.errorMm = s && r.errorPx !== null ? r.errorPx / s : null;
     if (r.refit) r.refit.errorMm = s ? r.refit.errorPx / s : null;
   }
-  const scale = gridded ? null : scales.get('');
+  const scale = gridded || paired ? null : scales.get(viewKey(rows[0]));
 
   const inputs = inputHashes(gen, shots);
   const recordFile = path.join(ROOT, res, 'gap-sweep.json');
@@ -432,8 +437,10 @@ function main() {
     ? [fmt(r.refit?.gapPx, 3), fmt(r.refit?.errorPx, 3), fmt(r.refit?.errorMm, 3), fmt(r.refit?.movingOffsetPx, 3),
       fmt(r.refit?.targetOffsetPx, 3), fmt(r.refit?.gapSigma, 3), fmt(r.refit?.stripLevel, 3), r.refit?.from ?? '']
     : []);
-  const viewHead = gridded ? ['yaw', 'elevation', 'pxPerMm', 'overlapPx'] : [];
-  const viewCells = (r) => (gridded ? [r.yaw, r.elevation, fmt(r.pxPerMm, 3), fmt(r.overlapPx, 1)] : []);
+  const viewHead = [...(gridded ? ['yaw', 'elevation'] : []), ...(paired ? ['pair'] : []),
+    ...(gridded || paired ? ['pxPerMm', 'overlapPx'] : [])];
+  const viewCells = (r) => [...(gridded ? [r.yaw, r.elevation] : []), ...(paired ? [r.pair ?? ''] : []),
+    ...(gridded || paired ? [fmt(r.pxPerMm, 3), fmt(r.overlapPx, 1)] : [])];
   const head = [...viewHead, 'gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm',
     `${opts.moving}OffsetPx`, `${opts.target}OffsetPx`, ...refitHead, 'pairFound', 'spansBoth',
     `${opts.moving}Found`, `${opts.target}Found`, ...causes.map((c) => `inGap_${c}`), 'reason'];
@@ -460,7 +467,8 @@ function main() {
   console.log(`\n${opts.scene}: ${opts.moving} closing on ${opts.target}, ${opts.size}px, `
     + `${opts.samples} samples, ${toneMapping.kind} tone mapping at exposure ${toneMapping.exposure}`
     + `${toneMapping.assumed ? ' (assumed: the renders predate recording it)' : ''}, `
-    + (gridded ? `${scales.size} views` : `${fmt(scale, 3)} px per mm of gap`));
+    + (gridded ? `${new Set(rows.map((r) => `${r.yaw},${r.elevation}`)).size} views`
+      : paired ? `${Math.max(...rows.map((r) => r.pair ?? 0))} facing pairs` : `${fmt(scale, 3)} px per mm of gap`));
   console.log(csv.join('\n'));
   if (gridded) {
     const maps = gridMaps(rows, opts);

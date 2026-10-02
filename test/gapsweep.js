@@ -11,7 +11,9 @@
  */
 
 const assert = require('node:assert/strict');
-const { gapRow, pxPerMm, truthPair, changedInputs, orbitViews, DEFAULTS } = require('../src/lab/gapsweep');
+const {
+  gapRow, gapRows, pxPerMm, truthPair, truthPairs, changedInputs, orbitViews, DEFAULTS,
+} = require('../src/lab/gapsweep');
 
 let failures = 0;
 function test(name, fn) {
@@ -289,6 +291,71 @@ test('pixels per millimetre is the median over steps with a gap', () => {
 /* ---- whether two analyses measured the same renders ---------------- */
 
 const FILES = { image: 'a1', truth: 'b1', depth: 'c1', normal: 'd1', albedo: 'e1' };
+
+/* ---- more than one facing pair --------------------------------------- */
+
+/*
+ * A cube stacked on a cube, seen from a corner: each shows two faces, so there
+ * are two facing pairs, one down each side of the near vertical edge. Drawn
+ * here as a V -- the left pair falling to the corner at (150, 100), the right
+ * pair rising away from it -- with the top cube's edges 6 px above the base's.
+ */
+const STACK = [
+  gt(1, ['Top'], 50, 74, 150, 94),      // top cube, bottom-left edge
+  gt(2, ['Top'], 150, 94, 230, 70),     // top cube, bottom-right edge
+  gt(3, ['Base'], 50, 80, 150, 100),    // base cube, top-left edge
+  gt(4, ['Base'], 150, 100, 230, 76),   // base cube, top-right edge
+  gt(5, ['Top'], 50, 14, 150, 34),      // top cube's own top-left edge, 60 px up
+  gt(6, ['Base'], 50, 140, 150, 160),   // base cube's bottom-left edge, 60 px down
+];
+const STACK_PARTS = { moving: 'Top', target: 'Base' };
+
+test('a stack seen from a corner has two facing pairs, left to right', () => {
+  const pairs = truthPairs(STACK, 'Top', 'Base', 0.005, DEFAULTS);
+  assert.deepEqual(pairs.map((p) => [p.a.id, p.b.id]), [[1, 3], [2, 4]]);
+  assert.ok(pairs[0].facing.at[0] < pairs[1].facing.at[0]);
+});
+
+test('an edge pairs only with its nearest facing edge, both ways round', () => {
+  // 5 is parallel to 3 and overlaps it, and so is 1 to 6: neither is a pair,
+  // because 3's nearest is 1 and 1's nearest is 3.
+  const ids = truthPairs(STACK, 'Top', 'Base', 0.005, DEFAULTS).flatMap((p) => [p.a.id, p.b.id]);
+  assert.ok(!ids.includes(5) && !ids.includes(6), `paired ${ids}`);
+  // Take the near pair away and the far edges are each other's nearest.
+  const far = truthPairs(STACK.filter((e) => e.id === 5 || e.id === 3), 'Top', 'Base', 0.005, DEFAULTS);
+  assert.deepEqual(far.map((p) => [p.a.id, p.b.id]), [[5, 3]]);
+});
+
+test('the closest pair of all is one of the pairs, so the one-pair reading has not moved', () => {
+  const closest = truthPair(STACK, 'Top', 'Base', 0.005, DEFAULTS);
+  const pairs = truthPairs(STACK, 'Top', 'Base', 0.005, DEFAULTS);
+  assert.ok(pairs.some((p) => p.a.id === closest.a.id && p.b.id === closest.b.id));
+});
+
+test('each pair gets its own row, numbered, with its own reading', () => {
+  // The left pair detected where it is; the right pair's lower edge detected
+  // 1 px too high, as a shadow boundary beside it would be.
+  const segments = [
+    seg(10, 50, 74, 150, 94), seg(11, 50, 80, 150, 100),
+    seg(12, 150, 94, 230, 70), seg(13, 150, 99, 230, 75),
+  ];
+  const matches = [hit(10, 1), hit(11, 3), hit(12, 2), hit(13, 4)];
+  const rows = gapRows({ truth: STACK, segments, explained: segments, matches }, { gapMm: 5 }, STACK_PARTS);
+  assert.deepEqual(rows.map((r) => r.pair), [1, 2]);
+  assert.deepEqual(rows.map((r) => r.truthPair), [[1, 3], [2, 4]]);
+  assert.ok(Math.abs(rows[0].errorPx) < 1e-9, `left pair error ${rows[0].errorPx}`);
+  assert.ok(rows[1].errorPx < -0.9 && rows[1].errorPx > -1, `right pair error ${rows[1].errorPx}`);
+  assert.ok(Math.abs(rows[1].movingOffsetPx) < 1e-9, 'the top cube\'s edge was on its truth');
+  // What is counted over the whole image is the same in both rows.
+  assert.deepEqual(rows[0].moving, rows[1].moving);
+});
+
+test('a shot with no facing pair still gets one row, saying so', () => {
+  const rows = gapRows({ truth: [STACK[0]], segments: [], explained: [], matches: [] }, { gapMm: 5 }, STACK_PARTS);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].pair, null);
+  assert.match(rows[0].reason, /no facing pair/);
+});
 
 /* ---- a grid of views ------------------------------------------------- */
 
