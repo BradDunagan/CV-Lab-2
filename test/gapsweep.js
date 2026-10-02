@@ -12,7 +12,7 @@
 
 const assert = require('node:assert/strict');
 const {
-  gapRow, gapRows, pxPerMm, truthPair, truthPairs, changedInputs, orbitViews, DEFAULTS,
+  gapRow, gapRows, numberPairs, pxPerMm, pxPerMmSlope, truthPair, truthPairs, changedInputs, orbitViews, DEFAULTS,
 } = require('../src/lab/gapsweep');
 
 let failures = 0;
@@ -369,6 +369,79 @@ test('a shot with no facing pair still gets one row, saying so', () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].pair, null);
   assert.match(rows[0].reason, /no facing pair/);
+});
+
+test('an edge that has crossed the target\'s is a negative gap, not a small positive one', () => {
+  // The top cube slid until its bottom-left edge is 3 px BELOW the base's
+  // top-left edge. Its other edges are where they were, so the part is still
+  // above. Signed toward the edge itself this read +3.
+  const slid = STACK.map((e) => (e.id === 1 ? gt(1, ['Top'], 50, 83, 150, 103) : e));
+  const pair = truthPairs(slid, 'Top', 'Base', 0.005, DEFAULTS).find((p) => p.a.id === 1);
+  assert.ok(pair, 'no pair');
+  assert.ok(pair.facing.gap < -2.9 && pair.facing.gap > -3, `gap ${pair.facing.gap}`);
+  // And the reading of it is negative too, against the same normal.
+  const segments = [seg(10, 50, 83, 150, 103), seg(11, 50, 80, 150, 100)];
+  const [row] = gapRows({ truth: slid, segments, explained: segments, matches: [hit(10, 1), hit(11, 3)] },
+    { gapMm: 0, separationMm: 5 }, STACK_PARTS);
+  assert.ok(Math.abs(row.errorPx) < 1e-9, `error ${row.errorPx}`);
+  assert.ok(row.measuredGapPx < 0);
+});
+
+test('a row says which way its pair runs in the image, whichever way the edge was written', () => {
+  const segments = [];
+  const rows = gapRows({ truth: STACK, segments, explained: segments, matches: [] }, { gapMm: 5 }, STACK_PARTS);
+  // The left pair falls 20 in 100: 11.3 degrees. The right rises 24 in 80: 163.3.
+  assert.ok(Math.abs(rows[0].pairAngle - 11.31) < 0.01, `left ${rows[0].pairAngle}`);
+  assert.ok(Math.abs(rows[1].pairAngle - 163.30) < 0.01, `right ${rows[1].pairAngle}`);
+  const flipped = STACK.map((e) => (e.id === 3 ? { ...e, x0: e.x1, y0: e.y1, x1: e.x0, y1: e.y0 } : e));
+  const again = gapRows({ truth: flipped, segments, explained: segments, matches: [] }, { gapMm: 5 }, STACK_PARTS);
+  assert.ok(Math.abs(again[0].pairAngle - rows[0].pairAngle) < 1e-9);
+});
+
+test('pairs keep their numbers through a shot that has lost one of them', () => {
+  // Three shots of one view. The middle one has only the pair that runs at
+  // 163 degrees; shot by shot it would be called pair 1, and it is pair 2.
+  const rows = [
+    { gapMm: 5, pair: 1, pairAngle: 11.3 }, { gapMm: 5, pair: 2, pairAngle: 163.3 },
+    { gapMm: 50, pair: 1, pairAngle: 163.9 },
+    { gapMm: 2, pair: 1, pairAngle: 11.2 }, { gapMm: 2, pair: 2, pairAngle: 163.2 },
+    { gapMm: 0, pair: null, pairAngle: null },
+  ];
+  assert.deepEqual(numberPairs(rows).map((r) => r.pair), [1, 2, 2, 1, 2, null]);
+  // In the order given, and the rows it was given untouched.
+  assert.deepEqual(numberPairs(rows).map((r) => r.gapMm), [5, 5, 50, 2, 2, 0]);
+  assert.equal(rows[2].pair, 1);
+});
+
+test('a pair running along the image\'s horizontal is one pair, not one at 1 degree and one at 179', () => {
+  const rows = [{ pairAngle: 179.2 }, { pairAngle: 0.6 }, { pairAngle: 90 }, { pairAngle: 178.8 }];
+  const n = numberPairs(rows).map((r) => r.pair);
+  assert.equal(n[0], n[1]);
+  assert.equal(n[0], n[3]);
+  assert.notEqual(n[0], n[2]);
+});
+
+test('along a sweep across an open gap, pixels per millimetre is the slope, signed', () => {
+  // 2 mm up, slid sideways: the gap this pair sees closes 0.4 px per mm.
+  const rows = [-2, -1, 0, 1, 2].map((gapMm) => ({ gapMm, trueGapPx: 2.4 - 0.4 * gapMm }));
+  assert.ok(Math.abs(pxPerMmSlope(rows) + 0.4) < 1e-12);
+  // A pair that cannot see the direction: no slope to speak of.
+  assert.ok(Math.abs(pxPerMmSlope([-2, 0, 2].map((gapMm) => ({ gapMm, trueGapPx: 2.4 })))) < 1e-12);
+  // Steps with no truth pair are left out; one step alone is not a slope.
+  assert.ok(Math.abs(pxPerMmSlope([{ gapMm: -1, trueGapPx: 3 }, { gapMm: 0, trueGapPx: null }, { gapMm: 1, trueGapPx: 2 }]) + 0.5) < 1e-12);
+  assert.equal(pxPerMmSlope([{ gapMm: 1, trueGapPx: 2 }]), null);
+});
+
+test('a sweep across an open gap says how far apart the parts are, for the depth test', () => {
+  // Step 0 of a sideways sweep at a 5 mm lift: the parts are 5 mm apart, and
+  // a shot that said 0 would look for edges at the same depth to within the
+  // slack alone. The receding table of the test above, 3 cm deeper than the
+  // cube at the measuring point.
+  const table = { ...gt(2, ['Table'], 50, 110, 250, 110), z0: 0.53, z1: 0.53 };
+  const cube = { ...gt(1, ['Cube'], 100, 100, 200, 100), z0: 0.5, z1: 0.5 };
+  const input = { truth: [cube, table], segments: [], explained: [], matches: [] };
+  assert.match(gapRow(input, { gapMm: 0 }, PARTS).reason, /no facing pair/);
+  assert.equal(gapRow(input, { gapMm: 0, separationMm: 15 }, PARTS).truthPair?.[0], 1);
 });
 
 /* ---- a grid of views ------------------------------------------------- */

@@ -40,7 +40,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { resolveScene } = require('../src/generate/driver');
-const { gapRows, pxPerMm, changedInputs, orbitViews } = require('../src/lab/gapsweep');
+const { gapRows, numberPairs, pxPerMm, pxPerMmSlope, changedInputs, orbitViews } = require('../src/lab/gapsweep');
 
 const ROOT = path.join(__dirname, '..');
 const DEFAULT_SCRIPT = 'pipelines/explained.lab';
@@ -56,6 +56,12 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
   --target <name>    the part it closes on                (default Table)
   --axis <x,y,z>     the direction that OPENS the gap     (default 0,1,0)
   --gaps <mm,...>    the steps, in millimetres            (default 50,20,10,5,2,1,0.5,0)
+  --offset <x,y,z>   millimetres added to every step, on top of the sweep along
+                     --axis. For sweeping a direction that does not open the
+                     gap: lift the part 2 mm with --offset 0,2,0 and slide it
+                     sideways with --axis 1,0,0 --gaps -5,-2,0,2,5. Steps may be
+                     negative only with an offset; without one, a negative
+                     step is the part inside the other
   --yaw <deg,...>    viewpoints: yaw about the saved camera's target, 0 looking
                      along -z                             (default: the saved camera's)
   --elevation <deg,...>  and elevation above the horizontal  (default: the saved camera's)
@@ -101,7 +107,7 @@ function parseArgs(argv) {
     name: null, scene: 'saved:gap-1', moving: 'Cube', target: 'Table', axis: [0, 1, 0],
     gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], size: 512, samples: 96, skipRender: false, overwrite: false,
     script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
-    yaw: null, elevation: null,
+    yaw: null, elevation: null, offset: null,
     dryRun: false,
   };
   const list = (s, what) => {
@@ -123,9 +129,11 @@ function parseArgs(argv) {
         opts.axis = v.map((x) => x / len);
         break;
       }
-      case '--gaps': {
-        opts.gaps = list(argv[++i], '--gaps');
-        if (opts.gaps.some((g) => g < 0)) throw new Error('--gaps cannot be negative: that is interpenetration');
+      case '--gaps': opts.gaps = list(argv[++i], '--gaps'); break;
+      case '--offset': {
+        opts.offset = list(argv[++i], '--offset');
+        if (opts.offset.length !== 3) throw new Error('--offset needs three numbers, in millimetres');
+        if (opts.offset.every((v) => v === 0)) opts.offset = null;
         break;
       }
       case '--yaw': opts.yaw = list(argv[++i], '--yaw'); break;
@@ -146,6 +154,10 @@ function parseArgs(argv) {
       default: throw new Error(`unknown option ${arg}`);
     }
   }
+  // Checked once every option is in, since it depends on two of them.
+  if (!opts.offset && opts.gaps.some((v) => v < 0)) {
+    throw new Error('--gaps cannot be negative without --offset: that is the part inside the other');
+  }
   return opts;
 }
 
@@ -155,7 +167,7 @@ function parseArgs(argv) {
  * negative angle is written m, "em5".
  */
 const angleName = (deg) => String(deg).replace('-', 'm').replace('.', 'p');
-const shotName = (mm, view) => `${view ? `y${angleName(view.yaw)}-e${angleName(view.elevation)}-` : ''}gap-${String(mm).replace('.', 'p')}mm.png`;
+const shotName = (mm, view) => `${view ? `y${angleName(view.yaw)}-e${angleName(view.elevation)}-` : ''}gap-${angleName(mm)}mm.png`;
 
 /**
  * One shot per gap, per view; within a view only the moving part's position
@@ -182,8 +194,13 @@ function gapShots(opts) {
     camera: view ? view.camera : data.camera.position,
     target: data.camera.target,
     intensity: 1,
+    // With an offset the swept step is not the distance between the parts;
+    // this is, and the analysis needs it to say which edges are near in depth.
+    ...(opts.offset ? { separationMm: Math.hypot(...opts.offset.map((o, k) => o + opts.axis[k] * mm)) } : {}),
     transforms: {
-      [opts.moving]: { position: contact.map((c, k) => c + opts.axis[k] * (mm / 1000)) },
+      [opts.moving]: {
+        position: contact.map((c, k) => c + ((opts.offset?.[k] ?? 0) + opts.axis[k] * mm) / 1000),
+      },
     },
   })));
 }
@@ -261,6 +278,8 @@ function checkPrevious(recordFile, inputs, script) {
 }
 
 const fmt = (v, d = 2) => (v === null || v === undefined ? '' : Number(v).toFixed(d));
+/** Is there more than one scale in this sweep, so that the record carries none? */
+const perKeyScale = (gridded, paired, opts) => gridded || paired || !!opts.offset;
 
 /**
  * The grid as pictures of itself: one small table per quantity, elevation
@@ -383,9 +402,20 @@ function main() {
   const parts = { moving: opts.moving, target: opts.target };
   // One row per facing pair per shot: a fixture with two pairs -- a cube
   // stacked on a cube -- gets two rows a shot, and each is its own measurement.
-  const rows = shots.flatMap((s) => gapRows(
+  const perShot = shots.flatMap((s) => gapRows(
     slots(path.join(ROOT, res, s.name.replace(/\.png$/, '.features.json'))), s, parts,
   ).map((r) => ({ ...(s.view ?? {}), ...r })));
+  // Renumbered a view at a time, so that pair 1 is one pair down the sweep
+  // even through the shots that lost the other.
+  const viewOf = (r) => `${r.yaw ?? ''},${r.elevation ?? ''}`;
+  const numbered = new Map([...new Set(perShot.map(viewOf))]
+    .map((v) => [v, numberPairs(perShot.filter((r) => viewOf(r) === v))]));
+  const taken = new Map();
+  const rows = perShot.map((r) => {
+    const k = taken.get(viewOf(r)) ?? 0;
+    taken.set(viewOf(r), k + 1);
+    return numbered.get(viewOf(r))[k];
+  });
   const paired = rows.some((r) => r.pair > 1);
   /*
    * Pixels per millimetre is a property of the VIEW: the same gap is fewer
@@ -396,15 +426,27 @@ function main() {
    */
   const gridded = shots.some((s) => s.view);
   const viewKey = (r) => `${gridded ? `${r.yaw},${r.elevation}` : ''}/${r.pair ?? ''}`;
+  /*
+   * With an offset, the sweep runs ACROSS a gap that is already open, so the
+   * image gap is not zero at step zero and a ratio means nothing. Its slope
+   * against the step does: how many pixels this pair's gap moves per
+   * millimetre in the swept direction, signed -- and near zero for a pair
+   * that cannot see that direction at all, which is a result and not a fault.
+   */
+  const scaleOf = opts.offset ? pxPerMmSlope : pxPerMm;
   const scales = new Map();
-  for (const key of new Set(rows.map(viewKey))) scales.set(key, pxPerMm(rows.filter((r) => viewKey(r) === key)));
+  for (const key of new Set(rows.map(viewKey))) scales.set(key, scaleOf(rows.filter((r) => viewKey(r) === key)));
   for (const r of rows) {
     const s = scales.get(viewKey(r));
     r.pxPerMm = s;
-    r.errorMm = s && r.errorPx !== null ? r.errorPx / s : null;
-    if (r.refit) r.refit.errorMm = s ? r.refit.errorPx / s : null;
+    // Under a twentieth of a pixel per millimetre the pair is not measuring
+    // this direction, and dividing by it would print millimetres it has no
+    // claim to.
+    const usable = s !== null && Math.abs(s) >= 0.05;
+    r.errorMm = usable && r.errorPx !== null ? r.errorPx / s : null;
+    if (r.refit) r.refit.errorMm = usable ? r.refit.errorPx / s : null;
   }
-  const scale = gridded || paired ? null : scales.get(viewKey(rows[0]));
+  const scale = perKeyScale(gridded, paired, opts) ? null : scales.get(viewKey(rows[0]));
 
   const inputs = inputHashes(gen, shots);
   const recordFile = path.join(ROOT, res, 'gap-sweep.json');
@@ -422,6 +464,7 @@ function main() {
     scene: opts.scene, ...parts, axis: opts.axis, size: opts.size, samples: opts.samples, toneMapping,
     camera: gridded ? null : shots[0].camera, look: shots[0].target, pxPerMm: scale,
     ...(gridded ? { views: { yaw: opts.yaw, elevation: opts.elevation } } : {}),
+    ...(opts.offset ? { offsetMm: opts.offset } : {}),
     analysedAt: new Date().toISOString(), script, inputs, rows,
   };
   fs.writeFileSync(recordFile, JSON.stringify(record, null, 2));
@@ -437,10 +480,11 @@ function main() {
     ? [fmt(r.refit?.gapPx, 3), fmt(r.refit?.errorPx, 3), fmt(r.refit?.errorMm, 3), fmt(r.refit?.movingOffsetPx, 3),
       fmt(r.refit?.targetOffsetPx, 3), fmt(r.refit?.gapSigma, 3), fmt(r.refit?.stripLevel, 3), r.refit?.from ?? '']
     : []);
+  const perKey = gridded || paired || !!opts.offset;
   const viewHead = [...(gridded ? ['yaw', 'elevation'] : []), ...(paired ? ['pair'] : []),
-    ...(gridded || paired ? ['pxPerMm', 'overlapPx'] : [])];
+    ...(perKey ? ['pxPerMm', 'overlapPx'] : [])];
   const viewCells = (r) => [...(gridded ? [r.yaw, r.elevation] : []), ...(paired ? [r.pair ?? ''] : []),
-    ...(gridded || paired ? [fmt(r.pxPerMm, 3), fmt(r.overlapPx, 1)] : [])];
+    ...(perKey ? [fmt(r.pxPerMm, 3), fmt(r.overlapPx, 1)] : [])];
   const head = [...viewHead, 'gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm',
     `${opts.moving}OffsetPx`, `${opts.target}OffsetPx`, ...refitHead, 'pairFound', 'spansBoth',
     `${opts.moving}Found`, `${opts.target}Found`, ...causes.map((c) => `inGap_${c}`), 'reason'];
@@ -468,7 +512,9 @@ function main() {
     + `${opts.samples} samples, ${toneMapping.kind} tone mapping at exposure ${toneMapping.exposure}`
     + `${toneMapping.assumed ? ' (assumed: the renders predate recording it)' : ''}, `
     + (gridded ? `${new Set(rows.map((r) => `${r.yaw},${r.elevation}`)).size} views`
-      : paired ? `${Math.max(...rows.map((r) => r.pair ?? 0))} facing pairs` : `${fmt(scale, 3)} px per mm of gap`));
+      : paired ? `${Math.max(...rows.map((r) => r.pair ?? 0))} facing pairs`
+        : opts.offset ? `${fmt(scales.get(viewKey(rows[0])), 3)} px per mm along the sweep` : `${fmt(scale, 3)} px per mm of gap`)
+    + (opts.offset ? `, offset ${opts.offset.join(', ')} mm, swept along ${opts.axis.map((v) => fmt(v, 2)).join(', ')}` : ''));
   console.log(csv.join('\n'));
   if (gridded) {
     const maps = gridMaps(rows, opts);
