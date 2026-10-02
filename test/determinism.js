@@ -147,6 +147,9 @@ const EXPECTED_CURVES = {
  */
 const EXPECTED_PAIRS = '0183e9c8a756b80fea22845827115b7860b37c709409f5949fcd56083d4ab8ef';
 
+/* And the `edge-pair` list findPairs returns from its own fixture, likewise. */
+const EXPECTED_HIDDEN = 'd1328c616bfe9daa760442ca79b1f1a0d662ce3aba5a3edfa6cb52659ed458d8';
+
 async function run() {
   const session = new Session({ registry: createRegistry() });
   await session.run(SCRIPT);
@@ -404,6 +407,61 @@ async function run() {
       throw new Error('unpinned');
     }
     assert.equal(actual, EXPECTED_PAIRS, 'fitPairs feature list');
+  });
+
+  /*
+   * findPairs runs the same solver several hundred times more per image and
+   * chooses between its results -- the best of three starts, the better of
+   * two sides, which windows join a run. Every one of those is a comparison
+   * of doubles, so a last-bit difference can change WHICH fit is reported and
+   * not only its digits. The same construction with the lines 150/16 apart
+   * in q, 1.163 px: close enough that a detector finds one edge.
+   */
+  await test('findPairs finds a hidden pair identically on every platform', () => {
+    const { hashFeatures } = require('../src/lab/session');
+    const W = 96, H = 64;
+    const Q = [2560, 2710, 5120];
+    const LEVEL = [0.6, 0.12, 0.31, 0.05];
+    const values = new Float32Array(W * H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const count = [0, 0, 0, 0];
+        for (let j = 0; j < 8; j++) {
+          for (let i = 0; i < 8; i++) {
+            const q = 8 * (16 * y + 2 * j - 7) - (16 * x + 2 * i - 7);
+            count[q < Q[0] ? 0 : q < Q[1] ? 1 : q < Q[2] ? 2 : 3]++;
+          }
+        }
+        values[y * W + x] = (count[0] * LEVEL[0] + count[1] * LEVEL[1]
+          + count[2] * LEVEL[2] + count[3] * LEVEL[3]) / 64;
+      }
+    }
+    const image = native.createBuffer({ width: W, height: H, channels: 1, dtype: 'f32' });
+    native.bufferWrite(image, values);
+
+    // One segment where a detector leaves it: on the taller step, 0.15 px
+    // toward the other. And the lone third, for the aperture.
+    const seg = (id, x0, y0, x1, y1) => ({ type: 'edge-segment', id, x0, y0, x1, y1 });
+    const features = [seg(1, 10, 21.4, 86, 30.9), seg(3, 10, 41.45, 86, 50.95)];
+    const op = createRegistry().get('findPairs');
+    const params = Object.fromEntries(op.params.map((p) => [p.name, p.default]));
+    const { features: pairs } = op.kernel({
+      inputs: [{ kind: 'features', features, width: W, height: H }, { kind: 'buffer', handle: image }],
+      params,
+    });
+    native.bufferRelease(image);
+
+    assert.equal(pairs.length, 1, `expected one hidden pair, got ${pairs.length}`);
+    const [pair] = pairs;
+    assert.deepEqual([pair.a.segment, pair.b.segment], [1, 1]);
+    assert.ok(Math.abs(pair.gap - 150 / (16 * Math.sqrt(65))) < 0.05, `gap ${pair.gap}`);
+
+    const actual = hashFeatures(pairs, null);
+    if (EXPECTED_HIDDEN === null) {
+      console.error(`\n  the hidden-pair hash is unpinned. Paste into EXPECTED_HIDDEN:\n\n    '${actual}'\n`);
+      throw new Error('unpinned');
+    }
+    assert.equal(actual, EXPECTED_HIDDEN, 'findPairs feature list');
   });
 
   /* --- reporting ------------------------------------------------------- */

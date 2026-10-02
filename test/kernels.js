@@ -850,9 +850,9 @@ test('merge refuses a float buffer and bad parameters', () => {
   assert.throws(() => run('merge', [m], { gap: -1 }), /parameter out of range/);
 });
 
-/* --- fitPairs: a JavaScript kernel, so it checks its own inputs --------- */
+/* --- fitPairs and findPairs: JavaScript kernels, so they check their own inputs */
 
-test('fitPairs refuses a colour image and one of another size, and says what to pass', () => {
+test('fitPairs and findPairs refuse a colour image and one of another size, and say what to pass', () => {
   /*
    * The registry declares `channels: [1]` and nothing between it and a
    * JavaScript kernel enforces that. Found by typing `fitPairs(F, A)` into
@@ -860,17 +860,19 @@ test('fitPairs refuses a colour image and one of another size, and says what to 
    * pair. The arithmetic itself is test/pairs.js; this is only the refusals.
    */
   const { createRegistry } = require('../src/lab/ops');
-  const op = createRegistry().get('fitPairs');
-  const params = Object.fromEntries(op.params.map((p) => [p.name, p.default]));
   const features = (w, h) => ({ kind: 'features', features: [], width: w, height: h });
-  const call = (src, handle) => op.kernel({ inputs: [src, { kind: 'buffer', handle }], params });
-
   const colour = run('pattern', [], { kind: 'ramp', width: 16, height: 16, channels: 3 });
   const gray = run('pattern', [], { kind: 'ramp', width: 16, height: 16, channels: 1 });
-  assert.throws(() => call(features(16, 16), colour), /3 channels and needs 1.*gray\(A\)/);
-  assert.throws(() => call(features(32, 16), gray), /16x16 but the features were measured in 32x16/);
-  assert.deepEqual(call(features(16, 16), gray),
-    { kind: 'features', features: [], width: 16, height: 16 });
+  for (const name of ['fitPairs', 'findPairs']) {
+    const op = createRegistry().get(name);
+    const params = Object.fromEntries(op.params.map((p) => [p.name, p.default]));
+    const call = (src, handle) => op.kernel({ inputs: [src, { kind: 'buffer', handle }], params });
+    assert.throws(() => call(features(16, 16), colour),
+      new RegExp(`${name}: image has 3 channels and needs 1.*gray\\(A\\)`));
+    assert.throws(() => call(features(32, 16), gray), /16x16 but the features were measured in 32x16/);
+    assert.deepEqual(call(features(16, 16), gray),
+      { kind: 'features', features: [], width: 16, height: 16 });
+  }
   native.bufferRelease(colour);
   native.bufferRelease(gray);
 });

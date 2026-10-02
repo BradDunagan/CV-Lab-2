@@ -15,7 +15,7 @@ const { findCorners } = require('./corners');
 const { readGroundTruth } = require('./groundtruth');
 const { matchFeatures } = require('./match');
 const { explainFeatures } = require('./explain');
-const { fitPairs } = require('./pairs');
+const { fitPairs, findPairs } = require('./pairs');
 
 /**
  * Bind a declared operation to its C kernel.
@@ -112,6 +112,45 @@ function groundTruthKernel(readTextFile) {
        */
       meta,
     };
+  };
+}
+
+/**
+ * The kernel fitPairs and findPairs share: features and the gray image they
+ * were detected in, checked against each other, then handed to `run`.
+ */
+function pairKernel(name, run, inputs, params) {
+  const native = require('../../native');
+  const [src, image] = inputs;
+  const info = native.bufferInfo(image.handle);
+  /*
+   * Declared in the registry and checked here: nothing between it and
+   * a JavaScript kernel enforces `channels`, and a colour image would
+   * be fitted on its red channel without a word.
+   */
+  if (info.channels !== 1) {
+    throw new Error(
+      `${name}: image has ${info.channels} channels and needs 1. ` +
+        `Pass the gray image, before gaussian: G = gray(A)`
+    );
+  }
+  if (info.width !== src.width || info.height !== src.height) {
+    throw new Error(
+      `${name}: image is ${info.width}x${info.height} but the features were ` +
+        `measured in ${src.width}x${src.height}. Their coordinates do not mean ` +
+        `the same thing.`
+    );
+  }
+  return {
+    kind: 'features',
+    features: run(
+      src.features,
+      { width: info.width, height: info.height, channels: info.channels,
+        data: native.bufferRead(image.handle) },
+      params
+    ),
+    width: src.width,
+    height: src.height,
   };
 }
 
@@ -530,40 +569,59 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'minSigmas', type: 'number', default: 3, min: 0 },
       ],
       output: { kind: 'features' },
-      kernel: ({ inputs, params }) => {
-        const native = require('../../native');
-        const [src, image] = inputs;
-        const info = native.bufferInfo(image.handle);
-        /*
-         * Declared above and checked here: nothing between the registry and
-         * a JavaScript kernel enforces `channels`, and a colour image would
-         * be fitted on its red channel without a word.
-         */
-        if (info.channels !== 1) {
-          throw new Error(
-            `fitPairs: image has ${info.channels} channels and needs 1. ` +
-              `Pass the gray image, before gaussian: G = gray(A)`
-          );
-        }
-        if (info.width !== src.width || info.height !== src.height) {
-          throw new Error(
-            `fitPairs: image is ${info.width}x${info.height} but the features were ` +
-              `measured in ${src.width}x${src.height}. Their coordinates do not mean ` +
-              `the same thing.`
-          );
-        }
-        return {
-          kind: 'features',
-          features: fitPairs(
-            src.features,
-            { width: info.width, height: info.height, channels: info.channels,
-              data: native.bufferRead(image.handle) },
-            params
-          ),
-          width: src.width,
-          height: src.height,
-        };
-      },
+      kernel: ({ inputs, params }) => pairKernel('fitPairs', fitPairs, inputs, params),
+    }),
+
+    defineOp({
+      name: 'findPairs',
+      version: 1,
+      summary: 'Find two edges the detector reported as one segment: a strip hidden inside it.',
+      /*
+       * fitPairs places two segments the detector FOUND. Closer than about a
+       * pixel and a half it finds one, and there is nothing to place: the gap
+       * sweep's Cube at 1 mm over the Table is a single 512 px segment along
+       * the table's edge. This walks every segment that is in no pair, a
+       * window at a time, and asks the unblurred pixels whether that stretch
+       * is one step or two.
+       *
+       * A separate operation rather than a flag on fitPairs, for the reason
+       * merge is separate from segments (§3): the two lists say different
+       * things. fitPairs moves edges that were detected. This asserts an edge
+       * nothing detected, which is a stronger claim and gets its own gates.
+       *
+       * The same `edge-pair` records, with both edges naming one segment.
+       */
+      inputs: [
+        { name: 'src', kind: 'features' },
+        { name: 'image', channels: [1], space: 'linear' },
+      ],
+      params: [
+        // How far along a segment is tested at a time. Shorter finds a
+        // shorter strip and decides on fewer pixels.
+        { name: 'window', type: 'number', default: 24, min: 8 },
+        // How far to one side the second edge may be. Wider than this the
+        // detector finds both, and they are fitPairs's.
+        { name: 'reach', type: 'number', default: 2.4, min: 0.5, max: 8 },
+        // Two steps always fit a little better than one: 1.00 to 1.05 where
+        // nothing is hidden, 1.35 and up over a 1.16 px gap. This is the
+        // margin between; see pairs.js for how little it was calibrated on.
+        { name: 'minGain', type: 'number', default: 1.3, min: 1 },
+        { name: 'minSigmas', type: 'number', default: 3, min: 0 },
+        { name: 'pad', type: 'number', default: 4, min: 1, max: 32 },
+        { name: 'inset', type: 'number', default: 2, min: 0 },
+        { name: 'strip', type: 'enum', values: ['fit', 'held'], default: 'fit' },
+        { name: 'stripLevel', type: 'number', default: 0 },
+        { name: 'aperture', type: 'enum', values: ['fit', 'held'], default: 'fit' },
+        { name: 'apertureWidth', type: 'number', default: 1, min: 0.25, max: 8 },
+        // Which segments are already a pair, and so not searched: fitPairs's
+        // own three, at fitPairs's defaults, so the two agree on who is lone
+        // and measure the aperture on the same segments.
+        { name: 'maxGap', type: 'number', default: 6, min: 0 },
+        { name: 'maxAngle', type: 'number', default: 5, min: 0, max: 45 },
+        { name: 'minOverlap', type: 'number', default: 10, min: 1 },
+      ],
+      output: { kind: 'features' },
+      kernel: ({ inputs, params }) => pairKernel('findPairs', findPairs, inputs, params),
     }),
 
     defineOp({
