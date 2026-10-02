@@ -111,6 +111,11 @@ npm run smoke:package   # launch it and check it actually works
 - **A check that runs in one place can pass for the wrong reason.** An implicit `posix_memalign` declaration warned on every Linux build for weeks and never once on macOS.
 - **A green build can ship a broken feature.** The generator page calls pt-lab from plain JS across a Vite alias, so a sibling checkout one commit behind built, packaged, launched and smoke-tested clean, then threw on use — two CI jobs did exactly that. pt-lab lives in this repository now, which ends that case, but not the class: `build:generate` still asserts every `lab.<method>()` the pages call is *defined* in the bundle, because nothing type-checks the callers.
 - **Read what `git add -A` staged.** A renderer build once wrote itself to the project root — 92 files, 13 MB — and `git add -A` committed 83 of them under a stat line reading "105 files changed, 70315 insertions(+)". `/*.js` is ignored now and `test/repo.js` fails loudly if any reappear, because an ignored stray accumulates silently, which is worse.
+- **A UI change is checked by using it.** `.claude/skills/run-cv-lab/` launches
+  the app with debug ports and drives it with real clicks and keys -- open a
+  pane from the menu, set a field by its label, press a button, screenshot,
+  read the result. A test that sets a control's value cannot tell you a person
+  could.
 - **Layout is not behaviour.** `verify:package` checked that the right files were in the artifact and passed on every release while the packaged app was dead on launch — the preload required `scripts/png.js`, which was never in `files:`, so `window.lab` never existed. `smoke:package` starts the real artifact and asks whether it works. Anything the preload or main process `require`s at runtime must be in `electron-builder.yml`.
 - **Read CI logs for warnings, not only errors.** That is how the above survived three green checkmarks.
 - **Cost is quadratic in segment count, not resolution.** A megapixel of pixel work is ~30 ms; a busy scene is what hurts.
