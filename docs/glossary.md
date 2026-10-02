@@ -113,7 +113,7 @@ Here, specifically: `fitPairs` models it as a **square, and the aperture is its
 side in pixels**. An aperture of 1 is a pixel that averages exactly its own
 square and nothing of its neighbours'. A lens, a sensor's microlenses, or a
 renderer's reconstruction filter spread it further; pt-lab's 512 px renders
-measure 1.1 to 1.3.
+measure 1.3 to 1.4.
 
 **Why it matters.** It decides how soft a step looks. A step through an
 aperture of 1 is spread over one pixel; through 2, over two. An edge on its own
@@ -125,8 +125,9 @@ pixel's light came from outside it.
 **Why it is measured rather than fitted with the gap.** One step through an
 aperture of 1 is, pixel for pixel, two steps half a pixel apart through an
 aperture of a half. A fit allowed to choose both will describe a single soft
-edge as a narrow gap. So `fitPairs` measures the aperture on segments that
-have no neighbour, and holds it for the pairs (`design-lab-model.md` §5).
+edge as a narrow gap. So `fitPairs` and `findPairs` measure the aperture on
+segments that have no neighbour, take the median, and hold it for the pairs
+(`design-lab-model.md` §5).
 
 **An axis-aligned edge says nothing about it.** Every pixel along such an edge
 crosses the step at the same place, so a softer step and a sharper one a
@@ -1497,15 +1498,20 @@ wholly inside it and its level can be read straight off them. Under about a
 pixel wide, none do. Every pixel touching it is a mix of strip and neighbour,
 and a narrow, very dark strip puts nearly the same light on them as a wider,
 less dark one. The image then fixes how much light is missing and not how the
-loss divides between width and darkness. At 1.16 px the fit still separates
-them. At 0.58 px it does not, and the level has to be supplied
-(`strip=held, stripLevel=…`) from a frame where the gap was wider.
+loss divides between width and darkness. Left to fit both, a 1.16 px strip
+read 0.86 to 0.92 px and a 0.58 px one read 1.0. So under about a pixel and a
+half the level has to be supplied (`strip=held, stripLevel=…`) from a frame
+where the gap was wider; held, the same two read 1.0 and 0.4.
 
 **It need not be dark.** A strip can be darker than both sides (a shadowed
 gap), brighter than both (a gap lit from behind), or between them (a third
 surface seen through the gap). The last is the hard one: a narrow strip midway
 between its neighbours is, pixel for pixel, a single soft edge. See
 [aperture](#aperture-of-a-pixel).
+
+**It can be hidden.** Closer than about a pixel and a half, the detector
+reports the two edges as one segment and the strip is inside it. `findPairs`
+looks for those.
 
 **It is not always a gap between two parts.** `fitPairs` fits any two close
 parallel segments, so the strip can be the top face of a cube seen nearly

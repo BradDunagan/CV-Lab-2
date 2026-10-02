@@ -30,7 +30,7 @@ native/buffer.*      the buffer type: allocation, dtypes, overflow-checked sizin
 native/kernels.*     the compute kernels, behind one uniform C signature
 native/render.*      display transforms and downsampling, done in C
 native/addon_*.c     the Node-API surface
-src/lab/ops.js       the twenty-two operations themselves: inputs, params,
+src/lab/ops.js       the twenty-three operations themselves: inputs, params,
                      defaults, and the kernel each one binds to
 src/lab/registry.js  the schema they are declared against — validation,
                      error messages, provenance records
@@ -43,9 +43,9 @@ src/lab/explain.js   what put each edge in the picture — reads the AOV
                      passes: occlusion, crease, texture, or shading
 src/lab/gapsweep.js  the image gap between two parts, detected against
                      true, one row per step of a gap sweep (pure JS)
-src/lab/pairs.js     two close parallel segments placed again, jointly,
-                     against the unblurred image: blur finds edges and
-                     displaces close ones (pure JS)
+src/lab/pairs.js     two close edges placed again, jointly, against the
+                     unblurred image -- and found, where the detector
+                     reported the two as one segment (pure JS)
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
 scripts/generate-cli.js  drives pt-lab to render varied images (needs a GPU)
 scripts/score.js     tallies match records: precision, recall, and which
@@ -77,7 +77,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — eighteen suites, ~498 tests
+npm test                # everything — eighteen suites, ~517 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -184,7 +184,17 @@ displace each other in the blurred image**, +1.2 px on a 2.3 px gap, and
 has to be measured for that, on the image's lone segments; assumed, or fitted
 per pair, it gives confident wrong answers. Still open from it:
 
-- **1 mm and below has no pair to refit.** Only one edge is detected there, so
-  the next step is finding a strip hidden inside a single segment;
-- **under a pixel the strip's level must be supplied**, and nothing carries it
-  from one frame of an approach to the next.
+- **under about a pixel and a half the strip's level must be supplied**, and
+  nothing carries it from one frame of an approach to the next. `findPairs`
+  finds the 1 mm gap (1.16 px) inside the single segment the detector leaves,
+  and reads it 0.25–0.28 px short with the level fitted, 0.14–0.16 with it
+  held;
+- **0.5 mm and contact are not told apart.** At the defaults neither produces
+  a record;
+- **`findPairs`'s gain threshold rests on two renders of one scene.**
+  It is a calibration, and the place a real camera is most likely to move.
+
+The aperture was the lower quartile of the lone segments' for a day and is the
+median now: over sixteen frames from one renderer the quartile ranged 1.06 to
+1.31 and the median 1.31 to 1.39. The claim and the correction are both in
+`design-lab-model.md` §5.
