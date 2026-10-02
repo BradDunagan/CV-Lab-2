@@ -97,6 +97,52 @@ test('the error splits by edge, each against its own truth, and the parts add up
   assert.ok(Math.abs(row.errorPx - (row.movingOffsetPx - row.targetOffsetPx)) < 1e-9);
 });
 
+/** An edge-pair record placing segments `a` and `b` on the given lines. */
+function pairRecord(id, a, b, extra = {}) {
+  const edge = ([segment, x0, y0, x1, y1]) => ({ segment, x0, y0, x1, y1, shift: 0 });
+  return { type: 'edge-pair', id, a: edge(a), b: edge(b), gapSigma: 0.02, strip: 'fit',
+    levels: [0.3, 0.12, 0.6], ...extra };
+}
+
+test('a refit pair is read beside the detections, at the same point, and split the same way', () => {
+  // Detected 1 px too far apart each, as blur leaves two close edges; the
+  // pair record puts the cube's edge 0.1 px off its truth and the table's on.
+  const segments = [seg(10, 100, 99, 200, 99), seg(11, 50, 111, 250, 111)];
+  const pairs = [pairRecord(1, [10, 102, 100.1, 198, 100.1], [11, 102, 110, 198, 110])];
+  const row = gapRow({ truth: TRUTH, segments, explained: segments, matches: [hit(10, 1), hit(11, 2)], pairs },
+    { gapMm: 8 }, PARTS);
+  // The detections' own reading is what it always was.
+  assert.ok(Math.abs(row.errorPx - 2) < 1e-9, `detected error ${row.errorPx}`);
+  assert.ok(Math.abs(row.refit.gapPx - 9.9) < 1e-9, `refit gap ${row.refit.gapPx}`);
+  assert.ok(Math.abs(row.refit.errorPx + 0.1) < 1e-9, `refit error ${row.refit.errorPx}`);
+  assert.ok(Math.abs(row.refit.movingOffsetPx + 0.1) < 1e-9, `cube ${row.refit.movingOffsetPx}`);
+  assert.ok(Math.abs(row.refit.targetOffsetPx) < 1e-9, `table ${row.refit.targetOffsetPx}`);
+  assert.equal(row.refit.pair, 1);
+  assert.equal(row.refit.gapSigma, 0.02);
+  assert.equal(row.refit.stripLevel, 0.12);
+});
+
+test('which of the pair\'s edges is the moving part\'s is decided by segment id, not by a and b', () => {
+  const segments = [seg(10, 100, 99, 200, 99), seg(11, 50, 111, 250, 111)];
+  const swapped = [pairRecord(1, [11, 102, 110, 198, 110], [10, 102, 100.1, 198, 100.1])];
+  const row = gapRow({ truth: TRUTH, segments, explained: segments, matches: [hit(10, 1), hit(11, 2)], pairs: swapped },
+    { gapMm: 8 }, PARTS);
+  assert.ok(Math.abs(row.refit.errorPx + 0.1) < 1e-9, `refit error ${row.refit.errorPx}`);
+});
+
+test('a pair about other segments, or one that stops short of the measuring point, is not a reading', () => {
+  const segments = [seg(10, 100, 99, 200, 99), seg(11, 50, 111, 250, 111)];
+  const input = (pairs) => ({ truth: TRUTH, segments, explained: segments, matches: [hit(10, 1), hit(11, 2)], pairs });
+  const other = [pairRecord(1, [10, 102, 100, 198, 100], [12, 102, 104, 198, 104])];
+  assert.equal(gapRow(input(other), { gapMm: 8 }, PARTS).refit, null);
+  // The measuring point is x = 150; this pair's stretch ends at x = 140.
+  const short = [pairRecord(1, [10, 102, 100, 140, 100], [11, 102, 110, 140, 110])];
+  assert.equal(gapRow(input(short), { gapMm: 8 }, PARTS).refit, null);
+  // And with no pairs at all the row says so the same way.
+  assert.equal(gapRow(input(undefined), { gapMm: 8 }, PARTS).refit, null);
+  assert.equal(gapRow(input(null), { gapMm: 8 }, PARTS).refit, null);
+});
+
 test('no pair, no per-edge offsets', () => {
   const segments = [seg(10, 100, 100, 200, 100)];
   const row = gapRow({ truth: TRUTH, segments, explained: segments, matches: [hit(10, 1)] },
