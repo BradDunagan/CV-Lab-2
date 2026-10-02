@@ -900,12 +900,12 @@ detections against the refit (`pipelines/pairs.lab`):
 
 | gap (true px) | detected | refit | refit, Cube / Table edge |
 |---|---|---|---|
-| 5 mm (5.82) | +0.10, +0.10 | −0.07, −0.06 | −0.03 / +0.04, −0.06 / −0.00 |
-| 2 mm (2.32) | +1.18, +1.22 | −0.10, −0.05 | −0.06 / +0.03, −0.03 / +0.02 |
+| 5 mm (5.82) | +0.10, +0.10 | −0.07, −0.04 | −0.02 / +0.04, −0.04 / −0.00 |
+| 2 mm (2.32) | +1.18, +1.22 | −0.11, −0.08 | −0.07 / +0.04, −0.05 / +0.03 |
 
 **The refit does not depend on the blur that found the edges.** At 2 mm the
 detections read +1.18, +0.55 and +0.36 px at σ = 1.4, 1.0 and 0.7. The refit
-read −0.10, −0.08 and −0.07 from the same three sets of detections.
+read −0.11, −0.09 and −0.10 from the same three sets of detections.
 
 Two things were wrong before that table was right, and both are in
 `src/lab/pairs.js` as decisions:
@@ -920,21 +920,37 @@ Two things were wrong before that table was right, and both are in
   as a pair 0.50 px apart with an uncertainty of ±0.002.
 
 The aperture belongs to the camera. So it is measured on the image's *lone*
-segments, each fitted as a single step, and held for every pair. The lower
-quartile is taken: nothing in an image is sharper than the aperture allows,
-and shadow edges are much softer (5 px and more here). pt-lab's 512 px renders
-come out at 1.1 to 1.3.
+segments, each fitted as a single step, and held for every pair. The median
+is taken, and pt-lab's 512 px renders come out at 1.3 to 1.4.
+
+**It was the lower quartile for a day, and that was wrong.** The argument was
+that nothing in an image is sharper than the aperture allows and plenty is
+softer (shadow edges read 5 px and more here), so the sharp end is the
+camera. But things do read sharper than the truth. A segment with a dark strip
+hidden against it fits a step 0.93 wide in an image drawn through 1.4. Measured
+over the sixteen frames of the two linear sweeps, where the answer is a
+constant, the quartile ranged 1.06 to 1.31 (sd 0.081) and the median 1.31 to
+1.39 (sd 0.022). `fitPairs` is v2 for this.
 
 **What it still does not do:**
 
 - **It needs both edges detected.** At 1 mm and below the linear renders have
-  no detection of the Cube's edge, so there is no pair to refit. Where a pair
-  was detected at 1 mm (`gap-1-front-low`, and the ACES renders), the refit
-  read +0.07 and +0.04 px.
-- **Under about a pixel the strip's level has to be supplied.** Seeded from
-  ground truth, a 0.58 px gap read nothing in one render and 0.91 ± 0.13 in the
-  other with the level fitted, and 0.25 and 0.28 with it held at the value the
-  5 mm frame measured. At 1.16 px the fit finds the level itself, to 0.002.
+  no detection of the Cube's edge, so there is no pair to refit; that is the
+  next subsection. Where a pair was detected at 1 mm (`gap-1-front-low`), the
+  refit read −0.09 px.
+- **Under about a pixel and a half the strip's level has to be supplied.**
+  Seeded from ground truth over the two renders:
+
+  | true gap | level fitted | level held at the 5 mm frames' 0.123 |
+  |---|---|---|
+  | 2.32 px | 2.22, 2.25 | 2.24, 2.23 |
+  | 1.16 px | 0.92, 0.86 | 0.99, 1.02 |
+  | 0.58 px | 1.02, 0.99 (± 0.15) | 0.37, 0.40 |
+
+  At 1.16 px the fitted level comes out at 0.10 and 0.08, not 0.12, and the
+  gap 0.1 px narrower for it. At 0.58 px the fit goes the other way, to a
+  shallow strip twice the true width. This section said for a day that the fit
+  finds the level itself at 1.16 px. That was read off the quartile aperture.
 - **`gapSigma` is a scale, not a confidence interval.** It is the fit's
   curvature under its own residual, and neighbouring pixels' residuals are not
   independent. At 2 mm it is 0.015 and 0.027 px, the two renders differ by
@@ -946,6 +962,92 @@ come out at 1.1 to 1.3.
   gap is paired with the nearest edge and fitted as if nothing else were there.
 - **A gap it cannot tell from none produces no record.** That is one edge
   found twice, or two parts in contact. It cannot say which.
+
+#### A sixth: closer than a pixel and a half, there is only one detection
+
+`fitPairs` places two edges the detector found. At 1 mm (1.16 px) the linear
+renders give it nothing to place: the blur that finds edges has merged the two
+into one. What is left is a single 512 px segment along the Table's edge, with
+the strip under the Cube hidden in 114 px of it.
+
+`findPairs` walks every segment that is in no pair, 24 px at a time, and asks
+the unblurred pixels whether each window is one step or two. Runs of windows
+that say two are joined and fitted once more as a whole. Along that table edge
+at 1 mm, the two-step model's rms against the one-step model's, per window:
+
+| where | gain |
+|---|---|
+| the 400 px with nothing under them, both renders | 1.00 to 1.05 |
+| the windows under the Cube, render 1 | 1.35 to 1.63 |
+| the windows under the Cube, render 2 | 2.08 to 2.57 |
+
+So the strip is found, and where it is. Through `gap-sweep`, from the
+detections alone (`pipelines/pairs.lab`, which runs both operations):
+
+| gap (true px) | detected | refit, render 1 / 2 | from |
+|---|---|---|---|
+| 2 mm (2.32) | +1.18, +1.22 | −0.11 / −0.08 | `fitPairs` |
+| 1 mm (1.16) | no pair | **−0.25 / −0.28** | `findPairs` |
+| 1 mm, strip level held at 0.124 | no pair | −0.16 / −0.14 | `findPairs` |
+| 0.5 mm (0.58) | no pair | nothing | |
+| contact | no pair | nothing | |
+
+The same at σ = 1.0 and 0.7: −0.25 / −0.28 and −0.24 / −0.28. `cube1`,
+`clutter` and every other frame of both sweeps: no hidden pair reported where
+none is, except one at 2 mm that is real (below).
+
+**Finding it is the solid part; its width is not.** The 1 mm reading is
+0.25 to 0.28 px short, all of it on the Cube's edge, and the two renders
+agree. It is the fitted strip level again: 0.10 and 0.08 where it should be
+0.12. Held, the reading is 0.14 to 0.16 short, which is where `fitPairs`
+leaves 2 mm.
+
+Three gates, and what each is for:
+
+- **Gain of 1.3.** Two steps have three more parameters than one and always
+  fit a little better. The number sits above everything an edge hiding nothing
+  produced (1.05) and below the weakest window over a 1.16 px gap (1.35). That is five
+  cases. It is a calibration, and the first image from a real camera may move
+  it.
+- **The strip must be darker than both neighbours, or brighter than both.** A
+  level between them is what one soft edge looks like, and an edge softer than
+  the aperture is common. This costs every real strip that lies between its
+  neighbours' levels. With the level held, the caller has said what it is and
+  the gate does not apply.
+- **The second edge must be within `reach`, 2.4 px.** Unchecked, it left the
+  pixels it was being looked for in and settled on other edges 4 to 15 px
+  away.
+
+And one thing it does not look at: **a segment nearly along the pixel grid.**
+A sub-pixel strip is read off pixels that cross the edge at different places
+across their width, and where a window climbs less than one pixel from end to
+end they all cross at the same place. On the Cube's left edge, 0.9° off
+vertical, one render of two reported a bright strip half a pixel wide at a
+gain of 1.40. Such segments are skipped.
+
+**What it does not do:**
+
+- **0.5 mm.** The windows under the Cube gain 1.02 to 1.06, barely more than
+  the same windows at contact (1.00 to 1.03) or the bare table edge beside
+  them (up to 1.05). With the level held and the
+  gain gate opened (`minGain=1`) it reads 0.36 and 0.33 px for 0.58, and
+  nothing at the measuring point at contact. But opened that far it also
+  reports 5 to 19 records an image along edges that hide nothing.
+- **A misread, once.** `gap-1-front-low` at 0.5 mm: found, at a gain just
+  over the gate, and read as 1.02 px for a true 0.58.
+- **The ends of a strip.** A window half on the strip can pass or fail, so a
+  run of three windows or more gives up half a window at each end. The stretch
+  a record carries is where the strip was fitted, not where it stops.
+- **Speed.** About a second an image at 512 px, against 0.06 for everything
+  before it. Most windows are a no, and a second edge with nothing to find
+  wanders until the iterations run out; capping those at 40 made it 2.5 times
+  faster and changed no result on any frame of the sweep.
+
+**It found one nobody was looking for.** At 2 mm, in one render (and at a gain
+of 1.29 in the other, just under the gate): 16 px of the detection along the
+Cube's right-hand bottom edge, with a strip 1.7 px wide inside it. It is the
+same 2 mm gap, seen under the Cube's side face. The detected segment lay
+0.4 px beyond the strip's far edge and 2.1 px from the Cube's.
 
 #### What twenty-four views measured
 

@@ -114,7 +114,7 @@ having tried.
 
 ## 3. Operation reference
 
-Twenty-two operations. Every one is a single entry in `src/lab/ops.js`, declared
+Twenty-three operations. Every one is a single entry in `src/lab/ops.js`, declared
 against the schema in `src/lab/registry.js` — which is also what validates your
 arguments and generates the error messages.
 
@@ -509,7 +509,7 @@ Every segment was found in a blurred image, and two edges a few pixels apart
 displace each other there: a true gap of 2.3 px reads 3.5. `fitPairs` takes
 each pair of segments closer than `maxGap` and fits three plateaus and two
 straight steps to the unblurred pixels around them. On the gap sweep that takes
-the 2.3 px gap from +1.2 px of error to within 0.1.
+the 2.3 px gap from +1.2 px of error to about −0.1.
 
 | parameter | default | what it does |
 |---|---|---|
@@ -536,18 +536,19 @@ the blurred answer with a small residual.
 **The aperture is how far a pixel gathers its light from**, as the side of a
 square in pixels. It decides how soft every step looks, so a narrow gap
 cannot be read without it. `fit` measures it on the image's *lone* segments,
-those in no pair, and holds it for every pair; `apertureFrom` says `segments`
-and `apertureSegments` how many. With no lone segment long enough (20 px) and
+those in no pair, takes the median, and holds it for every pair;
+`apertureFrom` says `segments` and `apertureSegments` how many. With no lone segment long enough (20 px) and
 off the pixel axes, it falls back to `apertureWidth` and says `default`. An
 axis-aligned edge says nothing about the aperture, so a synthetic image of
 horizontal and vertical edges always falls back.
 
 **`gapSigma` says how well the pixels pin the gap.** It grows as the strip
-narrows, and under about a pixel the strip's width and its level trade off:
-a narrow dark strip and a wider, less dark one are nearly the same pixels. If
-you know the level, from a frame where the gap was wider, hold it with
-`strip=held, stripLevel=…`. It is a scale for comparing fits, not a confidence
-interval.
+narrows, and under about a pixel and a half the strip's width and its level
+trade off: a narrow dark strip and a wider, less dark one are nearly the same
+pixels. If you know the level, from a frame where the gap was wider, hold it
+with `strip=held, stripLevel=…`: a 1.16 px gap read 0.86 to 0.92 with the
+level fitted and 0.99 to 1.02 with it held. `gapSigma` is a scale for
+comparing fits, not a confidence interval, and it understates.
 
 **A pair is not always two parts.** Any two close parallel segments are
 fitted: an edge and the shadow boundary beside it, or the two sides of a thin
@@ -557,6 +558,72 @@ line. Join on `a.segment` and `b.segment` to find the pair you mean.
 overlapping), or the model could not describe them, or the gap could not be
 told from none. The last is one edge detected twice, or two parts in contact;
 this cannot say which.
+
+#### `findPairs(src features, image[1] linear, …)` → features (`edge-pair`)
+
+Find the pairs the detector reported as **one** segment: a strip hidden
+inside it.
+
+```lab
+P = fitPairs(F, G)
+H = findPairs(F, G)
+```
+
+Closer than about a pixel and a half, the blur that finds edges merges two of
+them into one, and `fitPairs` has nothing to place. `findPairs` walks every
+segment that is in no pair, a `window` at a time, and asks the unblurred
+pixels whether that stretch is one step or two. Runs of windows that say two
+are joined and fitted once more as a whole. On the gap sweep it finds the Cube
+1 mm (1.16 px) over the Table inside the 512 px segment along the table's
+edge.
+
+| parameter | default | what it does |
+|---|---|---|
+| `window` | 24 px | how much of a segment is tested at a time |
+| `reach` | 2.4 px | how far to one side the second edge may be |
+| `minGain` | 1.3 | two steps must fit better than one by this factor in rms |
+| `minSigmas` | 3 | a gap under this many `gapSigma` is not reported |
+| `pad`, `inset` | 4, 2 px | as for `fitPairs` |
+| `strip`, `stripLevel` | `fit`, 0 | as for `fitPairs` |
+| `aperture`, `apertureWidth` | `fit`, 1 | as for `fitPairs`, measured on the *other* lone segments |
+| `maxGap`, `maxAngle`, `minOverlap` | 6, 5°, 10 | which segments are already a pair and so not searched; leave them at `fitPairs`'s |
+
+The records are `edge-pair`, as `fitPairs` writes them, with **both edges
+naming the same segment** and a `gain` beside them. `shift` is each edge's
+distance from the detected line, so one is small (the edge the detector
+found) and the other is about the gap. `detectedGap` is 0.
+
+**Three things stop a record**, each for a reason:
+
+- **`minGain`.** Two steps have more parameters than one and always fit a
+  little better. Along an edge hiding nothing the gain is 1.00 to 1.05; over a
+  1.16 px strip it was 1.35 to 2.57. The default was set on two renders of one
+  scene.
+- **The strip must be darker than both its neighbours, or brighter than
+  both.** A level between them is what a single soft edge looks like, and soft
+  edges are common. So a real strip between its neighbours' levels is **not
+  found**, unless you hold its level, which says what it is.
+- **`reach`.** A second edge further off than this is one the detector should
+  have found.
+
+**A segment nearly along the pixel grid is not searched.** Where a window
+climbs less than one pixel from end to end (under about 2.4° at the default
+window), every pixel crosses the edge at the same place and a sub-pixel strip
+cannot be read. A synthetic image of horizontal and vertical edges finds
+nothing.
+
+**Trust that it found something more than how wide it says it is.** At
+1.16 px the gap read 0.88 to 0.92 with the level fitted and 1.00 to 1.02 with
+it held. At 0.58 px it finds nothing at the defaults, and once misread one as
+1.02 px.
+
+**With `strip=held` and `minGain=1`** it reads a 0.58 px gap as 0.33 to 0.36
+and reports nothing at contact, but it also reports 5 to 19 records an image
+along edges that hide nothing. Only use that if you already know which
+segment you are asking about.
+
+It costs about a second an image at 512 px, far more than everything before
+it together.
 
 #### `match(src features, truth features, …)` → features (`edge-match`)
 
@@ -793,7 +860,7 @@ Four scripts ship in `pipelines/`:
 | `geometry.lab` | the straight-edge pipeline, all the way to scored corners |
 | `explained.lab` | the same, plus `explain` over the renderer's AOV passes |
 | `curves.lab` | the curve branch — `chain` and `fitArcs` beside `fit`. Needs no ground truth, because arcs are not scored |
-| `pairs.lab` | `explained.lab` plus `fitPairs`: close pairs placed again against the unblurred image. For `gap-sweep --script` |
+| `pairs.lab` | `explained.lab` plus `fitPairs` and `findPairs`: close pairs placed again against the unblurred image, and the ones detected as a single segment found. For `gap-sweep --script` |
 
 | option | |
 |---|---|
@@ -1419,8 +1486,9 @@ lab has no pose estimator, and one would put its own error into the result.
 |---|---|
 | `trueGapPx`, `measuredGapPx`, `errorPx`, `errorMm` | the gap, and the error; `errorMm` uses the sweep's own pixels per millimetre of gap |
 | `CubeOffsetPx`, `TableOffsetPx` | the error split by edge: each detected edge against its own truth edge, positive toward the moving part |
-| `refitGapPx`, `refitErrorPx`, `refitCubeOffsetPx`, `refitTableOffsetPx` | the same four, with the two edges where `fitPairs` placed them. Only when the script binds `P` |
+| `refitGapPx`, `refitErrorPx`, `refitCubeOffsetPx`, `refitTableOffsetPx` | the same four, with the two edges where `fitPairs` or `findPairs` placed them. Only when the script binds `P` or `H` |
 | `gapSigma`, `stripLevel` | from that pair's record |
+| `refitFrom` | `pair`: two detected segments, placed again. `segment`: both edges found inside one detection |
 | `pairFound` | both facing edges detected AND reaching the measuring point; when false, `reason` says which failed and the error columns are empty |
 | `spansBoth` | detected segments lying along both parts' edges: the merge failure |
 | `CubeFound`, `TableFound` | findable truth edges of each part that were found |
@@ -1460,11 +1528,13 @@ example a copy of `explained.lab` with another `sigma`. It must bind `T`, `F`,
 `EF` and `MF` as `explained.lab` does. Its results go to
 `results/<name>/<script name>/`, so a variant never overwrites the default's.
 
-`--script pipelines/pairs.lab` also binds `P = fitPairs(F, G)`, and the table
-gains the refit columns: the same gap, measured at the same point, with the
-two edges placed jointly against the unblurred image. Both readings stay in
-the row, because the difference between them is the blur's displacement. A
-refit needs both edges detected; where `pairFound` is false there is none.
+`--script pipelines/pairs.lab` also binds `P = fitPairs(F, G)` and
+`H = findPairs(F, G)`, and the table gains the refit columns: the same gap,
+measured at the same point, with the two edges placed jointly against the
+unblurred image. Both readings stay in the row, because the difference between
+them is the blur's displacement. Where the detector found only one edge,
+`pairFound` is false and the detected columns are empty, but `findPairs` may
+still have a reading: on the gap sweep that is the 1 mm row.
 
 `gap-sweep.json` records a SHA-256 of every file the lab read for each shot:
 the render, its ground truth and the three passes. If a `--skip-render` finds
@@ -1545,7 +1615,7 @@ complaint.
 |---|---|---|
 | `edge-segment` | `fit` | `id`, `pixels`, `x0 y0 x1 y1`, `length`, `angle`, `residual`, `rms`, `cx cy` |
 | `edge-arc` | `fitArcs` | `id`, `pixels`, `cx cy r`, `x0 y0 x1 y1`, `angle0`, `angle1`, `sweep`, `arcLength`, `chord`, `sagitta`, `residual`, `rms`, `lineRms`, `mx my` |
-| `edge-pair` | `fitPairs` | `id`, `a` and `b` (each `segment`, `x0 y0 x1 y1`, `shift`), `x y`, `nx ny`, `gap`, `gapSigma`, `detectedGap`, `levels`, `strip`, `aperture`, `apertureFrom`, `apertureSegments`, `rms`, `samples`, `iterations`, `converged` |
+| `edge-pair` | `fitPairs`, `findPairs` (which adds `gain`) | `id`, `a` and `b` (each `segment`, `x0 y0 x1 y1`, `shift`), `x y`, `nx ny`, `gap`, `gapSigma`, `detectedGap`, `levels`, `strip`, `aperture`, `apertureFrom`, `apertureSegments`, `rms`, `samples`, `iterations`, `converged` |
 | `edge-corner` | `corners` | `id`, `x y`, `support`, `segments`, `sigma`, `reach`, `endpointGap`, `angle` |
 | `gt-edge` | `groundTruth` | `id`, `cause`, `objects`, `x0 y0 x1 y1`, `z0 z1`, `length`, `angle`, `dihedral`, `visible`, `clipped`, `v0 v1` |
 | `gt-vertex` | `groundTruth` | `id`, `x y z`, `degree`, `visibleDegree`, `onFrame`, `visible`, `angle`, `objects` |
@@ -1701,9 +1771,13 @@ Stated plainly, so you do not go looking:
   missed by the arcs and the other way round. Nothing builds one list from
   both, so a combined recall cannot be computed. Precision is the column that
   means what it says.
-- **`fitPairs` refits pairs the detector found; it does not find them.** Where
-  two edges are so close that only one is detected, there is no pair and no
-  record. On the gap sweep that is 1 mm (1.2 px) and below.
+- **Nothing reads a gap under about a pixel on its own.** `findPairs` finds a
+  1.16 px gap inside a single detection and reads it 0.25 px short; at
+  0.58 px it finds nothing, and nothing tells contact from a gap that small.
+  Holding the strip's level helps, and nothing carries that level from one
+  frame to the next for you.
+- **A hidden strip between its neighbours in brightness is not found.** It is
+  indistinguishable from one soft edge.
 - **Ground truth models geometry, so an image-space T-junction is scored as an
   invention.** Where two real occluding contours cross, the picture has a
   corner and the scene has no vertex — nothing touches there. `explain` makes
