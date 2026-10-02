@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "room": "room-arealight",
+  "objects": [
+    {
+      "key": "Table",
+      "included": true,
+      "material": {
+        "color": "#8a6a48",
+        "shininess": 0.4,
+        "reflectivity": 0,
+        "texture": "none"
+      },
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "key": "Cube",
+      "included": true,
+      "material": {
+        "color": "#1a1a1a",
+        "shininess": 0,
+        "reflectivity": 0,
+        "texture": "none"
+      },
+      "transform": {
+        "position": [
+          -0.3,
+          0.8,
+          0.45
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "key": "Ball",
+      "included": false,
+      "material": {
+        "color": "#c8c8c8",
+        "shininess": 0.7,
+        "reflectivity": 0,
+        "texture": "none"
+      },
+      "transform": {
+        "position": [
+          0.25,
+          0.8,
+          0.12
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    }
+  ],
+  "camera": {
+    "position": [
+      -0.15133525970279152,
+      0.8764685702961343,
+      0.9084530170356659
+    ],
+    "target": [
+      -0.3,
+      0.76,
+      0.5
+    ]
+  },
+  "lights": [
+    {
+      "type": "area",
+      "intensity": 120,
+      "position": [
+        -0.3,
+        1,
+        1.6
+      ]
+    }
+  ]
+}
