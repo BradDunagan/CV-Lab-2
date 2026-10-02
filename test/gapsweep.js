@@ -11,7 +11,7 @@
  */
 
 const assert = require('node:assert/strict');
-const { gapRow, pxPerMm, truthPair, DEFAULTS } = require('../src/lab/gapsweep');
+const { gapRow, pxPerMm, truthPair, changedInputs, DEFAULTS } = require('../src/lab/gapsweep');
 
 let failures = 0;
 function test(name, fn) {
@@ -150,6 +150,25 @@ test('pixels per millimetre is the median over steps with a gap', () => {
   ];
   assert.equal(pxPerMm(rows), 1.2);
   assert.equal(pxPerMm([]), null);
+});
+
+/* ---- whether two analyses measured the same renders ---------------- */
+
+const FILES = { image: 'a1', truth: 'b1', depth: 'c1', normal: 'd1', albedo: 'e1' };
+
+test('identical inputs report no change', () => {
+  assert.deepEqual(changedInputs({ 'gap-5mm.png': FILES }, { 'gap-5mm.png': { ...FILES } }), []);
+});
+
+test('a re-rendered shot is reported, naming which of its files differ', () => {
+  const now = { 'gap-5mm.png': { ...FILES, image: 'a2', depth: 'c2' }, 'gap-2mm.png': FILES };
+  const was = { 'gap-5mm.png': FILES, 'gap-2mm.png': FILES };
+  assert.deepEqual(changedInputs(was, now), [{ shot: 'gap-5mm.png', files: ['image', 'depth'] }]);
+});
+
+test('a shot on one side only counts as changed, either way round', () => {
+  assert.deepEqual(changedInputs({}, { 'gap-5mm.png': FILES }), [{ shot: 'gap-5mm.png', files: ['new'] }]);
+  assert.deepEqual(changedInputs({ 'gap-5mm.png': FILES }, {}), [{ shot: 'gap-5mm.png', files: ['gone'] }]);
 });
 
 console.log(failures === 0 ? '\nAll gap-sweep tests passed.' : `\n${failures} failing.`);
