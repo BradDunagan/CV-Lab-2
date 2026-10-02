@@ -1139,6 +1139,51 @@ Three things the overlays showed that the table did not:
 
 One scene and one render per cell. Nothing here has a second sample.
 
+#### An eighth: two cubes, two pairs, and a crease the light erased
+
+An edge pair measures one direction: across the edges. Sliding a part along
+its edge changes nothing in the image. So the next fixture has two pairs at
+right angles: `scenes/stack-1.json`, a cube on the table and a second the same
+size (`Cube2`) lowered onto it, seen from a corner, 35° round and 20° up. The
+analysis reports every facing pair now, one row each. Two edges are a pair
+when each is the other's nearest facing edge.
+
+The vertical approach, one view, one render per step. Refit error in px:
+
+| gap | front pair (1.20 px/mm) | side pair (1.03 px/mm) |
+|---|---|---|
+| 5 mm | +0.003 | −0.59 |
+| 2 mm | −0.03 | −0.13, found inside one segment |
+| 1 mm | +0.09 | −0.16, found inside one segment |
+| 0.5 mm | +0.28, found inside one segment | nothing |
+
+**The front pair is the best reading this lab has made.** A few hundredths of
+a pixel down to 1 mm, where the detections alone read +1.2 and +2.3 px. And it
+says something about the gap sweep: the −0.2 px that was in every one of its
+28 views is not in this one. So that bias was the table scene's, not the
+fit's.
+
+**The side pair is wrong by a shadow.** The base cube's side face and the
+strip of its top face just inside the edge are lit to the same brightness,
+0.137 against 0.139. The crease between them has no contrast at all. The
+first step the image holds is where the top cube's shadow begins on the top
+face, further in, and both the detector and the fit find that. The base
+edge's offset, in px, at 20, 10, 5, 2 and 1 mm: 2.5, 1.4, 0.9, 0.4, 0.2. It
+scales with the gap, because the lit sliver is as deep as the light can reach
+under the top cube.
+
+Nothing in the pipeline is wrong there, and nothing in it knows. `explain`
+calls both of the pair's segments `crease`: it samples 2.5 px either side and
+the crease is within that. The record's residual is small. Only the truth
+says the edge is not where the image puts it.
+
+That is the first measured case of something the grid could not show, because
+its lights never moved: **which pair reads well depends on the light as much
+as on the view.** A second view does not fix it. A second light might.
+
+At 50 mm the side pair is not a pair: its two edges are 7.9° apart in the
+image, from perspective alone, and the limit is 5°.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

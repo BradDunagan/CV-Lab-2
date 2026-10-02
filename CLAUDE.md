@@ -78,7 +78,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — eighteen suites, ~525 tests
+npm test                # everything — eighteen suites, ~530 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -210,13 +210,20 @@ runs from 1.22 square-on and level to 0.11 at 70° round and 75° up
 (`design-lab-model.md` §5, "A seventh"). Still open from it:
 
 - **an edge pair measures one direction.** Sliding the part along the edge
-  changes nothing in any view. Sideways and in-and-out position need a fixture
-  with corners, or two edge pairs at an angle;
+  changes nothing in any view. `scenes/stack-1.json`, a cube lowered onto a
+  cube, has two pairs at right angles for that; only the vertical approach
+  has been run on it. Sideways and in-and-out sweeps, and solving for position
+  from several pairs and views, are next;
+- **a crease can have no contrast.** On the stack's side pair the two faces
+  that meet at the base cube's edge are lit alike, and the image's edge is the
+  shadow 0.2 to 2.5 px inside it. Nothing in the pipeline can tell
+  (`design-lab-model.md` §5, "An eighth");
 - **combining views.** The grid is a multi-view data set and nothing uses it
   as one yet: a view where the gap is wide in pixels could supply the strip's
   level, or the gap itself, to a view where it is narrow;
-- **the −0.2 px.** It is in every view, so it is the fit or the renderer and
-  not the geometry.
+- **the −0.2 px.** It is in every view of the gap scene and absent from the
+  stack's front pair (+0.003 to +0.09 px), so it is that scene's, not the
+  fit's.
 
 The aperture was the lower quartile of the lone segments' for a day and is the
 median now: over sixteen frames from one renderer the quartile ranged 1.06 to
