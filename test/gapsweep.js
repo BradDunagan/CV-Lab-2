@@ -219,6 +219,22 @@ test('a far edge that projects closer is not the facing one', () => {
   assert.equal(pair.b.id, 2);
 });
 
+test('a long target edge receding in depth still faces the part resting on its near end', () => {
+  // A table edge seen obliquely: 0.4 m deep at x=50, 1.6 m at x=250. Its mean
+  // depth is 1.0 m; where the cube sits (x=100..200) it is about 0.5 m, and
+  // that is where the cube is. Compared by mean depth, this is no pair.
+  const table = { ...gt(2, ['Table'], 50, 110, 250, 110), z0: 0.4, z1: 1.6 };
+  const at = (x) => 1 / ((1 - (x - 50) / 200) / 0.4 + ((x - 50) / 200) / 1.6);
+  const cube = { ...gt(1, ['Cube'], 100, 100, 200, 100), z0: at(100), z1: at(200) };
+  const pair = truthPair([cube, table], 'Cube', 'Table', 0.008, DEFAULTS);
+  assert.ok(pair, 'no facing pair');
+  assert.deepEqual([pair.a.id, pair.b.id], [1, 2]);
+  // And an edge at the table's MEAN depth, which is not where the table is
+  // under it, is not facing it.
+  const elsewhere = { ...gt(1, ['Cube'], 100, 100, 200, 100), z0: 1.0, z1: 1.0 };
+  assert.equal(truthPair([elsewhere, table], 'Cube', 'Table', 0.008, DEFAULTS), null);
+});
+
 test('parallel edges that do not overlap are not a pair', () => {
   const truth = [gt(1, ['Cube'], 0, 100, 40, 100), gt(2, ['Table'], 100, 110, 200, 110)];
   const row = gapRow({ truth, segments: [], explained: [], matches: [] }, { gapMm: 8 }, PARTS);

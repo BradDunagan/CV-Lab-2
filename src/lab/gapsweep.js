@@ -18,7 +18,8 @@
  * The true gap is measured between two ground-truth edges: one belonging only
  * to the moving part, one only to the target, near-parallel in the image,
  * overlapping along their length, and near each other IN DEPTH as well as in
- * the image. The depth test is what stops a far edge that happens to project
+ * the image -- at the place the gap is measured, since a long edge seen
+ * obliquely spans a great deal of depth. The depth test is what stops a far edge that happens to project
  * close -- the back of a table behind a cube -- from being taken for the near
  * one. Among the pairs that pass, the one closest in the image wins.
  *
@@ -112,6 +113,16 @@ function facing(a, b, { maxAngle, minOverlap }) {
   return { at, normal, gap, lo, hi, overlap: hi - lo };
 }
 
+/**
+ * A truth edge's depth at a point on it. Depth is not linear along an edge in
+ * the image; its reciprocal is, so that is what is interpolated between the
+ * two ends. Clamped to the edge: past an end, the end's depth.
+ */
+function depthAt(edge, l, p) {
+  const s = Math.max(0, Math.min(1, dot(sub(p, l.p0), l.u) / l.len));
+  return 1 / ((1 - s) / edge.z0 + s / edge.z1);
+}
+
 /* ---- the row ------------------------------------------------------- */
 
 const only = (edge, name, other) => edge.objects.includes(name) && !edge.objects.includes(other);
@@ -133,11 +144,15 @@ function truthPair(truth, moving, target, gapM, opts) {
     for (const eb of targetEdges) {
       const b = line(eb);
       if (!b) continue;
-      const depthA = (ea.z0 + ea.z1) / 2;
-      const depthB = (eb.z0 + eb.z1) / 2;
-      if (Math.abs(depthA - depthB) > gapM + opts.depthSlack) continue;
       const f = facing(a, b, opts);
       if (!f) continue;
+      // Depth where the gap is measured, not each edge's average. A table's
+      // edge a metre long, seen at 45 degrees, has a mean depth nowhere near
+      // that of a 10 cm cube edge resting on its near end, and comparing
+      // means found no facing pair at all from any yaw past about 30 degrees.
+      const depthA = depthAt(ea, a, onLine(a, f.at));
+      const depthB = depthAt(eb, b, f.at);
+      if (Math.abs(depthA - depthB) > gapM + opts.depthSlack) continue;
       if (!best || Math.abs(f.gap) < Math.abs(best.facing.gap)) {
         best = { a: ea, b: eb, facing: f };
       }
