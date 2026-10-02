@@ -1352,7 +1352,13 @@ both facing edges, and no gap is measured at any step.
 `--moving`, `--target`, `--axis` and `--gaps` name the parts and the steps;
 the moving part's position in the scene file is contact. `--skip-render`
 reruns the lab and the analysis over renders already made, and refuses if they
-were made from different shots. Under the hood it hands the generator a shot
+were made from different shots.
+
+**A run name is rendered once.** Rendering into a name that already holds a
+sweep is refused unless you pass `--overwrite`. Path tracing is not
+byte-reproducible, so a second render replaces the images the first run's
+numbers came from, and a later `--skip-render` would report different numbers
+under the same name. For another sample of the same shots, use a new `--name`. Under the hood it hands the generator a shot
 list with `npm run generate -- --shots <file>`, which any other sweep can use.
 
 ---

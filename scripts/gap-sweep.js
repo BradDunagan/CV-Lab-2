@@ -49,7 +49,13 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
   --size <px>        render size                          (default 512)
   --samples <n>      path-tracing samples per image       (default 96)
   --skip-render      reuse generated/<run>/, re-run the lab and the analysis
+  --overwrite        render into generated/<run>/ even though it holds a sweep
   --dry-run          print the shots and stop
+
+A run name is rendered ONCE. Rendering into a name that already holds a sweep
+is refused without --overwrite: path tracing is not byte-reproducible, so a
+second render replaces the images the first run's numbers were measured on,
+and a later --skip-render then reports different numbers for the "same" run.
 
 The moving part's position in the scene file is taken as CONTACT, gap zero:
 scenes/gap-1.json places the Cube resting on the Table with its front face
@@ -59,7 +65,8 @@ flush with the table's front edge, so the two edges close onto each other.
 function parseArgs(argv) {
   const opts = {
     name: null, scene: 'saved:gap-1', moving: 'Cube', target: 'Table', axis: [0, 1, 0],
-    gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], size: 512, samples: 96, skipRender: false, dryRun: false,
+    gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], size: 512, samples: 96, skipRender: false, overwrite: false,
+    dryRun: false,
   };
   const list = (s, what) => {
     const v = String(s).split(',').map(Number);
@@ -88,6 +95,7 @@ function parseArgs(argv) {
       case '--size': opts.size = list(argv[++i], '--size')[0]; break;
       case '--samples': opts.samples = list(argv[++i], '--samples')[0]; break;
       case '--skip-render': opts.skipRender = true; break;
+      case '--overwrite': opts.overwrite = true; break;
       case '--dry-run': opts.dryRun = true; break;
       case '--help': case '-h': opts.help = true; break;
       default: throw new Error(`unknown option ${arg}`);
@@ -169,11 +177,24 @@ function main() {
   const shotsFile = path.join(gen, 'shots.json');
   if (opts.skipRender) {
     // Reusing renders is only honest if they are the renders of these shots.
-    const had = fs.existsSync(shotsFile) && fs.readFileSync(shotsFile, 'utf8');
+    const had = fs.existsSync(path.join(ROOT, shotsFile)) && fs.readFileSync(path.join(ROOT, shotsFile), 'utf8');
     if (had !== JSON.stringify(shots, null, 2)) {
-      throw new Error(`${shotsFile} is not these shots; render again without --skip-render`);
+      throw new Error(`${shotsFile} is not these shots; render them under a new --name`);
     }
   } else {
+    /*
+     * A name is rendered once. This is not tidiness: on 2026-09-30 a second
+     * run under an existing name replaced the renders, the next --skip-render
+     * re-analysed the replacements, and the numbers moved -- which read as a
+     * determinism failure in the lab until the file times gave it away.
+     */
+    if (fs.existsSync(path.join(ROOT, shotsFile)) && !opts.overwrite) {
+      const when = fs.statSync(path.join(ROOT, shotsFile)).mtime.toISOString();
+      throw new Error(`${gen} already holds a sweep, rendered ${when}.\n`
+        + 'Rendering again replaces the images its results were measured on, and path\n'
+        + 'tracing is not byte-reproducible, so the numbers would move. Use a new --name,\n'
+        + '--skip-render to re-analyse these renders, or --overwrite to replace them.');
+    }
     fs.mkdirSync(path.join(ROOT, gen), { recursive: true });
     fs.writeFileSync(path.join(ROOT, shotsFile), JSON.stringify(shots, null, 2));
     electron('scripts/generate-cli.js', [
