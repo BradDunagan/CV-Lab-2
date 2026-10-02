@@ -50,6 +50,12 @@ const textWidth = (chars) => Math.ceil(chars * CHAR_W);
  * stale the moment one is added, which is exactly what happened -- saved
  * scenes rendered from the CLI and did not appear in the pane at all.
  *
+ * `tone` and `exposure` choose how radiance becomes a pixel: `aces` is the
+ * photographic S-curve every render used until 2026-10-01, `linear` applies
+ * none, for measurement -- under ACES, edges land up to ~0.2 px off the
+ * geometry (design-lab-model.md §5). Under `linear` the exposure decides what
+ * clips at 1. Same keys the driver and `--tone-mapping`/`--exposure` take.
+ *
  * There is no `room` row. A scene records its own room, so the control could
  * only ever override what the scene said; leaving it out means the file
  * decides, which is the whole point of composing a scene. The override still
@@ -63,6 +69,8 @@ const ROWS = [
   { key: 'positions', label: 'positions', kind: 'editbox', parse: Number, min: 1, max: 24 },
   { key: 'lighting', label: 'lighting', kind: 'editbox', parse: Number, min: 1, max: 8 },
   { key: 'scene', label: 'scene', kind: 'dropdown', options: [] },
+  { key: 'toneMapping', label: 'tone', kind: 'dropdown', options: ['aces', 'linear'] },
+  { key: 'exposure', label: 'exposure', kind: 'editbox', parse: Number, min: 0.01, max: 100 },
   { key: 'truth', label: '', kind: 'checkbox', text: 'ground truth' },
   { key: 'aovs', label: '', kind: 'checkbox', text: 'AOV passes' },
   { key: 'denoise', label: '', kind: 'checkbox', text: 'denoise' },
