@@ -185,12 +185,18 @@ has to be measured for that, on the image's lone segments; assumed, or fitted
 per pair, it gives confident wrong answers. Still open from it:
 
 - **under about a pixel and a half the strip's level must be supplied**, and
-  nothing carries it from one frame of an approach to the next. `findPairs`
+  nothing carries it from one frame of an approach to the next. Holding it is
+  sound: at 2048 px the level reads 0.119, 0.122, 0.116 and 0.104 at 5, 2, 1
+  and 0.5 mm. And **more pixels do the whole job**: at 2048 px the 1 mm and
+  0.5 mm gaps are ordinary pairs, read to −0.011 and −0.017 mm. `findPairs`
   finds the 1 mm gap (1.16 px) inside the single segment the detector leaves,
   and reads it 0.25–0.28 px short with the level fitted, 0.14–0.16 with it
   held;
-- **0.5 mm and contact are not told apart.** At the defaults neither produces
-  a record;
+- **0.5 mm and contact are not told apart** at 512 px, and contact is told
+  from nothing at any size;
+- **the strip is not flat.** It is darkest against the Cube, in the same
+  proportion at every gap, and the model fits one level to it. Whether that is
+  the remaining −0.05 to −0.11 px is untested;
 - **`findPairs`'s gain threshold rests on two renders of one scene.**
   It is a calibration, and the place a real camera is most likely to move.
 
