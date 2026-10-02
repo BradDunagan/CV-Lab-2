@@ -199,7 +199,7 @@ test('the first slice registers cleanly', () => {
   // and the command language's vocabulary, so adding one is a decision to be
   // made on purpose rather than a list that grows on its own.
   assert.deepEqual(r.names(),
-    ['chain', 'corners', 'explain', 'fit', 'fitArcs', 'gaussian', 'gray',
+    ['chain', 'corners', 'explain', 'fit', 'fitArcs', 'fitPairs', 'gaussian', 'gray',
      'groundTruth', 'hysteresis', 'load', 'match', 'merge', 'nms', 'orient',
      'pattern', 'segments', 'sobel', 'stats', 'threshold', 'toLinear',
      'toSrgb']);

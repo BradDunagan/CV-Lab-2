@@ -15,6 +15,7 @@ const { findCorners } = require('./corners');
 const { readGroundTruth } = require('./groundtruth');
 const { matchFeatures } = require('./match');
 const { explainFeatures } = require('./explain');
+const { fitPairs } = require('./pairs');
 
 /**
  * Bind a declared operation to its C kernel.
@@ -468,6 +469,98 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         width: inputs[0].width,
         height: inputs[0].height,
       }),
+    }),
+
+    defineOp({
+      name: 'fitPairs',
+      version: 1,
+      summary: 'Place two close parallel segments again, jointly, against the unblurred image.',
+      /*
+       * Features in, features out, with the image alongside -- the shape
+       * `explain` has, for the opposite reason. `explain` asks the renderer
+       * what an edge is; this asks the PIXELS where two edges are, because the
+       * blurred image they were detected in cannot say.
+       *
+       * `image` must be the gray image BEFORE `gaussian`. Nothing can check
+       * that: a blurred buffer has the same shape, and fitting it returns the
+       * blurred answer with a small residual. It must also be linear. A pixel
+       * across an edge holds a mix of two surfaces in proportion to area, and
+       * that is only true of light -- the tone-curve defect of 2026-10-01 was
+       * exactly this proportion being bent (design-lab-model.md §5).
+       */
+      inputs: [
+        { name: 'src', kind: 'features' },
+        { name: 'image', channels: [1], space: 'linear' },
+      ],
+      params: [
+        // About three sigma of the default blur, and a little: the measured
+        // displacement was +1.2 px at 2.3 px apart, +0.1 at 5.8 and nothing
+        // at 11.7.
+        { name: 'maxGap', type: 'number', default: 6, min: 0 },
+        { name: 'maxAngle', type: 'number', default: 5, min: 0, max: 45 },
+        { name: 'minOverlap', type: 'number', default: 10, min: 1 },
+        // Plateau taken either side. Enough to fix each level; little enough
+        // that the next feature along is not in the band.
+        { name: 'pad', type: 'number', default: 4, min: 1, max: 32 },
+        { name: 'inset', type: 'number', default: 2, min: 0 },
+        /*
+         * Under a pixel wide, a strip's width and its level trade off and
+         * the image stops determining the gap. `held` supplies the level --
+         * measured while the gap was wider -- and the record says it was
+         * supplied. Fitted, it costs the gap its certainty, and `gapSigma`
+         * says how much.
+         */
+        { name: 'strip', type: 'enum', values: ['fit', 'held'], default: 'fit' },
+        { name: 'stripLevel', type: 'number', default: 0 },
+        /*
+         * The side of the square a pixel gathers light over, in px. It is
+         * the camera's, not the pair's, and fitting it per pair turns one
+         * soft edge into two sharp ones half a pixel apart. `fit` measures
+         * it on this image's LONE segments and holds it for every pair;
+         * pt-lab's renders come out at 1.1 to 1.3. `apertureWidth` is the
+         * value held, and the fallback when no segment can say.
+         */
+        { name: 'aperture', type: 'enum', values: ['fit', 'held'], default: 'fit' },
+        { name: 'apertureWidth', type: 'number', default: 1, min: 0.25, max: 8 },
+        // A gap the fit cannot tell from none is one edge found twice, or
+        // two parts in contact. This cannot say which, and reports neither.
+        { name: 'minSigmas', type: 'number', default: 3, min: 0 },
+      ],
+      output: { kind: 'features' },
+      kernel: ({ inputs, params }) => {
+        const native = require('../../native');
+        const [src, image] = inputs;
+        const info = native.bufferInfo(image.handle);
+        /*
+         * Declared above and checked here: nothing between the registry and
+         * a JavaScript kernel enforces `channels`, and a colour image would
+         * be fitted on its red channel without a word.
+         */
+        if (info.channels !== 1) {
+          throw new Error(
+            `fitPairs: image has ${info.channels} channels and needs 1. ` +
+              `Pass the gray image, before gaussian: G = gray(A)`
+          );
+        }
+        if (info.width !== src.width || info.height !== src.height) {
+          throw new Error(
+            `fitPairs: image is ${info.width}x${info.height} but the features were ` +
+              `measured in ${src.width}x${src.height}. Their coordinates do not mean ` +
+              `the same thing.`
+          );
+        }
+        return {
+          kind: 'features',
+          features: fitPairs(
+            src.features,
+            { width: info.width, height: info.height, channels: info.channels,
+              data: native.bufferRead(image.handle) },
+            params
+          ),
+          width: src.width,
+          height: src.height,
+        };
+      },
     }),
 
     defineOp({

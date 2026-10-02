@@ -36,6 +36,14 @@ const ROLES = {
    * which is the honest version and belongs in a later change.
    */
   'edge-match': 'none',
+  /*
+   * A pair does have geometry -- two lines -- but they are two of the
+   * segments above, moved by a fraction of a pixel, and at a tile's scale the
+   * two drawings would be one. `npm run overlay` draws them, enlarged, which
+   * is where the difference can be seen. Named here so a slot of pairs is a
+   * known thing with nothing to draw rather than an unknown one.
+   */
+  'edge-pair': 'none',
 };
 
 /**

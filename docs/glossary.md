@@ -103,6 +103,43 @@ the real boundaries are when the colour input is still noise.
 
 ---
 
+## Aperture (of a pixel)
+
+**The area a pixel gathers its light from.** A pixel is not a point sample. It
+reports the average of the light falling on some area around its centre, and
+the aperture is that area.
+
+Here, specifically: `fitPairs` models it as a **square, and the aperture is its
+side in pixels**. An aperture of 1 is a pixel that averages exactly its own
+square and nothing of its neighbours'. A lens, a sensor's microlenses, or a
+renderer's reconstruction filter spread it further; pt-lab's 512 px renders
+measure 1.1 to 1.3.
+
+**Why it matters.** It decides how soft a step looks. A step through an
+aperture of 1 is spread over one pixel; through 2, over two. An edge on its own
+can be placed without knowing it, because a symmetric aperture leaves the
+middle of the step where it was. Two edges closer together than the aperture
+cannot: how dark the strip between them looks depends on how much of each
+pixel's light came from outside it.
+
+**Why it is measured rather than fitted with the gap.** One step through an
+aperture of 1 is, pixel for pixel, two steps half a pixel apart through an
+aperture of a half. A fit allowed to choose both will describe a single soft
+edge as a narrow gap. So `fitPairs` measures the aperture on segments that
+have no neighbour, and holds it for the pairs (`design-lab-model.md` §5).
+
+**An axis-aligned edge says nothing about it.** Every pixel along such an edge
+crosses the step at the same place, so a softer step and a sharper one a
+little to the side are the same pixels. A slanted edge crosses pixels at every
+phase, which is why slanted edges are what camera sharpness is measured on.
+
+**Elsewhere**: the same idea is the *point spread function* (the general
+shape, not a square), and its effect on a step is the *edge spread function*.
+"Aperture" in photography usually means the lens opening, which is a different
+thing.
+
+---
+
 ## ASAR — Atom Shell Archive
 
 **Electron's app bundle: one file containing all of your application's files
