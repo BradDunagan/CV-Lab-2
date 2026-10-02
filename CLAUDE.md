@@ -53,7 +53,8 @@ scripts/score.js     tallies match records: precision, recall, and which
 scripts/overlay.js   draws ground truth and detections over an image — every
                      defect in the scoring machinery was found this way
 scripts/gap-sweep.js steps one part toward another, renders each step, runs
-                     the lab over them and tabulates the gap (needs a GPU)
+                     the lab over them and tabulates the gap -- from one
+                     view, or a grid of them (needs a GPU)
 pt-lab/              the path tracer + scene editor library, TypeScript, moved in
                      from its own repository — see pt-lab/README.md
 src/generate/        the generator: page (bundled separately) + main-process
@@ -77,13 +78,14 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — eighteen suites, ~517 tests
+npm test                # everything — eighteen suites, ~525 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
 npm run score -- results/           # found, against what is really there
 npm run overlay -- <img> results/   # ...and the same thing as a picture
 npm run gap-sweep -- --name gap-1   # a part closing on another, down to contact
+                                    # (--yaw, --elevation: from a grid of views)
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run check:pt-lab    # type-check pt-lab/ — the build strips types unchecked
@@ -199,6 +201,22 @@ per pair, it gives confident wrong answers. Still open from it:
   the remaining −0.05 to −0.11 px is untested;
 - **`findPairs`'s gain threshold rests on two renders of one scene.**
   It is a calibration, and the place a real camera is most likely to move.
+
+**Where the camera is decides how many pixels a millimetre is**, and that
+decides everything else. Over 28 views of the gap sweep the refit's error is
+the same −0.2 to −0.3 px wherever it reads at all, and it reads wherever the
+gap is over about 1.1 px in the image. Pixels per millimetre of a vertical gap
+runs from 1.22 square-on and level to 0.11 at 70° round and 75° up
+(`design-lab-model.md` §5, "A seventh"). Still open from it:
+
+- **an edge pair measures one direction.** Sliding the part along the edge
+  changes nothing in any view. Sideways and in-and-out position need a fixture
+  with corners, or two edge pairs at an angle;
+- **combining views.** The grid is a multi-view data set and nothing uses it
+  as one yet: a view where the gap is wide in pixels could supply the strip's
+  level, or the gap itself, to a view where it is narrow;
+- **the −0.2 px.** It is in every view, so it is the fit or the renderer and
+  not the geometry.
 
 The aperture was the lower quartile of the lone segments' for a day and is the
 median now: over sixteen frames from one renderer the quartile ranged 1.06 to
