@@ -29,9 +29,10 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { resolveScene } = require('../src/generate/driver');
-const { gapRow, pxPerMm } = require('../src/lab/gapsweep');
+const { gapRow, pxPerMm, changedInputs } = require('../src/lab/gapsweep');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -148,6 +149,50 @@ function slots(file) {
   return { truth: by.T, segments: by.F, explained: by.EF, matches: by.MF };
 }
 
+/**
+ * SHA-256 of every file the lab reads for each shot: the render, its ground
+ * truth, and the three passes. A render is a sample rather than a function of
+ * its shot, so these -- not the shot list -- are what make two analyses of
+ * one run comparable.
+ */
+function inputHashes(gen, shots) {
+  const sha = (file) => crypto.createHash('sha256').update(fs.readFileSync(path.join(ROOT, file))).digest('hex');
+  return Object.fromEntries(shots.map((s) => {
+    const base = s.name.replace(/\.png$/, '');
+    return [s.name, {
+      image: sha(path.join(gen, s.name)),
+      truth: sha(path.join(gen, `${base}.gt.json`)),
+      depth: sha(path.join(gen, 'aov', `${base}-depth.png`)),
+      normal: sha(path.join(gen, 'aov', `${base}-normal.png`)),
+      albedo: sha(path.join(gen, 'aov', `${base}-albedo.png`)),
+    }];
+  }));
+}
+
+/**
+ * Compare with the previous analysis of this run, if there is one. When the
+ * inputs differ its numbers do not carry over, so it is kept beside the new
+ * one rather than overwritten, and the run says which shots changed.
+ */
+function checkPrevious(recordFile, inputs) {
+  if (!fs.existsSync(recordFile)) return;
+  const previous = JSON.parse(fs.readFileSync(recordFile, 'utf8'));
+  const stamp = (previous.analysedAt ?? fs.statSync(recordFile).mtime.toISOString()).replace(/[:.]/g, '-');
+  const kept = recordFile.replace(/\.json$/, `.replaced-${stamp}.json`);
+  if (!previous.inputs) {
+    fs.renameSync(recordFile, kept);
+    console.log(`\nThe previous analysis predates input hashes, so whether it measured these\n`
+      + `renders cannot be checked. Kept as ${path.relative(ROOT, kept)}.`);
+    return;
+  }
+  const changed = changedInputs(previous.inputs, inputs);
+  if (changed.length === 0) return;
+  fs.renameSync(recordFile, kept);
+  console.log(`\nTHESE ARE NOT THE RENDERS THE PREVIOUS ANALYSIS MEASURED -- its numbers do not\n`
+    + `carry over. Changed: ${changed.map((c) => `${c.shot} (${c.files.join(', ')})`).join('; ')}.\n`
+    + `The previous analysis is kept as ${path.relative(ROOT, kept)}.`);
+}
+
 const fmt = (v, d = 2) => (v === null || v === undefined ? '' : Number(v).toFixed(d));
 
 function main() {
@@ -222,11 +267,15 @@ function main() {
   const scale = pxPerMm(rows);
   for (const r of rows) r.errorMm = scale && r.errorPx !== null ? r.errorPx / scale : null;
 
+  const inputs = inputHashes(gen, shots);
+  const recordFile = path.join(ROOT, res, 'gap-sweep.json');
+  checkPrevious(recordFile, inputs);
   const record = {
     scene: opts.scene, ...parts, axis: opts.axis, size: opts.size, samples: opts.samples,
-    camera: shots[0].camera, look: shots[0].target, pxPerMm: scale, rows,
+    camera: shots[0].camera, look: shots[0].target, pxPerMm: scale,
+    analysedAt: new Date().toISOString(), inputs, rows,
   };
-  fs.writeFileSync(path.join(ROOT, res, 'gap-sweep.json'), JSON.stringify(record, null, 2));
+  fs.writeFileSync(recordFile, JSON.stringify(record, null, 2));
 
   const causes = [...new Set(rows.flatMap((r) => Object.keys(r.causes)))].sort();
   const head = ['gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm', 'pairFound', 'spansBoth',

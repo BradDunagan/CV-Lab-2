@@ -315,4 +315,29 @@ function pxPerMm(rows) {
   return r.length % 2 ? r[m] : (r[m - 1] + r[m]) / 2;
 }
 
-module.exports = { gapRow, pxPerMm, truthPair, facing, line, DEFAULTS };
+/**
+ * Which shots' inputs differ between two analyses of the same run.
+ *
+ * Each argument maps a shot name to the hashes of the files the lab read for
+ * it -- { image, truth, depth, normal, albedo }. A render is a sample, not a
+ * function of its shot, so two analyses under one name are comparable only
+ * if every one of these is the same; a shot present on one side only counts
+ * as changed. Returns [{ shot, files: [...] }], in the order of `now`, then
+ * any shots `now` no longer has.
+ */
+function changedInputs(previous, now) {
+  const out = [];
+  for (const [shot, files] of Object.entries(now)) {
+    const was = previous[shot];
+    if (!was) { out.push({ shot, files: ['new'] }); continue; }
+    const kinds = [...new Set([...Object.keys(was), ...Object.keys(files)])]
+      .filter((k) => was[k] !== files[k]);
+    if (kinds.length > 0) out.push({ shot, files: kinds });
+  }
+  for (const shot of Object.keys(previous)) {
+    if (!(shot in now)) out.push({ shot, files: ['gone'] });
+  }
+  return out;
+}
+
+module.exports = { gapRow, pxPerMm, truthPair, facing, line, changedInputs, DEFAULTS };

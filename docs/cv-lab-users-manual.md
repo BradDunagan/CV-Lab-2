@@ -1358,7 +1358,13 @@ were made from different shots.
 sweep is refused unless you pass `--overwrite`. Path tracing is not
 byte-reproducible, so a second render replaces the images the first run's
 numbers came from, and a later `--skip-render` would report different numbers
-under the same name. For another sample of the same shots, use a new `--name`. Under the hood it hands the generator a shot
+under the same name. For another sample of the same shots, use a new `--name`.
+
+`gap-sweep.json` records a SHA-256 of every file the lab read for each shot:
+the render, its ground truth and the three passes. If a `--skip-render` finds
+different ones than the previous analysis measured, it says which shots
+changed and keeps the previous record as `gap-sweep.replaced-<time>.json`
+instead of overwriting it. Under the hood it hands the generator a shot
 list with `npm run generate -- --shots <file>`, which any other sweep can use.
 
 ---
