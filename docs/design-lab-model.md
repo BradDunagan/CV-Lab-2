@@ -1073,6 +1073,72 @@ Cube's right-hand bottom edge, with a strip 1.7 px wide inside it. It is the
 same 2 mm gap, seen under the Cube's side face. The detected segment lay
 0.4 px beyond the strip's far edge and 2.1 px from the Cube's.
 
+#### A seventh: where the camera is decides how many pixels a millimetre is
+
+Everything in the two subsections above was one view: 20° of yaw, 15° of
+elevation, 0.45 m from the contact. `gap-sweep --yaw --elevation` repeats the
+sweep from a grid of views, the saved camera orbited about its own target.
+Four yaws by seven elevations by five gaps, 140 renders at 512 px, linear
+(`gap-grid-1`).
+
+**The truth-pair selection broke first.** It compared the two edges' mean
+depths, and a metre of table edge seen at 45° has a mean depth nowhere near
+that of a 10 cm cube resting on its near end. From yaw 45° and 70° there was
+"no facing pair in the ground truth" at all. It compares depth where the gap
+is measured now. A four-sample scan of the 28 views found that before any of
+the hour of rendering was spent.
+
+**Pixels per millimetre of gap**, from the truth alone:
+
+| elevation \\ yaw | 0° | 20° | 45° | 70° |
+|---|---|---|---|---|
+| 0° | 1.22 | 1.22 | 1.23 | 1.23 |
+| 15° | 1.17 | 1.16 | 1.13 | 0.93 |
+| 30° | 1.04 | 1.02 | 0.92 | 0.60 |
+| 45° | 0.84 | 0.81 | 0.68 | 0.38 |
+| 60° | 0.59 | 0.56 | 0.45 | 0.23 |
+| 75° | 0.30 | 0.29 | 0.22 | 0.11 |
+
+The gap is vertical, so a camera sees less of it the more nearly it looks
+down: the cosine of the elevation, and less again from the side.
+
+**That table predicts the rest.** Whether a cell has a reading, and how good,
+follows the gap's size in pixels and nothing else that was varied:
+
+| true gap in the image | cells | read | refit error, px |
+|---|---|---|---|
+| under 1.1 px | 54 | 2 | one of them +1.15 |
+| 1.1 to 2 px | 23 | 16, 11 of them inside one segment | −0.24 to −0.37 mean |
+| 2 px and over | 35 | 31 | −0.20 mean, −0.52 to +0.06 |
+
+The error in pixels does not depend on the view. It is the same −0.2 to
+−0.3 px short everywhere something is read. So the error in millimetres is
+that, divided by the table above: about −0.2 mm from the front and low, −0.6
+at 45° up and 70° round, and −2.4 mm in the one cell read at 0.23 px per mm.
+
+For gaps of 2 mm and over seen from 30° of elevation or lower, 29 of 32 cells
+read, with a mean error of −0.22 mm (−1.04 to +0.05). The detections' own
+reading over the same cells: +0.40 mm (−0.54 to +1.86).
+
+**At contact, nothing is reported from any of the 28 views.** That is the
+right answer, reached by not being able to see, and it is also what 0.5 mm
+gets from 27 of them.
+
+Three things the overlays showed that the table did not:
+
+- **Square-on and level, at 0.5 mm, the one reading is of the wrong edge.**
+  `match` accepts a detection within 3 px of a truth edge. There the cube's
+  bottom edge is 0.6 px from the table's, and a shading line 2 px up the
+  cube's face was taken for it.
+- **At 0° of elevation the strip is not the table top.** The camera is level
+  with it and sees through the gap. The fitted strip level is 0.03 to 0.11
+  there against 0.13 from every higher view.
+- **Square-on, the two edges lie along the pixel rows**, and `findPairs` does
+  not search them. `fitPairs` does not mind: at yaw 0° it read 2 mm to
+  −0.01 and −0.06 mm.
+
+One scene and one render per cell. Nothing here has a second sample.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
