@@ -31,9 +31,11 @@
  *
  * SIGN
  *
- * Gaps are signed along the target edge's normal, oriented toward the moving
- * part. A detected gap with the wrong sign is the detector putting the edges
- * in the wrong order, which an absolute value would hide.
+ * Gaps are signed along the target edge's normal, oriented toward the middle
+ * of the moving part. A detected gap with the wrong sign is the detector
+ * putting the edges in the wrong order, which an absolute value would hide.
+ * A TRUE gap with a negative sign is the moving part's edge past the
+ * target's: an overhang.
  */
 
 const MIN_VISIBLE = 0.5; // as match.js: below this an edge is not findable
@@ -97,7 +99,7 @@ function toSegment(l, p) {
  * The overlap of two near-parallel segments along b's direction, and the
  * signed gap at its middle. Null if they are not parallel or do not overlap.
  */
-function facing(a, b, { maxAngle, minOverlap }) {
+function facing(a, b, { maxAngle, minOverlap }, toward = null) {
   if (angleBetween(a, b) > maxAngle) return null;
   const ta0 = dot(sub(a.p0, b.p0), b.u);
   const ta1 = dot(sub(a.p1, b.p0), b.u);
@@ -105,8 +107,18 @@ function facing(a, b, { maxAngle, minOverlap }) {
   const hi = Math.min(b.len, Math.max(ta0, ta1));
   if (hi - lo < minOverlap) return null;
   const at = add(b.p0, b.u, (lo + hi) / 2);
-  // Normal oriented toward a, so a positive gap means "a is on its own side".
-  const side = dot(sub(add(a.p0, a.u, a.len / 2), at), b.n);
+  /*
+   * Which way is positive. Toward `toward` when the caller has one -- the
+   * middle of the moving PART -- and otherwise toward a itself.
+   *
+   * The difference is the whole of the sign. Oriented toward a, the gap is
+   * positive by construction, whichever side a is on; a part slid until its
+   * edge crosses the target's then reads as the gap closing to zero and
+   * opening again, a V. Oriented toward the part, the edge that has crossed
+   * is on the wrong side of the target's and the gap is negative, which is
+   * what an overhang is.
+   */
+  const side = dot(sub(toward ?? add(a.p0, a.u, a.len / 2), at), b.n);
   const normal = side >= 0 ? b.n : [-b.n[0], -b.n[1]];
   const gap = crossing(a, at, normal);
   if (gap === null) return null;
@@ -137,6 +149,14 @@ function facingCandidates(truth, moving, target, gapM, opts) {
   const visible = truth.filter((e) => e.type === 'gt-edge' && e.visible >= opts.minVisible);
   const movingEdges = visible.filter((e) => only(e, moving, target));
   const targetEdges = visible.filter((e) => only(e, target, moving));
+  // The middle of the moving part in the image: the mean of the midpoints of
+  // ALL its edges, seen or not, so that it does not shift as edges come into
+  // view.
+  const whole = truth.filter((e) => e.type === 'gt-edge' && only(e, moving, target));
+  const middle = whole.length === 0 ? null : [
+    whole.reduce((s, e) => s + (e.x0 + e.x1) / 2, 0) / whole.length,
+    whole.reduce((s, e) => s + (e.y0 + e.y1) / 2, 0) / whole.length,
+  ];
   const out = [];
   for (const ea of movingEdges) {
     const a = line(ea);
@@ -144,7 +164,7 @@ function facingCandidates(truth, moving, target, gapM, opts) {
     for (const eb of targetEdges) {
       const b = line(eb);
       if (!b) continue;
-      const f = facing(a, b, opts);
+      const f = facing(a, b, opts, middle);
       if (!f) continue;
       // Depth where the gap is measured, not each edge's average. A table's
       // edge a metre long, seen at 45 degrees, has a mean depth nowhere near
@@ -307,7 +327,7 @@ function causesInGap(explained, pair, opts) {
 function gapRow(input, shot, parts, options = {}) {
   const opts = { ...DEFAULTS, ...options };
   const row = rowBase(input, shot, parts, opts);
-  const pair = truthPair(input.truth, parts.moving, parts.target, shot.gapMm / 1000, opts);
+  const pair = truthPair(input.truth, parts.moving, parts.target, separation(shot), opts);
   if (!pair) return { ...row, reason: 'no facing pair in the ground truth' };
   return rowFor(row, pair, input, parts, opts);
 }
@@ -321,16 +341,24 @@ function gapRow(input, shot, parts, options = {}) {
 function gapRows(input, shot, parts, options = {}) {
   const opts = { ...DEFAULTS, ...options };
   const base = rowBase(input, shot, parts, opts);
-  const found = truthPairs(input.truth, parts.moving, parts.target, shot.gapMm / 1000, opts);
+  const found = truthPairs(input.truth, parts.moving, parts.target, separation(shot), opts);
   if (found.length === 0) return [{ ...base, pair: null, reason: 'no facing pair in the ground truth' }];
   return found.map((pair, k) => ({ ...rowFor({ ...base }, pair, input, parts, opts), pair: k + 1 }));
 }
+
+/**
+ * How far apart the two parts are in this shot, in metres, for the depth
+ * test. The swept step, unless the shot says otherwise: a sweep ACROSS an open
+ * gap carries `separationMm`, because its step is not the distance.
+ */
+const separation = (shot) => Math.abs(shot.separationMm ?? shot.gapMm) / 1000;
 
 function rowBase({ truth, segments, matches }, shot, { moving, target }, opts) {
   const row = {
     gapMm: shot.gapMm,
     trueGapPx: null,
     overlapPx: null,
+    pairAngle: null,
     measuredGapPx: null,
     errorPx: null,
     pairFound: false,
@@ -353,6 +381,13 @@ function rowFor(row, pair, { segments, explained, matches, pairs }, { moving, ta
   // How much edge there is to measure it on: the stretch the two truth edges
   // share, which a view from the side foreshortens.
   row.overlapPx = pair.facing.overlap;
+  // Which way the pair runs in the image, 0 to 180 degrees: what tells one
+  // pair of a fixture from another when a shot has lost one of them.
+  {
+    const l = line(pair.b);
+    const deg = (Math.atan2(l.u[1], l.u[0]) * 180) / Math.PI;
+    row.pairAngle = ((deg % 180) + 180) % 180;
+  }
   row.truthPair = [pair.a.id, pair.b.id];
   row.causes = causesInGap(explained, pair, opts);
 
@@ -512,6 +547,55 @@ function pxPerMm(rows) {
 }
 
 /**
+ * Number a sweep's pairs so that pair k is the same pair in every shot.
+ *
+ * `gapRows` numbers the pairs of ONE shot, left to right. That is the same
+ * numbering in every shot only while every shot has every pair, and they do
+ * not: at 50 mm the stack's side pair is not parallel enough to be a pair, and
+ * what is left is called 1 whichever it is. What does not change along a
+ * sweep is the direction a pair runs in the image, so the rows of one view
+ * are grouped by that -- within `tolerance` degrees, round the 0/180 join --
+ * and the groups are numbered in order of angle.
+ *
+ * Rows of one view only: from another view the same pair runs another way.
+ */
+function numberPairs(rows, tolerance = 10) {
+  const angles = [...new Set(rows.filter((r) => r.pairAngle !== null && r.pairAngle !== undefined)
+    .map((r) => r.pairAngle))].sort((a, b) => a - b);
+  const groups = [];
+  for (const a of angles) {
+    const last = groups[groups.length - 1];
+    if (last && a - last[last.length - 1] <= tolerance) last.push(a);
+    else groups.push([a]);
+  }
+  // 179 degrees and 1 degree are two degrees apart.
+  if (groups.length > 1) {
+    const first = groups[0], last = groups[groups.length - 1];
+    if (first[0] + 180 - last[last.length - 1] <= tolerance) { first.unshift(...last); groups.pop(); }
+  }
+  const numberOf = new Map();
+  groups.forEach((group, k) => group.forEach((a) => numberOf.set(a, k + 1)));
+  return rows.map((r) => ({ ...r, pair: numberOf.get(r.pairAngle) ?? null }));
+}
+
+/**
+ * Pixels per millimetre along a sweep that does not start at contact: the
+ * least-squares slope of the true image gap against the step. Signed -- a
+ * part slid one way closes the gap a pair sees and slid the other opens it --
+ * and near zero for a pair whose edges run along the swept direction, which
+ * that pair cannot see. Null with fewer than two steps that have a truth pair.
+ */
+function pxPerMmSlope(rows) {
+  const pts = rows.filter((r) => Number.isFinite(r.trueGapPx) && Number.isFinite(r.gapMm));
+  if (pts.length < 2) return null;
+  const mx = pts.reduce((a, r) => a + r.gapMm, 0) / pts.length;
+  const my = pts.reduce((a, r) => a + r.trueGapPx, 0) / pts.length;
+  let sxx = 0, sxy = 0;
+  for (const r of pts) { sxx += (r.gapMm - mx) ** 2; sxy += (r.gapMm - mx) * (r.trueGapPx - my); }
+  return sxx > 0 ? sxy / sxx : null;
+}
+
+/**
  * Which shots' inputs differ between two analyses of the same run.
  *
  * Each argument maps a shot name to the hashes of the files the lab read for
@@ -581,4 +665,4 @@ function orbitViews(camera, { yaw, elevation }) {
   return views;
 }
 
-module.exports = { gapRow, gapRows, pxPerMm, truthPair, truthPairs, facing, line, changedInputs, orbitViews, DEFAULTS };
+module.exports = { gapRow, gapRows, numberPairs, pxPerMm, pxPerMmSlope, truthPair, truthPairs, facing, line, changedInputs, orbitViews, DEFAULTS };
