@@ -112,6 +112,10 @@ interface LibraryItem {
 const BUILTIN_LIBRARY: LibraryItem[] = [
 	{ key: 'Table', name: 'Table', kind: 'builtin' },
 	{ key: 'Cube', name: 'Cube', kind: 'builtin' },
+	// A second cube, the same size as the first. A scene holds one object per
+	// library key, so two parts of one shape need two keys: cv-lab's stacking
+	// fixture is this one lowered onto the other.
+	{ key: 'Cube2', name: 'Cube2', kind: 'builtin' },
 	{ key: 'Ball', name: 'Ball', kind: 'builtin' },
 ];
 
@@ -528,7 +532,10 @@ export interface GroundTruthView {
 export type RoomKind = 'room' | 'room-emissive' | 'room-arealight';
 const ROOM_KINDS = ['room', 'room-emissive', 'room-arealight'];
 
-/** A built-in room demo expressed as editor-scene data (room + the 3 built-ins). */
+/**
+ * A built-in room demo expressed as editor-scene data: the room and the three
+ * built-ins it has always shown. Cube2 is in the library and not in the demos.
+ */
 function demoRoomData(room: RoomKind): SceneData {
 	return {
 		version: 1,
@@ -1132,6 +1139,16 @@ export class PathTracerLab {
 		return cube;
 	}
 
+	/** The same 10 cm box as the Cube, resting on top of where the Cube starts. */
+	private makeCube2(): Object3D {
+		const cube = new Mesh(
+			new BoxGeometry(0.1, 0.1, 0.1),
+			new MeshPhysicalMaterial({ color: 0x2f6fb0, roughness: 0.4 }),
+		);
+		cube.position.set(-0.3, 0.9, 0);
+		return cube;
+	}
+
 	private makeBall(): Object3D {
 		const ball = new Mesh(
 			new SphereGeometry(0.05, 48, 24),
@@ -1147,6 +1164,8 @@ export class PathTracerLab {
 				return () => this.makeTable();
 			case 'Cube':
 				return () => this.makeCube();
+			case 'Cube2':
+				return () => this.makeCube2();
 			case 'Ball':
 				return () => this.makeBall();
 			default:
