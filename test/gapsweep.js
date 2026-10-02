@@ -86,6 +86,25 @@ test('a gap is not extrapolated from detections that stop short of where it is m
   assert.match(row.reason, /30\.0 px short/);
 });
 
+test('the error splits by edge, each against its own truth, and the parts add up', () => {
+  // Cube edge found 0.25 px toward the cube (up, smaller y); table edge 0.5 px
+  // toward the cube too. The gap reads 0.25 short.
+  const segments = [seg(10, 100, 99.75, 200, 99.75), seg(11, 50, 109.5, 250, 109.5)];
+  const row = gapRow({ truth: TRUTH, segments, explained: segments, matches: [hit(10, 1), hit(11, 2)] },
+    { gapMm: 8 }, PARTS);
+  assert.ok(Math.abs(row.movingOffsetPx - 0.25) < 1e-9, `moving ${row.movingOffsetPx}`);
+  assert.ok(Math.abs(row.targetOffsetPx - 0.5) < 1e-9, `target ${row.targetOffsetPx}`);
+  assert.ok(Math.abs(row.errorPx - (row.movingOffsetPx - row.targetOffsetPx)) < 1e-9);
+});
+
+test('no pair, no per-edge offsets', () => {
+  const segments = [seg(10, 100, 100, 200, 100)];
+  const row = gapRow({ truth: TRUTH, segments, explained: segments, matches: [hit(10, 1)] },
+    { gapMm: 8 }, PARTS);
+  assert.equal(row.movingOffsetPx, null);
+  assert.equal(row.targetOffsetPx, null);
+});
+
 test('edges in the wrong order give a negative gap rather than a small positive one', () => {
   // The cube edge detected BELOW the table edge.
   const segments = [seg(10, 100, 113, 200, 113), seg(11, 50, 110, 250, 110)];

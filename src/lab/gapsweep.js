@@ -264,6 +264,8 @@ function gapRow({ truth, segments, explained, matches }, shot, { moving, target 
     moving: survival(truth, matches, moving, target, opts),
     target: survival(truth, matches, target, moving, opts),
     causes: {},
+    movingOffsetPx: null,
+    targetOffsetPx: null,
     reason: null,
   };
 
@@ -297,6 +299,31 @@ function gapRow({ truth, segments, explained, matches }, shot, { moving, target 
   row.detectedPair = [da.seg.id, db.seg.id];
   row.measuredGapPx = measured;
   row.errorPx = measured - row.trueGapPx;
+
+  /*
+   * The error, split by edge: where each detected line crosses the TRUTH
+   * pair's normal at the measuring point, against where its own truth edge
+   * does. Positive is toward the moving part, as the gap is. So
+   *   errorPx ~= movingOffsetPx - targetOffsetPx
+   * exactly when the detected edges are parallel to the truth's; otherwise
+   * the two frames differ by the cosine of a small angle, and the gap itself
+   * is still measured as it always was, along the detected target edge.
+   *
+   * READ THESE WITH THE PIXEL CONVENTIONS IN MIND. Detections put pixel i's
+   * centre at i; pt-lab's ground truth puts it at i + 0.5. Every detection
+   * therefore sits near (-0.5, -0.5) px from its truth -- fitted over all
+   * matched edges of cube1 it is (-0.507, -0.457), and removing it takes the
+   * rms offset from 0.50 to 0.07 px. Both offsets here carry that shift,
+   * projected on the normal (about +0.45 px for a near-horizontal pair). It
+   * cancels exactly in the gap, and not in either offset alone.
+   */
+  const T = pair.facing;
+  const ca = crossing(da.line, T.at, T.normal);
+  const cb = crossing(db.line, T.at, T.normal);
+  if (ca !== null && cb !== null) {
+    row.movingOffsetPx = ca - T.gap;
+    row.targetOffsetPx = cb;
+  }
   return row;
 }
 

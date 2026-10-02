@@ -303,11 +303,12 @@ function main() {
   fs.writeFileSync(recordFile, JSON.stringify(record, null, 2));
 
   const causes = [...new Set(rows.flatMap((r) => Object.keys(r.causes)))].sort();
-  const head = ['gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm', 'pairFound', 'spansBoth',
+  const head = ['gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm',
+    `${opts.moving}OffsetPx`, `${opts.target}OffsetPx`, 'pairFound', 'spansBoth',
     `${opts.moving}Found`, `${opts.target}Found`, ...causes.map((c) => `inGap_${c}`), 'reason'];
   const body = rows.map((r) => [
     r.gapMm, fmt(r.trueGapPx, 3), fmt(r.measuredGapPx, 3), fmt(r.errorPx, 3), fmt(r.errorMm, 3),
-    r.pairFound, r.spansBoth, `${r.moving.found}/${r.moving.findable}`, `${r.target.found}/${r.target.findable}`,
+    fmt(r.movingOffsetPx, 3), fmt(r.targetOffsetPx, 3), r.pairFound, r.spansBoth, `${r.moving.found}/${r.moving.findable}`, `${r.target.found}/${r.target.findable}`,
     ...causes.map((c) => r.causes[c] ?? 0),
     // Unquoted, so the padding below stays valid CSV: a quote must open its
     // field, and a padded field would start with spaces. No reason contains a
