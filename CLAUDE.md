@@ -134,10 +134,10 @@ the table edge's share of the gap sweep's bias. `npm run generate --
 --tone-mapping linear` is for measurement, and `gap-sweep` defaults to it
 (`design-lab-model.md` §5). Still open from the same work:
 
-- the gap cube's edge, displaced up to 0.25 px even in linear renders. It was
-  thought to follow the darker side; tested, it does not. It vanishes on a
-  matte cube in the one clean case, so gloss is the suspect, and a matte red
-  cube is the test that would settle it;
+- the gap cube's edge, displaced up to ~0.3 px even in linear renders. It is
+  not gloss (a matte red cube keeps it), and not "toward the darker side". It
+  tracks the face against the gap behind it. Closed unexplained by decision
+  (`design-lab-model.md` §5): the 1-2 mm blur push-apart is 5-10x larger;
 - undoing a real camera's response curve on load.
 
 The AOV passes are consumed now: `explain` says what put each detection in the

@@ -832,6 +832,7 @@ positive toward the cube, and brightness is shown as gap side | cube face:
 | `-low`: light 20 cm lower | −0.11 (0.14 \| 0.47) | −0.18 (0.06 \| 0.42) |
 | `-dark`: cube #1a1a1a, still glossy | not found | **+0.20** (0.07 \| 0.14) |
 | `-dark-matte`: same, shininess 0 | **−0.005** (0.17 \| 0.05) | too faint |
+| `-matte`: red, shininess 0 | **−0.27** (0.17 \| 0.25) | −0.14 (0.08 \| 0.25) |
 
 Lowering the light was meant to make the gap side the brighter one. It
 darkened the gap instead, and the offset stayed. The dark glossy cube kept a
@@ -845,19 +846,22 @@ What the runs support:
 
 - **The offset belongs to the cube's appearance,** not to the lighting or the
   table. The table edge stayed within ±0.02 px through all four scenes.
-- **A glossy face is the common factor** in every offset measured. In the one
-  well-conditioned matte case, there is none.
-- **It is one data point.** At 20 mm and below, the matte dark cube's edge is
-  too faint against the gap to locate reliably, and the dark glossy cube's 10
-  and 5 mm values are poorly conditioned too.
+- **Gloss is not the cause.** The matte red cube keeps the offset: −0.27 px
+  at 50 mm, against −0.23 and −0.29 glossy. That fits `cube1`, whose cube is
+  equally glossy and clean.
+- **What the offset tracks is the face against the gap behind it.** With
+  the face brighter (red glossy, red matte, lowered light), the edge sits
+  0.1–0.3 px toward the gap. With the face darker (matte dark), it sits on
+  its truth. The dark glossy cube, nearly equal to the gap (0.07 | 0.14 at
+  20 mm), gave +0.20, which fits no simple rule.
 
-The test that would separate gloss from colour is a **matte red cube**, the
-original brightness relationship without the gloss. It has not been run.
-
-**And one fact argues against gloss.** `cube1` linearised showed at most
-0.03 px RMS, and its cube is the same red at the same shininess, 0.6, in a
-different scene and lighting. If gloss causes the offset, something about
-this scene's front light makes the gloss matter. That is not yet reconciled.
+**The line was closed here, with the cause unexplained, by decision.** What
+remains is at most ~0.3 px (~0.25 mm at this scale), on one edge, at the
+large gaps where accuracy matters least, in a synthetic image whose material
+response a real camera will not share. The blur push-apart at 1–2 mm is five
+to ten times larger, and is where assembly needs accuracy. The scenes stay in
+`scenes/` (`gap-1-front-low`, `-dark`, `-dark-matte`, `-matte`) for whoever
+reopens it.
 
 A caution on method. Before the linear render existed, this was estimated by
 inverting ACES on the existing renders, which suggested the cube edge would
