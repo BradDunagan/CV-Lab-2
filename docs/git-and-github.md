@@ -403,6 +403,18 @@ git branch -D saved-scenes           # capital D
 Always run the `diff` first. `-D` deletes without checking, and the check is
 the only thing standing between you and losing work you forgot you had.
 
+**Second trap: a hash cited on the branch goes stale at the merge.** A note or a
+commit message that names another commit on the same branch by its hash points
+nowhere once the branch is rebased onto `main`. Seen on 2026-10-01: the day's
+note cited two guard commits as `986e5df` and `eccbbec`, and after
+`gh pr merge --rebase` they were `7838868` and `f729aea`. The note could be
+fixed with another commit. A commit message citing the old hash cannot be
+fixed without rewriting `main`.
+
+Inside a branch, refer to sibling commits by their subject ("the overwrite
+refusal, two commits back"). If a hash matters, add it after the merge, from
+`git log` on `main`.
+
 ---
 
 ## 9. This repository's temperament
