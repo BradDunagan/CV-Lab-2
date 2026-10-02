@@ -11,7 +11,7 @@
  */
 
 const assert = require('node:assert/strict');
-const { gapRow, pxPerMm, truthPair, changedInputs, DEFAULTS } = require('../src/lab/gapsweep');
+const { gapRow, pxPerMm, truthPair, changedInputs, orbitViews, DEFAULTS } = require('../src/lab/gapsweep');
 
 let failures = 0;
 function test(name, fn) {
@@ -289,6 +289,61 @@ test('pixels per millimetre is the median over steps with a gap', () => {
 /* ---- whether two analyses measured the same renders ---------------- */
 
 const FILES = { image: 'a1', truth: 'b1', depth: 'c1', normal: 'd1', albedo: 'e1' };
+
+/* ---- a grid of views ------------------------------------------------- */
+
+// 1 m from its target, 30 degrees round and 45 up: sin 45 = cos 45 = 0.7071.
+const CAMERA = {
+  target: [1, 2, 3],
+  position: [1 + Math.SQRT1_2 * 0.5, 2 + Math.SQRT1_2, 3 + Math.SQRT1_2 * Math.sqrt(0.75)],
+};
+const close3 = (a, b) => a.every((v, k) => Math.abs(v - b[k]) < 1e-9);
+
+test('no angles, no grid: the saved camera is used as it stands', () => {
+  assert.equal(orbitViews(CAMERA, {}), null);
+  assert.equal(orbitViews(CAMERA, { yaw: null, elevation: null }), null);
+});
+
+test('at its own yaw and elevation the orbit puts the camera back where it was', () => {
+  const [v] = orbitViews(CAMERA, { yaw: [30], elevation: [45] });
+  assert.ok(close3(v.camera, CAMERA.position), `camera at ${v.camera}`);
+});
+
+test('every view is at the saved distance from the saved target', () => {
+  const views = orbitViews(CAMERA, { yaw: [0, 20, 70, -40], elevation: [0, 15, 75] });
+  assert.equal(views.length, 12);
+  for (const v of views) {
+    const r = Math.hypot(...v.camera.map((c, k) => c - CAMERA.target[k]));
+    assert.ok(Math.abs(r - 1) < 1e-9, `yaw ${v.yaw} elevation ${v.elevation}: ${r} m from the target`);
+  }
+});
+
+test('yaw 0 looks along -z, 90 along -x; elevation raises the camera', () => {
+  const at = (yaw, elevation) => orbitViews(CAMERA, { yaw: [yaw], elevation: [elevation] })[0].camera;
+  assert.ok(close3(at(0, 0), [1, 2, 4]), `${at(0, 0)}`);
+  assert.ok(close3(at(90, 0), [2, 2, 3]), `${at(90, 0)}`);
+  assert.ok(close3(at(0, 30), [1, 2.5, 3 + Math.sqrt(0.75)]), `${at(0, 30)}`);
+});
+
+test('one list alone sweeps that axis through the saved view', () => {
+  const views = orbitViews(CAMERA, { elevation: [0, 45, 60] });
+  assert.deepEqual(views.map((v) => [v.yaw, v.elevation]), [[30, 0], [30, 45], [30, 60]]);
+  assert.ok(close3(views[1].camera, CAMERA.position));
+  const yaws = orbitViews(CAMERA, { yaw: [0, 30] });
+  assert.deepEqual(yaws.map((v) => [v.yaw, v.elevation]), [[0, 45], [30, 45]]);
+});
+
+test('views come elevation by elevation, each across the yaws', () => {
+  const views = orbitViews(CAMERA, { yaw: [0, 20], elevation: [5, 15] });
+  assert.deepEqual(views.map((v) => [v.elevation, v.yaw]), [[5, 0], [5, 20], [15, 0], [15, 20]]);
+});
+
+test('the truth pair\'s shared length is carried in the row', () => {
+  const segments = [seg(10, 100, 100, 200, 100), seg(11, 50, 110, 250, 110)];
+  const row = gapRow({ truth: TRUTH, segments, explained: segments, matches: [hit(10, 1), hit(11, 2)] },
+    { gapMm: 8 }, PARTS);
+  assert.equal(row.overlapPx, 100);
+});
 
 test('identical inputs report no change', () => {
   assert.deepEqual(changedInputs({ 'gap-5mm.png': FILES }, { 'gap-5mm.png': { ...FILES } }), []);

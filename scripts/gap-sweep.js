@@ -20,7 +20,14 @@
  *
  * ONE INPUT CHANGES. Only the moving part's position does, along --axis; the
  * camera is the scene's saved camera and the lighting is the scene's own, for
- * every step. Placements are absolute, so each step is an independent render
+ * every step.
+ *
+ * ...OR TWO. With --yaw and --elevation the sweep is repeated from each of a
+ * grid of viewpoints, the saved camera orbited about its own target at its own
+ * distance. That is where "poor depth along the viewing axis" shows: a camera
+ * sees displacement across its line of sight and almost none along it, so the
+ * same gap is fewer pixels from some views than from others, and the same
+ * pixel error is more millimetres. The lights do not move with the camera. Placements are absolute, so each step is an independent render
  * and nothing carries from one to the next -- it looks like an approach and is
  * not a trajectory.
  *
@@ -33,7 +40,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { resolveScene } = require('../src/generate/driver');
-const { gapRow, pxPerMm, changedInputs } = require('../src/lab/gapsweep');
+const { gapRow, pxPerMm, changedInputs, orbitViews } = require('../src/lab/gapsweep');
 
 const ROOT = path.join(__dirname, '..');
 const DEFAULT_SCRIPT = 'pipelines/explained.lab';
@@ -49,6 +56,12 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
   --target <name>    the part it closes on                (default Table)
   --axis <x,y,z>     the direction that OPENS the gap     (default 0,1,0)
   --gaps <mm,...>    the steps, in millimetres            (default 50,20,10,5,2,1,0.5,0)
+  --yaw <deg,...>    viewpoints: yaw about the saved camera's target, 0 looking
+                     along -z                             (default: the saved camera's)
+  --elevation <deg,...>  and elevation above the horizontal  (default: the saved camera's)
+                     Every yaw is taken with every elevation, at the saved
+                     camera's distance. With neither, there is one view: the
+                     saved camera, exactly
   --size <px>        render size                          (default 512)
   --samples <n>      path-tracing samples per image       (default 96)
   --tone-mapping <k> linear | aces                        (default linear)
@@ -88,6 +101,7 @@ function parseArgs(argv) {
     name: null, scene: 'saved:gap-1', moving: 'Cube', target: 'Table', axis: [0, 1, 0],
     gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], size: 512, samples: 96, skipRender: false, overwrite: false,
     script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
+    yaw: null, elevation: null,
     dryRun: false,
   };
   const list = (s, what) => {
@@ -114,6 +128,12 @@ function parseArgs(argv) {
         if (opts.gaps.some((g) => g < 0)) throw new Error('--gaps cannot be negative: that is interpenetration');
         break;
       }
+      case '--yaw': opts.yaw = list(argv[++i], '--yaw'); break;
+      case '--elevation': {
+        opts.elevation = list(argv[++i], '--elevation');
+        if (opts.elevation.some((e) => e <= -90 || e >= 90)) throw new Error('--elevation must be between -90 and 90');
+        break;
+      }
       case '--size': opts.size = list(argv[++i], '--size')[0]; break;
       case '--samples': opts.samples = list(argv[++i], '--samples')[0]; break;
       case '--skip-render': opts.skipRender = true; break;
@@ -129,10 +149,18 @@ function parseArgs(argv) {
   return opts;
 }
 
-/** "gap-0p5mm.png": a gap's name, sortable by eye and safe as a file name. */
-const shotName = (mm) => `gap-${String(mm).replace('.', 'p')}mm.png`;
+/**
+ * "gap-0p5mm.png": a gap's name, sortable by eye and safe as a file name. On a
+ * grid of views it is prefixed with the view, "y20-e15-gap-0p5mm.png"; a
+ * negative angle is written m, "em5".
+ */
+const angleName = (deg) => String(deg).replace('-', 'm').replace('.', 'p');
+const shotName = (mm, view) => `${view ? `y${angleName(view.yaw)}-e${angleName(view.elevation)}-` : ''}gap-${String(mm).replace('.', 'p')}mm.png`;
 
-/** One shot per gap; only the moving part's position differs between them. */
+/**
+ * One shot per gap, per view; within a view only the moving part's position
+ * differs between them.
+ */
 function gapShots(opts) {
   const scene = resolveScene(opts.scene);
   if (!scene?.sceneData) throw new Error(`${opts.scene} is not a saved scene`);
@@ -144,16 +172,20 @@ function gapShots(opts) {
   }
   if (!data.camera) throw new Error(`${opts.scene} has no saved camera to hold fixed`);
   const contact = moving.transform.position;
-  return opts.gaps.map((mm) => ({
-    name: shotName(mm),
+  const views = orbitViews(data.camera, opts) ?? [null];
+  return views.flatMap((view) => opts.gaps.map((mm) => ({
+    name: shotName(mm, view),
     gapMm: mm,
-    camera: data.camera.position,
+    // Absent on a sweep with no grid, so its shots.json is the one it always
+    // wrote and --skip-render still recognises renders made before grids.
+    ...(view ? { view: { yaw: view.yaw, elevation: view.elevation } } : {}),
+    camera: view ? view.camera : data.camera.position,
     target: data.camera.target,
     intensity: 1,
     transforms: {
       [opts.moving]: { position: contact.map((c, k) => c + opts.axis[k] * (mm / 1000)) },
     },
-  }));
+  })));
 }
 
 /** Run an Electron CLI the way it would be run by hand, output passed through. */
@@ -230,6 +262,49 @@ function checkPrevious(recordFile, inputs, script) {
 
 const fmt = (v, d = 2) => (v === null || v === undefined ? '' : Number(v).toFixed(d));
 
+/**
+ * The grid as pictures of itself: one small table per quantity, elevation
+ * down the side and yaw across the top. The CSV has every number; this is
+ * what shows a pattern, and it is written beside it as gap-grid.txt.
+ *
+ * A cell with no reading says why in one letter rather than standing empty,
+ * because "nothing was found" and "there was nothing to find" are different
+ * results: `.` the truth has no facing pair in that view, `-` it has one and
+ * nothing read it.
+ */
+function gridMaps(rows, opts) {
+  const yaws = [...new Set(rows.map((r) => r.yaw))];
+  const elevations = [...new Set(rows.map((r) => r.elevation))];
+  const cell = (elevation, yaw, gapMm) => rows.find((r) => r.elevation === elevation && r.yaw === yaw && r.gapMm === gapMm);
+  const table = (title, gapMm, value) => {
+    const lines = [title, `  elev \\ yaw ${yaws.map((y) => String(y).padStart(8)).join('')}`];
+    for (const e of elevations) {
+      lines.push(`  ${String(e).padStart(10)} ${yaws.map((y) => {
+        const r = cell(e, y, gapMm);
+        if (!r || r.trueGapPx === null) return '.'.padStart(8);
+        const v = value(r);
+        return (v === null || v === undefined ? '-' : v).padStart(8);
+      }).join('')}`);
+    }
+    return lines.join('\n');
+  };
+  const anyGap = opts.gaps.find((g) => g > 0);
+  const out = [];
+  if (anyGap !== undefined) {
+    out.push(table('pixels per millimetre of gap', anyGap, (r) => fmt(r.pxPerMm, 3)));
+    out.push(table('length the two edges share, px', anyGap, (r) => fmt(r.overlapPx, 0)));
+  }
+  for (const g of opts.gaps) {
+    if (!(g > 0)) continue;
+    out.push(table(`${g} mm: gap error as detected, mm`, g, (r) => (r.errorMm === null ? null : fmt(r.errorMm, 3))));
+    if (rows.some((r) => r.refit)) {
+      out.push(table(`${g} mm: gap error refit, mm (* found inside one segment)`, g,
+        (r) => (r.refit ? `${fmt(r.refit.errorMm, 3)}${r.refit.from === 'segment' ? '*' : ''}` : null)));
+    }
+  }
+  return out.join('\n\n');
+}
+
 function main() {
   let opts;
   try {
@@ -255,7 +330,8 @@ function main() {
 
   if (opts.dryRun) {
     for (const s of shots) {
-      console.log(`${s.name.padEnd(16)} ${opts.moving} at ${s.transforms[opts.moving].position.map((v) => v.toFixed(4)).join(', ')}`);
+      console.log(`${s.name.padEnd(s.view ? 28 : 16)} ${opts.moving} at ${s.transforms[opts.moving].position.map((v) => v.toFixed(4)).join(', ')}`
+        + (s.view ? `   camera at ${s.camera.map((v) => v.toFixed(4)).join(', ')}` : ''));
     }
     return;
   }
@@ -304,10 +380,26 @@ function main() {
   }
 
   const parts = { moving: opts.moving, target: opts.target };
-  const rows = shots.map((s) => gapRow(
-    slots(path.join(ROOT, res, s.name.replace(/\.png$/, '.features.json'))), s, parts));
-  const scale = pxPerMm(rows);
-  for (const r of rows) r.errorMm = scale && r.errorPx !== null ? r.errorPx / scale : null;
+  const rows = shots.map((s) => ({
+    ...(s.view ?? {}),
+    ...gapRow(slots(path.join(ROOT, res, s.name.replace(/\.png$/, '.features.json'))), s, parts),
+  }));
+  /*
+   * Pixels per millimetre is a property of the VIEW: the same gap is fewer
+   * pixels the more nearly the camera looks along it. So it is taken per view,
+   * and an error in millimetres is that view's error.
+   */
+  const gridded = shots.some((s) => s.view);
+  const viewKey = (r) => (gridded ? `${r.yaw},${r.elevation}` : '');
+  const scales = new Map();
+  for (const key of new Set(rows.map(viewKey))) scales.set(key, pxPerMm(rows.filter((r) => viewKey(r) === key)));
+  for (const r of rows) {
+    const s = scales.get(viewKey(r));
+    r.pxPerMm = s;
+    r.errorMm = s && r.errorPx !== null ? r.errorPx / s : null;
+    if (r.refit) r.refit.errorMm = s ? r.refit.errorPx / s : null;
+  }
+  const scale = gridded ? null : scales.get('');
 
   const inputs = inputHashes(gen, shots);
   const recordFile = path.join(ROOT, res, 'gap-sweep.json');
@@ -323,7 +415,8 @@ function main() {
   const toneMapping = firstTruth.toneMapping ?? { kind: 'aces', exposure: 1, assumed: true };
   const record = {
     scene: opts.scene, ...parts, axis: opts.axis, size: opts.size, samples: opts.samples, toneMapping,
-    camera: shots[0].camera, look: shots[0].target, pxPerMm: scale,
+    camera: gridded ? null : shots[0].camera, look: shots[0].target, pxPerMm: scale,
+    ...(gridded ? { views: { yaw: opts.yaw, elevation: opts.elevation } } : {}),
     analysedAt: new Date().toISOString(), script, inputs, rows,
   };
   fs.writeFileSync(recordFile, JSON.stringify(record, null, 2));
@@ -333,17 +426,19 @@ function main() {
   // default pipeline's table is the table it always was.
   const refitted = shots.some((s) => slots(path.join(ROOT, res, s.name.replace(/\.png$/, '.features.json'))).pairs);
   const refitHead = refitted
-    ? ['refitGapPx', 'refitErrorPx', `refit${opts.moving}OffsetPx`, `refit${opts.target}OffsetPx`, 'gapSigma', 'stripLevel', 'refitFrom']
+    ? ['refitGapPx', 'refitErrorPx', 'refitErrorMm', `refit${opts.moving}OffsetPx`, `refit${opts.target}OffsetPx`, 'gapSigma', 'stripLevel', 'refitFrom']
     : [];
   const refitCells = (r) => (refitted
-    ? [fmt(r.refit?.gapPx, 3), fmt(r.refit?.errorPx, 3), fmt(r.refit?.movingOffsetPx, 3),
+    ? [fmt(r.refit?.gapPx, 3), fmt(r.refit?.errorPx, 3), fmt(r.refit?.errorMm, 3), fmt(r.refit?.movingOffsetPx, 3),
       fmt(r.refit?.targetOffsetPx, 3), fmt(r.refit?.gapSigma, 3), fmt(r.refit?.stripLevel, 3), r.refit?.from ?? '']
     : []);
-  const head = ['gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm',
+  const viewHead = gridded ? ['yaw', 'elevation', 'pxPerMm', 'overlapPx'] : [];
+  const viewCells = (r) => (gridded ? [r.yaw, r.elevation, fmt(r.pxPerMm, 3), fmt(r.overlapPx, 1)] : []);
+  const head = [...viewHead, 'gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm',
     `${opts.moving}OffsetPx`, `${opts.target}OffsetPx`, ...refitHead, 'pairFound', 'spansBoth',
     `${opts.moving}Found`, `${opts.target}Found`, ...causes.map((c) => `inGap_${c}`), 'reason'];
   const body = rows.map((r) => [
-    r.gapMm, fmt(r.trueGapPx, 3), fmt(r.measuredGapPx, 3), fmt(r.errorPx, 3), fmt(r.errorMm, 3),
+    ...viewCells(r), r.gapMm, fmt(r.trueGapPx, 3), fmt(r.measuredGapPx, 3), fmt(r.errorPx, 3), fmt(r.errorMm, 3),
     fmt(r.movingOffsetPx, 3), fmt(r.targetOffsetPx, 3), ...refitCells(r), r.pairFound, r.spansBoth, `${r.moving.found}/${r.moving.findable}`, `${r.target.found}/${r.target.findable}`,
     ...causes.map((c) => r.causes[c] ?? 0),
     // Unquoted, so the padding below stays valid CSV: a quote must open its
@@ -365,9 +460,14 @@ function main() {
   console.log(`\n${opts.scene}: ${opts.moving} closing on ${opts.target}, ${opts.size}px, `
     + `${opts.samples} samples, ${toneMapping.kind} tone mapping at exposure ${toneMapping.exposure}`
     + `${toneMapping.assumed ? ' (assumed: the renders predate recording it)' : ''}, `
-    + `${fmt(scale, 3)} px per mm of gap`);
+    + (gridded ? `${scales.size} views` : `${fmt(scale, 3)} px per mm of gap`));
   console.log(csv.join('\n'));
-  console.log(`\n${res}/gap-sweep.csv, gap-sweep.json, overlays/`);
+  if (gridded) {
+    const maps = gridMaps(rows, opts);
+    fs.writeFileSync(path.join(ROOT, res, 'gap-grid.txt'), `${maps}\n`);
+    console.log(`\n${maps}`);
+  }
+  console.log(`\n${res}/gap-sweep.csv, gap-sweep.json, ${gridded ? 'gap-grid.txt, ' : ''}overlays/`);
 }
 
 try {
