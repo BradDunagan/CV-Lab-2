@@ -815,18 +815,49 @@ offsets positive toward the cube):
 | 2 mm | +1.21 / +1.08 / −0.12 | +1.18 / +1.14 / −0.04 |
 
 **The table edge is fixed outright.** The gap bias at 20–50 mm is not: what is
-left is the cube's edge, and it is a second effect, still open. In the linear
-render, the cube's steps are displaced **toward their darker side**, and by
-more the stronger the contrast. Edges with a bright face inside and a dark
-background outside moved +0.13 to +0.26 px outward. Edges dark inside and
-slightly brighter outside moved −0.13 to +0.02 px. The 50 mm profile is a
-clean step with flat plateaus (0.171 | 0.360), centred 0.25 px toward the
-table: no shading ramp beside it. A cube rendered slightly large would push
-every edge outward; these follow brightness instead. A mixed pixel coming out
-brighter than its true midpoint would do this, and nothing identified so far
-does that. The table edge, at a stronger contrast (0.19 | 0.59), shows none
-of it, and `cube1` linearised showed at most 0.03 px RMS. So it is specific to
-something in this scene or these edges.
+left is the cube's edge, and it is a second effect, still open. The 50 mm
+profile is a clean step with flat plateaus (0.171 | 0.360), centred 0.25 px
+toward the table, with no shading ramp beside it. A second, independent linear
+render repeated it to within 0.06 px, so it is a bias, not render noise.
+
+It was first described as **"toward the darker side"**: the cube's edges with
+a bright face inside moved +0.13 to +0.26 px outward, and those dark inside
+moved −0.13 to +0.02 px. **That rule was tested, and it does not hold.** Each
+scene below changes one thing from `gap-1-front`. The cube edge's offset is
+positive toward the cube, and brightness is shown as gap side | cube face:
+
+| scene (one change) | 50 mm | 20 mm |
+|---|---|---|
+| `gap-1-front`, red, glossy | −0.23 (0.17 \| 0.37) | −0.23 (0.08 \| 0.32) |
+| `-low`: light 20 cm lower | −0.11 (0.14 \| 0.47) | −0.18 (0.06 \| 0.42) |
+| `-dark`: cube #1a1a1a, still glossy | not found | **+0.20** (0.07 \| 0.14) |
+| `-dark-matte`: same, shininess 0 | **−0.005** (0.17 \| 0.05) | too faint |
+
+Lowering the light was meant to make the gap side the brighter one. It
+darkened the gap instead, and the offset stayed. The dark glossy cube kept a
+face brighter than the gap, because its gloss reflects the front light, yet
+its offset **flipped sign**. The matte dark cube finally reversed the
+contrast, with the gap side three times brighter than the face. The rule
+predicts about +0.2 px there; the edge sat on its truth, at −0.005 px detected
+and −0.021 in the render's own step.
+
+What the runs support:
+
+- **The offset belongs to the cube's appearance,** not to the lighting or the
+  table. The table edge stayed within ±0.02 px through all four scenes.
+- **A glossy face is the common factor** in every offset measured. In the one
+  well-conditioned matte case, there is none.
+- **It is one data point.** At 20 mm and below, the matte dark cube's edge is
+  too faint against the gap to locate reliably, and the dark glossy cube's 10
+  and 5 mm values are poorly conditioned too.
+
+The test that would separate gloss from colour is a **matte red cube**, the
+original brightness relationship without the gloss. It has not been run.
+
+**And one fact argues against gloss.** `cube1` linearised showed at most
+0.03 px RMS, and its cube is the same red at the same shininess, 0.6, in a
+different scene and lighting. If gloss causes the offset, something about
+this scene's front light makes the gloss matter. That is not yet reconciled.
 
 A caution on method. Before the linear render existed, this was estimated by
 inverting ACES on the existing renders, which suggested the cube edge would
