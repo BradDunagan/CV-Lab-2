@@ -436,8 +436,18 @@ function refitReading(pairs, pair, da, db, opts) {
       const r = reading(record, ea, eb, 'pair');
       if (r) return r;
     }
-    // No pair of the two: fall through. A 7 px fragment matched to one truth
-    // edge does not stop the other detection from holding both.
+    /*
+     * No pair of the two. If both detections reach the measuring point, that
+     * is the end of it: they ARE the two edges, fitPairs declined them (too
+     * far apart, usually), and a strip found inside one of them is some other
+     * strip. A sideways sweep found this at its widest step: 6.5 px apart,
+     * over maxGap, and the reading taken was a 2 px shadow strip inside the
+     * lower edge's segment, 4 px wrong.
+     *
+     * If one of them stops short, fall through. A 7 px fragment matched to one
+     * truth edge does not stop the other detection from holding both.
+     */
+    if (da.outside <= opts.reach && db.outside <= opts.reach) return null;
   }
 
   const holders = new Set([da, db].filter(Boolean).map((d) => d.seg.id));
