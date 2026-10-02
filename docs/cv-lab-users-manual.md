@@ -1368,6 +1368,14 @@ the moving part's position in the scene file is contact. `--skip-render`
 reruns the lab and the analysis over renders already made, and refuses if they
 were made from different shots.
 
+**Renders are made with linear tone mapping by default** (`--tone-mapping
+linear --exposure 0.5`), unlike `npm run generate`, whose default is ACES.
+Under pt-lab's ACES curve, an edge pixel is not the midpoint of its two sides,
+and edges land up to ~0.2 px off the geometry, which shows up directly as gap
+bias. `gap-sweep.json` records the tone mapping read from the renders
+themselves. Renders from before 2026-10-01 carry none, and are recorded as
+ACES at exposure 1, marked `assumed`.
+
 **A run name is rendered once.** Rendering into a name that already holds a
 sweep is refused unless you pass `--overwrite`. Path tracing is not
 byte-reproducible, so a second render replaces the images the first run's
