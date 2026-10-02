@@ -247,8 +247,8 @@ function causesInGap(explained, pair, opts) {
  * @param {object[]} input.segments   edge-segment records (F)
  * @param {object[]} input.explained  F after explain (EF): same ids, with `cause`
  * @param {object[]} input.matches    edge-match records for F (MF)
- * @param {object[]} [input.pairs]    edge-pair records for F (P), if the
- *                                    pipeline ran fitPairs
+ * @param {object[]} [input.pairs]    edge-pair records for F, if the pipeline
+ *                                    ran fitPairs or findPairs
  * @param {object} shot  { gapMm }
  * @param {object} parts { moving, target } -- object names, as the truth has them
  */
@@ -280,6 +280,10 @@ function gapRow({ truth, segments, explained, matches, pairs }, shot, { moving, 
 
   const da = detectionAt(pair.a.id, pair.facing.at, matches, segments);
   const db = detectionAt(pair.b.id, pair.facing.at, matches, segments);
+  // Before the detections' own reading and whatever stops it: a refit can
+  // exist where that reading does not, which is the case findPairs is for.
+  row.refit = refitReading(pairs ?? [], pair, da, db, opts);
+
   if (!da) return { ...row, reason: `no detection matched ${moving}'s edge` };
   if (!db) return { ...row, reason: `no detection matched ${target}'s edge` };
   if (da.seg.id === db.seg.id) return { ...row, reason: 'one detection matched both edges' };
@@ -299,38 +303,78 @@ function gapRow({ truth, segments, explained, matches, pairs }, shot, { moving, 
   row.errorPx = read.gap - row.trueGapPx;
   row.movingOffsetPx = read.movingOffset;
   row.targetOffsetPx = read.targetOffset;
-
-  /*
-   * The same two edges as `fitPairs` placed them, if the pipeline ran it and
-   * it took these two as a pair. Measured exactly as the detections are, at
-   * the same point, so the two readings differ only in where the edges were
-   * put. Beside the detections' reading rather than instead of it: the
-   * difference between them is the thing being measured.
-   */
-  const refit = (pairs ?? []).find((p) => p.type === 'edge-pair'
-    && ((p.a.segment === da.seg.id && p.b.segment === db.seg.id)
-      || (p.a.segment === db.seg.id && p.b.segment === da.seg.id)));
-  if (refit) {
-    const [ea, eb] = refit.a.segment === da.seg.id ? [refit.a, refit.b] : [refit.b, refit.a];
-    const la = line(ea), lb = line(eb);
-    const along = (l) => dot(sub(pair.facing.at, l.p0), l.u);
-    const outside = (l) => Math.max(0, -along(l), along(l) - l.len);
-    const r = la && lb && Math.max(outside(la), outside(lb)) <= opts.reach
-      ? measureAt(la, lb, pair.facing) : null;
-    if (r) {
-      row.refit = {
-        pair: refit.id,
-        gapPx: r.gap,
-        errorPx: r.gap - row.trueGapPx,
-        movingOffsetPx: r.movingOffset,
-        targetOffsetPx: r.targetOffset,
-        gapSigma: refit.gapSigma,
-        strip: refit.strip,
-        stripLevel: refit.levels[1],
-      };
-    }
-  }
   return row;
+}
+
+/**
+ * The gap as an `edge-pair` record has it, read exactly as the detections
+ * are: at the same point, split by edge the same way. Beside the detections'
+ * reading rather than instead of it -- where both exist, the difference
+ * between them is the blur's displacement, which is the thing being measured.
+ *
+ * Two kinds of record can speak for a truth pair:
+ *
+ *   - `fitPairs` placed the two detected segments again. Joined by their ids,
+ *     which also says which edge is the moving part's. `from: 'pair'`.
+ *   - `findPairs` found both edges inside ONE detected segment -- the only
+ *     detection there is of either truth edge, or one that matched both. The
+ *     record's two edges name that segment, so ids cannot say which is which;
+ *     position does. The one further toward the moving part is the moving
+ *     part's. `from: 'segment'`.
+ *
+ * Neither is extrapolated: a record whose stretch stops more than `reach`
+ * short of the measuring point is not a reading of the gap there.
+ */
+function refitReading(pairs, pair, da, db, opts) {
+  const T = pair.facing;
+  const records = pairs.filter((p) => p.type === 'edge-pair');
+  const reaches = (l) => {
+    const along = dot(sub(T.at, l.p0), l.u);
+    return Math.max(0, -along, along - l.len) <= opts.reach;
+  };
+  const reading = (record, movingEdge, targetEdge, from) => {
+    const la = line(movingEdge), lb = line(targetEdge);
+    if (!la || !lb || !reaches(la) || !reaches(lb)) return null;
+    const r = measureAt(la, lb, T);
+    if (!r) return null;
+    return {
+      pair: record.id,
+      from,
+      gapPx: r.gap,
+      errorPx: r.gap - T.gap,
+      movingOffsetPx: r.movingOffset,
+      targetOffsetPx: r.targetOffset,
+      gapSigma: record.gapSigma,
+      strip: record.strip,
+      stripLevel: record.levels[1],
+    };
+  };
+
+  if (da && db && da.seg.id !== db.seg.id) {
+    const record = records.find((p) => (p.a.segment === da.seg.id && p.b.segment === db.seg.id)
+      || (p.a.segment === db.seg.id && p.b.segment === da.seg.id));
+    if (record) {
+      const [ea, eb] = record.a.segment === da.seg.id ? [record.a, record.b] : [record.b, record.a];
+      const r = reading(record, ea, eb, 'pair');
+      if (r) return r;
+    }
+    // No pair of the two: fall through. A 7 px fragment matched to one truth
+    // edge does not stop the other detection from holding both.
+  }
+
+  const holders = new Set([da, db].filter(Boolean).map((d) => d.seg.id));
+  for (const record of records) {
+    if (record.a.segment !== record.b.segment || !holders.has(record.a.segment)) continue;
+    const la = line(record.a), lb = line(record.b);
+    if (!la || !lb) continue;
+    const ha = crossing(la, T.at, T.normal), hb = crossing(lb, T.at, T.normal);
+    if (ha === null || hb === null) continue;
+    const r = ha >= hb
+      ? reading(record, record.a, record.b, 'segment')
+      : reading(record, record.b, record.a, 'segment');
+    if (r) return r;
+  }
+  return null;
 }
 
 /**

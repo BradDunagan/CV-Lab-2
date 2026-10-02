@@ -118,6 +118,7 @@ test('a refit pair is read beside the detections, at the same point, and split t
   assert.ok(Math.abs(row.refit.movingOffsetPx + 0.1) < 1e-9, `cube ${row.refit.movingOffsetPx}`);
   assert.ok(Math.abs(row.refit.targetOffsetPx) < 1e-9, `table ${row.refit.targetOffsetPx}`);
   assert.equal(row.refit.pair, 1);
+  assert.equal(row.refit.from, 'pair');
   assert.equal(row.refit.gapSigma, 0.02);
   assert.equal(row.refit.stripLevel, 0.12);
 });
@@ -141,6 +142,58 @@ test('a pair about other segments, or one that stops short of the measuring poin
   // And with no pairs at all the row says so the same way.
   assert.equal(gapRow(input(undefined), { gapMm: 8 }, PARTS).refit, null);
   assert.equal(gapRow(input(null), { gapMm: 8 }, PARTS).refit, null);
+});
+
+test('a pair found inside ONE detection is read where the detections give no gap at all', () => {
+  // Only the table's edge is detected, as at 1 mm. findPairs found a second
+  // edge 1.2 px above it, on the cube's side.
+  const segments = [seg(11, 50, 110, 250, 110)];
+  const pairs = [pairRecord(1, [11, 102, 108.8, 198, 108.8], [11, 102, 110, 198, 110])];
+  const near = [gt(1, ['Cube'], 100, 108.5, 200, 108.5), TRUTH[1]];
+  const row = gapRow({ truth: near, segments, explained: segments, matches: [miss(1), hit(11, 2)], pairs },
+    { gapMm: 1 }, PARTS);
+  assert.equal(row.pairFound, false);
+  assert.match(row.reason, /no detection matched Cube/);
+  assert.equal(row.measuredGapPx, null);
+  assert.equal(row.refit.from, 'segment');
+  assert.ok(Math.abs(row.refit.gapPx - 1.2) < 1e-9, `refit gap ${row.refit.gapPx}`);
+  assert.ok(Math.abs(row.refit.errorPx + 0.3) < 1e-9, `refit error ${row.refit.errorPx}`);
+  assert.ok(Math.abs(row.refit.movingOffsetPx + 0.3) < 1e-9, `cube ${row.refit.movingOffsetPx}`);
+  assert.ok(Math.abs(row.refit.targetOffsetPx) < 1e-9, `table ${row.refit.targetOffsetPx}`);
+});
+
+test('which of a hidden pair\'s edges is the moving part\'s is decided by where they are', () => {
+  // Both name segment 11, so ids say nothing; a and b the other way round.
+  const segments = [seg(11, 50, 110, 250, 110)];
+  const pairs = [pairRecord(1, [11, 102, 110, 198, 110], [11, 102, 108.8, 198, 108.8])];
+  const near = [gt(1, ['Cube'], 100, 108.5, 200, 108.5), TRUTH[1]];
+  const row = gapRow({ truth: near, segments, explained: segments, matches: [miss(1), hit(11, 2)], pairs },
+    { gapMm: 1 }, PARTS);
+  assert.ok(Math.abs(row.refit.gapPx - 1.2) < 1e-9, `refit gap ${row.refit.gapPx}`);
+  assert.ok(Math.abs(row.refit.movingOffsetPx + 0.3) < 1e-9, `cube ${row.refit.movingOffsetPx}`);
+});
+
+test('a fragment matched to the other edge does not hide the pair inside the long detection', () => {
+  // The cube's edge got a 7 px fragment of its own, well away from the
+  // measuring point; the table's detection still holds both edges there.
+  const segments = [seg(19, 101, 108.6, 108, 108.6), seg(11, 50, 110, 250, 110)];
+  const pairs = [pairRecord(1, [11, 102, 108.8, 198, 108.8], [11, 102, 110, 198, 110])];
+  const near = [gt(1, ['Cube'], 100, 108.5, 200, 108.5), TRUTH[1]];
+  const row = gapRow({ truth: near, segments, explained: segments, matches: [hit(19, 1), hit(11, 2)], pairs },
+    { gapMm: 1 }, PARTS);
+  assert.equal(row.pairFound, false);
+  assert.equal(row.refit.from, 'segment');
+  assert.ok(Math.abs(row.refit.gapPx - 1.2) < 1e-9, `refit gap ${row.refit.gapPx}`);
+});
+
+test('a hidden pair in some other segment, or away from the measuring point, is not a reading', () => {
+  const segments = [seg(11, 50, 110, 250, 110), seg(12, 50, 140, 250, 140)];
+  const near = [gt(1, ['Cube'], 100, 108.5, 200, 108.5), TRUTH[1]];
+  const input = (pairs) => ({ truth: near, segments, explained: segments, matches: [miss(1), hit(11, 2)], pairs });
+  const elsewhere = [pairRecord(1, [12, 102, 138.8, 198, 138.8], [12, 102, 140, 198, 140])];
+  assert.equal(gapRow(input(elsewhere), { gapMm: 1 }, PARTS).refit, null);
+  const short = [pairRecord(1, [11, 60, 108.8, 120, 108.8], [11, 60, 110, 120, 110])];
+  assert.equal(gapRow(input(short), { gapMm: 1 }, PARTS).refit, null);
 });
 
 test('no pair, no per-edge offsets', () => {

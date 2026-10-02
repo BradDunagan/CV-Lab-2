@@ -23,6 +23,9 @@ C  = corners(F)
 
 // G, not B: the fit is of the image nothing has been done to.
 P  = fitPairs(F, G)
+// And the pairs the detector reported as ONE segment, below about a pixel and
+// a half apart: P places two edges that were found, H finds the second.
+H  = findPairs(F, G)
 
 EF = explain(F, D, NM, AL, T)
 EC = explain(C, D, NM, AL, T)

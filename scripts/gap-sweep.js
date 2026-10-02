@@ -57,9 +57,11 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
                      It must bind T, F, EF and MF as explained.lab does. Any
                      other script writes to results/<run>/<script name>/, so a
                      variant never overwrites the default's results. One that
-                     also binds P = fitPairs(F, G), as pipelines/pairs.lab does,
-                     adds the refit columns: the same gap with the two edges
-                     placed jointly against the unblurred image
+                     also binds P = fitPairs(F, G) or H = findPairs(F, G), as
+                     pipelines/pairs.lab does both, adds the refit columns:
+                     the same gap with the two edges placed jointly against
+                     the unblurred image, whether the detector found both or
+                     one
   --skip-render      reuse generated/<run>/, re-run the lab and the analysis
   --overwrite        render into generated/<run>/ even though it holds a sweep
   --dry-run          print the shots and stop
@@ -168,9 +170,11 @@ function slots(file) {
   for (const s of ['T', 'F', 'EF', 'MF']) {
     if (!by[s]) throw new Error(`${file} has no ${s} slot -- does the --script bind it as pipelines/explained.lab does?`);
   }
-  // P is optional: a script that runs fitPairs binds it, and the rows then
-  // carry that reading beside the detections' own.
-  return { truth: by.T, segments: by.F, explained: by.EF, matches: by.MF, pairs: by.P ?? null };
+  // P and H are optional: a script that runs fitPairs binds P, one that runs
+  // findPairs binds H, and the rows then carry that reading beside the
+  // detections' own. Both hold edge-pair records and are read as one list.
+  const pairs = by.P || by.H ? [...(by.P ?? []), ...(by.H ?? [])] : null;
+  return { truth: by.T, segments: by.F, explained: by.EF, matches: by.MF, pairs };
 }
 
 /**
@@ -325,15 +329,15 @@ function main() {
   fs.writeFileSync(recordFile, JSON.stringify(record, null, 2));
 
   const causes = [...new Set(rows.flatMap((r) => Object.keys(r.causes)))].sort();
-  // The refit columns exist only when the script ran fitPairs, so the
+  // The refit columns exist only when the script ran fitPairs or findPairs, so the
   // default pipeline's table is the table it always was.
   const refitted = shots.some((s) => slots(path.join(ROOT, res, s.name.replace(/\.png$/, '.features.json'))).pairs);
   const refitHead = refitted
-    ? ['refitGapPx', 'refitErrorPx', `refit${opts.moving}OffsetPx`, `refit${opts.target}OffsetPx`, 'gapSigma', 'stripLevel']
+    ? ['refitGapPx', 'refitErrorPx', `refit${opts.moving}OffsetPx`, `refit${opts.target}OffsetPx`, 'gapSigma', 'stripLevel', 'refitFrom']
     : [];
   const refitCells = (r) => (refitted
     ? [fmt(r.refit?.gapPx, 3), fmt(r.refit?.errorPx, 3), fmt(r.refit?.movingOffsetPx, 3),
-      fmt(r.refit?.targetOffsetPx, 3), fmt(r.refit?.gapSigma, 3), fmt(r.refit?.stripLevel, 3)]
+      fmt(r.refit?.targetOffsetPx, 3), fmt(r.refit?.gapSigma, 3), fmt(r.refit?.stripLevel, 3), r.refit?.from ?? '']
     : []);
   const head = ['gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm',
     `${opts.moving}OffsetPx`, `${opts.target}OffsetPx`, ...refitHead, 'pairFound', 'spansBoth',
