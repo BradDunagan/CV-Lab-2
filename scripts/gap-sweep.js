@@ -51,6 +51,8 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
   --gaps <mm,...>    the steps, in millimetres            (default 50,20,10,5,2,1,0.5,0)
   --size <px>        render size                          (default 512)
   --samples <n>      path-tracing samples per image       (default 96)
+  --tone-mapping <k> linear | aces                        (default linear)
+  --exposure <x>     radiance multiplier before tone mapping (default 0.5)
   --script <file>    the pipeline to run         (default pipelines/explained.lab)
                      It must bind T, F, EF and MF as explained.lab does. Any
                      other script writes to results/<run>/<script name>/, so a
@@ -58,6 +60,13 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
   --skip-render      reuse generated/<run>/, re-run the lab and the analysis
   --overwrite        render into generated/<run>/ even though it holds a sweep
   --dry-run          print the shots and stop
+
+Renders are made with LINEAR tone mapping by default, unlike npm run generate.
+Under pt-lab's ACES Filmic curve an edge pixel is not the midpoint of its two
+sides, and edges land up to ~0.2 px off the geometry -- which is a bias in a
+gap. The exposure of 0.5 keeps the brightest measured surface of the gap
+scenes (about 1.2 in radiance) clear of clipping. The tone mapping each run
+was made with is read from its renders and recorded in gap-sweep.json.
 
 A run name is rendered ONCE. Rendering into a name that already holds a sweep
 is refused without --overwrite: path tracing is not byte-reproducible, so a
@@ -73,7 +82,7 @@ function parseArgs(argv) {
   const opts = {
     name: null, scene: 'saved:gap-1', moving: 'Cube', target: 'Table', axis: [0, 1, 0],
     gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], size: 512, samples: 96, skipRender: false, overwrite: false,
-    script: DEFAULT_SCRIPT,
+    script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
     dryRun: false,
   };
   const list = (s, what) => {
@@ -105,6 +114,8 @@ function parseArgs(argv) {
       case '--skip-render': opts.skipRender = true; break;
       case '--overwrite': opts.overwrite = true; break;
       case '--script': opts.script = argv[++i]; break;
+      case '--tone-mapping': opts.toneMapping = argv[++i]; break;
+      case '--exposure': opts.exposure = list(argv[++i], '--exposure')[0]; break;
       case '--dry-run': opts.dryRun = true; break;
       case '--help': case '-h': opts.help = true; break;
       default: throw new Error(`unknown option ${arg}`);
@@ -266,6 +277,7 @@ function main() {
     electron('scripts/generate-cli.js', [
       '--out', gen, '--scene', opts.scene, '--shots', shotsFile,
       '--size', String(opts.size), '--samples', String(opts.samples), '--truth', '--aovs',
+      '--tone-mapping', opts.toneMapping, '--exposure', String(opts.exposure),
     ]);
   }
 
@@ -295,8 +307,13 @@ function main() {
     sha256: crypto.createHash('sha256').update(fs.readFileSync(path.resolve(ROOT, opts.script))).digest('hex'),
   };
   checkPrevious(recordFile, inputs, script);
+  // From the renders, not from the options: a --skip-render reuses whatever
+  // they were made with. Renders from before 2026-10-01 carry nothing and
+  // were all ACES at exposure 1.
+  const firstTruth = JSON.parse(fs.readFileSync(path.join(ROOT, gen, shots[0].name.replace(/\.png$/, '.gt.json')), 'utf8'));
+  const toneMapping = firstTruth.toneMapping ?? { kind: 'aces', exposure: 1, assumed: true };
   const record = {
-    scene: opts.scene, ...parts, axis: opts.axis, size: opts.size, samples: opts.samples,
+    scene: opts.scene, ...parts, axis: opts.axis, size: opts.size, samples: opts.samples, toneMapping,
     camera: shots[0].camera, look: shots[0].target, pxPerMm: scale,
     analysedAt: new Date().toISOString(), script, inputs, rows,
   };
@@ -327,7 +344,9 @@ function main() {
   fs.writeFileSync(path.join(ROOT, res, 'gap-sweep.csv'), `${csv.join('\n')}\n`);
 
   console.log(`\n${opts.scene}: ${opts.moving} closing on ${opts.target}, ${opts.size}px, `
-    + `${opts.samples} samples, ${fmt(scale, 3)} px per mm of gap`);
+    + `${opts.samples} samples, ${toneMapping.kind} tone mapping at exposure ${toneMapping.exposure}`
+    + `${toneMapping.assumed ? ' (assumed: the renders predate recording it)' : ''}, `
+    + `${fmt(scale, 3)} px per mm of gap`);
   console.log(csv.join('\n'));
   console.log(`\n${res}/gap-sweep.csv, gap-sweep.json, overlays/`);
 }
