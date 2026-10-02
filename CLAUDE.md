@@ -74,7 +74,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — seventeen suites, ~468 tests
+npm test                # everything — seventeen suites, ~469 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -120,10 +120,18 @@ npm run smoke:package   # launch it and check it actually works
 ## Open questions
 
 In `design-lab-model.md` §11 — whether `load` should default to `as=linear`;
-whether higher-precision decoding is worth a native decoder; and whether
-pt-lab writes gamma-encoded or linear PNGs, which matters because
-every image in `assets/` declares nothing and the lab assumes sRGB by
-convention.
+whether higher-precision decoding is worth a native decoder.
+
+Whether pt-lab writes gamma-encoded or linear PNGs is answered: **neither.**
+Its beauty renders are ACES-tone-mapped, then sRGB-encoded, and the lab undoes
+only the sRGB. The curve moved edges up to ~0.2 px off the geometry, all of
+the table edge's share of the gap sweep's bias. `npm run generate --
+--tone-mapping linear` is for measurement, and `gap-sweep` defaults to it
+(`design-lab-model.md` §5). Still open from the same work:
+
+- the cube's edges, displaced toward their darker side by up to 0.25 px even
+  in linear renders;
+- undoing a real camera's response curve on load.
 
 The AOV passes are consumed now: `explain` says what put each detection in the
 picture, and **111 of 123 invented segments turned out to be shading** — the

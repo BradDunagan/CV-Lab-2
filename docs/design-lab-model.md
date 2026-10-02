@@ -765,6 +765,80 @@ segment misses on `cube` go from 84 to 79 and on `clutter` from 83 to 76. The
 helmet barely changes, because its matches are loose against a dense mesh,
 and that, not the convention, is its limit.
 
+#### A fourth: the renderer's tone curve moved the edges
+
+The question §11 used to ask, whether pt-lab writes gamma-encoded or linear
+PNGs, has an answer, and it is **neither**. The beauty image is tone-mapped
+with three.js's ACES Filmic curve and then sRGB-encoded. The lab undoes the
+sRGB and nothing else, so what it calls linear is ACES-curved light.
+
+That moves edges. The path tracer averages a pixel's samples in linear light
+**before** the curve. A pixel half-covered by each of two surfaces holds the
+midpoint of their radiances, but after an S-curve its value is not the
+midpoint of their *displayed* values. So the 50% crossing that any
+brightness-based detector finds slides off the geometry, toward whichever
+side the curve favours.
+
+It was found on 2026-10-01, after the pixel-convention fix, chasing the
+gap sweep's remaining 20–50 mm bias.
+
+- **Not the detector.** Measured straight across each edge in the render
+  itself (luminance sampled perpendicular to the truth line, averaged along
+  it, and the 50% crossing between the two plateaus found), the render's own
+  step sat where the detector put it, to within ~0.05 px. The detector was
+  faithfully finding a step that was in the wrong place.
+- **Not blur.** The offsets did not move with σ from 0.7 to 2.0.
+- **Not a scale or shift.** A fitted magnification error came out near
+  zero once tone mapping was undone.
+- **The curve.** With ACES inverted, the table's front edge moved from
+  +0.20 px to within ±0.02 of its truth at every gap. The RMS step offset over
+  clean edges fell from 0.080 to 0.030 px on `cube1` and from 0.111 to 0.061
+  on `clutter`.
+
+**The fix is in the generator, for measurement.** pt-lab gained
+`setToneMapping('aces' | 'linear', exposure)`, and `npm run generate` gained
+`--tone-mapping` and `--exposure`. Linear means radiance × exposure, clamped:
+no curve. The default stays ACES at exposure 1, so every existing render stays
+comparable. Each `.gt.json` now records the tone mapping it was made with.
+`gap-sweep` defaults to linear at exposure 0.5, which keeps the gap scenes'
+brightest measured surface (~1.2 in radiance) clear of clipping.
+
+A fresh front-lit sweep rendered linear, against the ACES one (σ = 1.4; per-edge
+offsets positive toward the cube):
+
+| gap | ACES: error / cube / table | linear: error / cube / table |
+|---|---|---|
+| 50 mm | −0.34 / −0.17 / +0.16 | −0.28 / −0.29 / −0.00 |
+| 20 mm | −0.38 / −0.23 / +0.15 | −0.22 / −0.21 / +0.01 |
+| 10 mm | −0.17 / +0.01 / +0.18 | −0.03 / −0.04 / −0.00 |
+| 5 mm | +0.01 / +0.21 / +0.20 | +0.10 / +0.12 / +0.01 |
+| 2 mm | +1.21 / +1.08 / −0.12 | +1.18 / +1.14 / −0.04 |
+
+**The table edge is fixed outright.** The gap bias at 20–50 mm is not: what is
+left is the cube's edge, and it is a second effect, still open. In the linear
+render, the cube's steps are displaced **toward their darker side**, and by
+more the stronger the contrast. Edges with a bright face inside and a dark
+background outside moved +0.13 to +0.26 px outward. Edges dark inside and
+slightly brighter outside moved −0.13 to +0.02 px. The 50 mm profile is a
+clean step with flat plateaus (0.171 | 0.360), centred 0.25 px toward the
+table: no shading ramp beside it. A cube rendered slightly large would push
+every edge outward; these follow brightness instead. A mixed pixel coming out
+brighter than its true midpoint would do this, and nothing identified so far
+does that. The table edge, at a stronger contrast (0.19 | 0.59), shows none
+of it, and `cube1` linearised showed at most 0.03 px RMS. So it is specific to
+something in this scene or these edges.
+
+A caution on method. Before the linear render existed, this was estimated by
+inverting ACES on the existing renders, which suggested the cube edge would
+fall to −0.08 px. It did not. Inverting ACES is unreliable on a saturated
+red: its green and blue sit near the curve's clamp at zero, and what clamped
+cannot be recovered. A direct render was the measurement; the inversion was
+an estimate.
+
+**Real cameras have the same problem,** a response curve applied after the
+sensor integrates light over each pixel. Undoing a measured response on load,
+with a `from=` that names a curve, is the general fix. It is not built.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
