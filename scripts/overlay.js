@@ -56,6 +56,7 @@ cv-lab-2 overlay
   green / red       detected segments:  matched to geometry / not
   blue rings        ground-truth corners that a detector is answerable for
   yellow / red dots detected corners:   matched / invented
+  cyan, thin        a close pair's two edges, as fitPairs placed them
 `.trim();
 
 /* ------------------------------------------------------------------ */
@@ -155,6 +156,7 @@ const COLOURS = {
    * verdict. Where `match` did run over the arcs, they take the same
    * matched/unmatched colours segments do. */
   arc: [255, 166, 87],
+  pair: [70, 230, 255],
 };
 
 function makeCanvas(src, scale, dim) {
@@ -350,6 +352,18 @@ for (const [, features] of slots) {
 }
 
 /*
+ * Pairs last among the lines, and thin: each is the same two edges as two of
+ * the segments above, placed again by fitPairs, so what is worth seeing is
+ * where the thin line sits inside or beside the thick one it came from.
+ */
+for (const [, features] of slots) {
+  for (const f of features) {
+    if (f.type !== 'edge-pair') continue;
+    for (const e of [f.a, f.b]) line(canvas, P(e.x0), P(e.y0), P(e.x1), P(e.y1), COLOURS.pair);
+  }
+}
+
+/*
  * Only the vertices a detector is answerable for. A smooth object's silhouette
  * is a polyline whose interior points are vertices of degree two running almost
  * straight through — geometrically vertices, visually not corners. This must
@@ -381,6 +395,7 @@ console.log(
   `  green / red        detected segments:  matched to geometry / not\n` +
   `  green / red        detected arcs:      matched to geometry / not\n` +
   `  orange             detected arcs:      no match record for them\n` +
+  `  cyan, thin         a close pair's two edges, as fitPairs placed them\n` +
   `  blue rings         ground-truth corners above ${opts.minAngle}°\n` +
   `  yellow / red dots  detected corners:   matched / invented`
 );

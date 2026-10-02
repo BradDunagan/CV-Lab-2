@@ -56,7 +56,10 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
   --script <file>    the pipeline to run         (default pipelines/explained.lab)
                      It must bind T, F, EF and MF as explained.lab does. Any
                      other script writes to results/<run>/<script name>/, so a
-                     variant never overwrites the default's results
+                     variant never overwrites the default's results. One that
+                     also binds P = fitPairs(F, G), as pipelines/pairs.lab does,
+                     adds the refit columns: the same gap with the two edges
+                     placed jointly against the unblurred image
   --skip-render      reuse generated/<run>/, re-run the lab and the analysis
   --overwrite        render into generated/<run>/ even though it holds a sweep
   --dry-run          print the shots and stop
@@ -165,7 +168,9 @@ function slots(file) {
   for (const s of ['T', 'F', 'EF', 'MF']) {
     if (!by[s]) throw new Error(`${file} has no ${s} slot -- does the --script bind it as pipelines/explained.lab does?`);
   }
-  return { truth: by.T, segments: by.F, explained: by.EF, matches: by.MF };
+  // P is optional: a script that runs fitPairs binds it, and the rows then
+  // carry that reading beside the detections' own.
+  return { truth: by.T, segments: by.F, explained: by.EF, matches: by.MF, pairs: by.P ?? null };
 }
 
 /**
@@ -320,12 +325,22 @@ function main() {
   fs.writeFileSync(recordFile, JSON.stringify(record, null, 2));
 
   const causes = [...new Set(rows.flatMap((r) => Object.keys(r.causes)))].sort();
+  // The refit columns exist only when the script ran fitPairs, so the
+  // default pipeline's table is the table it always was.
+  const refitted = shots.some((s) => slots(path.join(ROOT, res, s.name.replace(/\.png$/, '.features.json'))).pairs);
+  const refitHead = refitted
+    ? ['refitGapPx', 'refitErrorPx', `refit${opts.moving}OffsetPx`, `refit${opts.target}OffsetPx`, 'gapSigma', 'stripLevel']
+    : [];
+  const refitCells = (r) => (refitted
+    ? [fmt(r.refit?.gapPx, 3), fmt(r.refit?.errorPx, 3), fmt(r.refit?.movingOffsetPx, 3),
+      fmt(r.refit?.targetOffsetPx, 3), fmt(r.refit?.gapSigma, 3), fmt(r.refit?.stripLevel, 3)]
+    : []);
   const head = ['gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm',
-    `${opts.moving}OffsetPx`, `${opts.target}OffsetPx`, 'pairFound', 'spansBoth',
+    `${opts.moving}OffsetPx`, `${opts.target}OffsetPx`, ...refitHead, 'pairFound', 'spansBoth',
     `${opts.moving}Found`, `${opts.target}Found`, ...causes.map((c) => `inGap_${c}`), 'reason'];
   const body = rows.map((r) => [
     r.gapMm, fmt(r.trueGapPx, 3), fmt(r.measuredGapPx, 3), fmt(r.errorPx, 3), fmt(r.errorMm, 3),
-    fmt(r.movingOffsetPx, 3), fmt(r.targetOffsetPx, 3), r.pairFound, r.spansBoth, `${r.moving.found}/${r.moving.findable}`, `${r.target.found}/${r.target.findable}`,
+    fmt(r.movingOffsetPx, 3), fmt(r.targetOffsetPx, 3), ...refitCells(r), r.pairFound, r.spansBoth, `${r.moving.found}/${r.moving.findable}`, `${r.target.found}/${r.target.findable}`,
     ...causes.map((c) => r.causes[c] ?? 0),
     // Unquoted, so the padding below stays valid CSV: a quote must open its
     // field, and a padded field would start with spaces. No reason contains a

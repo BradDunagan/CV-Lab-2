@@ -1,0 +1,31 @@
+// explained.lab, plus the close pairs placed again against the unblurred image.
+//
+// For two parts in one picture, one closing on the other: the gap between two
+// edges a few pixels apart is the one thing the geometry pipeline misreads by
+// more than a pixel, because both edges were found in a blurred image and each
+// displaces the other. `fitPairs` reads G, the gray image BEFORE the blur.
+//
+//   npm run gap-sweep -- --name <run> --skip-render --script pipelines/pairs.lab
+//
+// A, T and the three passes D/NM/AL are prepended by the runner, as for
+// explained.lab.
+
+G  = gray(A)
+B  = gaussian(G, sigma=1.4)
+Gx = sobel(B, axis=x)
+Gy = sobel(B, axis=y)
+M  = sobel(B, axis=mag)
+N  = nms(M, Gx, Gy)
+S  = segments(N, Gx, Gy)
+R  = merge(S)
+F  = fit(R)
+C  = corners(F)
+
+// G, not B: the fit is of the image nothing has been done to.
+P  = fitPairs(F, G)
+
+EF = explain(F, D, NM, AL, T)
+EC = explain(C, D, NM, AL, T)
+
+MF = match(F, T)
+MC = match(C, T)

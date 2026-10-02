@@ -247,10 +247,12 @@ function causesInGap(explained, pair, opts) {
  * @param {object[]} input.segments   edge-segment records (F)
  * @param {object[]} input.explained  F after explain (EF): same ids, with `cause`
  * @param {object[]} input.matches    edge-match records for F (MF)
+ * @param {object[]} [input.pairs]    edge-pair records for F (P), if the
+ *                                    pipeline ran fitPairs
  * @param {object} shot  { gapMm }
  * @param {object} parts { moving, target } -- object names, as the truth has them
  */
-function gapRow({ truth, segments, explained, matches }, shot, { moving, target }, options = {}) {
+function gapRow({ truth, segments, explained, matches, pairs }, shot, { moving, target }, options = {}) {
   const opts = { ...DEFAULTS, ...options };
   const row = {
     gapMm: shot.gapMm,
@@ -266,6 +268,7 @@ function gapRow({ truth, segments, explained, matches }, shot, { moving, target 
     causes: {},
     movingOffsetPx: null,
     targetOffsetPx: null,
+    refit: null,
     reason: null,
   };
 
@@ -287,41 +290,78 @@ function gapRow({ truth, segments, explained, matches }, shot, { moving, target 
     return { ...row, reason: 'detected edges are not parallel' };
   }
 
-  // At the truth pair's measuring point, along the detected target edge's
-  // normal, oriented as the truth's was.
-  const lb = db.line;
-  const at = onLine(lb, pair.facing.at);
-  const normal = dot(lb.n, pair.facing.normal) >= 0 ? lb.n : [-lb.n[0], -lb.n[1]];
-  const measured = crossing(da.line, at, normal);
-  if (measured === null) return { ...row, reason: 'detected edges are not parallel' };
+  const read = measureAt(da.line, db.line, pair.facing);
+  if (!read) return { ...row, reason: 'detected edges are not parallel' };
 
   row.pairFound = true;
   row.detectedPair = [da.seg.id, db.seg.id];
-  row.measuredGapPx = measured;
-  row.errorPx = measured - row.trueGapPx;
+  row.measuredGapPx = read.gap;
+  row.errorPx = read.gap - row.trueGapPx;
+  row.movingOffsetPx = read.movingOffset;
+  row.targetOffsetPx = read.targetOffset;
 
   /*
-   * The error, split by edge: where each detected line crosses the TRUTH
-   * pair's normal at the measuring point, against where its own truth edge
-   * does. Positive is toward the moving part, as the gap is. So
-   *   errorPx ~= movingOffsetPx - targetOffsetPx
-   * exactly when the detected edges are parallel to the truth's; otherwise
-   * the two frames differ by the cosine of a small angle, and the gap itself
-   * is still measured as it always was, along the detected target edge.
-   *
-   * These found the pixel-convention mismatch between pt-lab's truth and the
-   * lab's detections: both edges displaced the same way by about half a
-   * pixel. The truth is converted at load now (PIXEL_CENTRE in
-   * groundtruth.js), so what is left here is each edge's own offset.
+   * The same two edges as `fitPairs` placed them, if the pipeline ran it and
+   * it took these two as a pair. Measured exactly as the detections are, at
+   * the same point, so the two readings differ only in where the edges were
+   * put. Beside the detections' reading rather than instead of it: the
+   * difference between them is the thing being measured.
    */
-  const T = pair.facing;
-  const ca = crossing(da.line, T.at, T.normal);
-  const cb = crossing(db.line, T.at, T.normal);
-  if (ca !== null && cb !== null) {
-    row.movingOffsetPx = ca - T.gap;
-    row.targetOffsetPx = cb;
+  const refit = (pairs ?? []).find((p) => p.type === 'edge-pair'
+    && ((p.a.segment === da.seg.id && p.b.segment === db.seg.id)
+      || (p.a.segment === db.seg.id && p.b.segment === da.seg.id)));
+  if (refit) {
+    const [ea, eb] = refit.a.segment === da.seg.id ? [refit.a, refit.b] : [refit.b, refit.a];
+    const la = line(ea), lb = line(eb);
+    const along = (l) => dot(sub(pair.facing.at, l.p0), l.u);
+    const outside = (l) => Math.max(0, -along(l), along(l) - l.len);
+    const r = la && lb && Math.max(outside(la), outside(lb)) <= opts.reach
+      ? measureAt(la, lb, pair.facing) : null;
+    if (r) {
+      row.refit = {
+        pair: refit.id,
+        gapPx: r.gap,
+        errorPx: r.gap - row.trueGapPx,
+        movingOffsetPx: r.movingOffset,
+        targetOffsetPx: r.targetOffset,
+        gapSigma: refit.gapSigma,
+        strip: refit.strip,
+        stripLevel: refit.levels[1],
+      };
+    }
   }
   return row;
+}
+
+/**
+ * The gap between two lines, and each one's offset from its own truth edge.
+ *
+ * The gap is taken at the truth pair's measuring point, along the TARGET
+ * line's normal, oriented as the truth's was. Null when the moving line runs
+ * along that normal.
+ *
+ * The offsets split the error by edge: where each line crosses the TRUTH
+ * pair's normal at the measuring point, against where its own truth edge
+ * does. Positive is toward the moving part, as the gap is. So
+ *   error ~= movingOffset - targetOffset
+ * exactly when the lines are parallel to the truth's; otherwise the two
+ * frames differ by the cosine of a small angle, and the gap itself is still
+ * measured as it always was, along the target line.
+ *
+ * These found the pixel-convention mismatch between pt-lab's truth and the
+ * lab's detections: both edges displaced the same way by about half a
+ * pixel. The truth is converted at load now (PIXEL_CENTRE in
+ * groundtruth.js), so what is left here is each edge's own offset.
+ */
+function measureAt(movingLine, targetLine, T) {
+  const at = onLine(targetLine, T.at);
+  const normal = dot(targetLine.n, T.normal) >= 0 ? targetLine.n : [-targetLine.n[0], -targetLine.n[1]];
+  const gap = crossing(movingLine, at, normal);
+  if (gap === null) return null;
+  const ca = crossing(movingLine, T.at, T.normal);
+  const cb = crossing(targetLine, T.at, T.normal);
+  const split = ca !== null && cb !== null;
+  return { gap, movingOffset: split ? ca - T.gap : null, targetOffset: split ? cb : null };
 }
 
 /**
