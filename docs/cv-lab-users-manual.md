@@ -1486,7 +1486,7 @@ lab has no pose estimator, and one would put its own error into the result.
 |---|---|
 | `trueGapPx`, `measuredGapPx`, `errorPx`, `errorMm` | the gap, and the error; `errorMm` uses the sweep's own pixels per millimetre of gap |
 | `CubeOffsetPx`, `TableOffsetPx` | the error split by edge: each detected edge against its own truth edge, positive toward the moving part |
-| `refitGapPx`, `refitErrorPx`, `refitCubeOffsetPx`, `refitTableOffsetPx` | the same four, with the two edges where `fitPairs` or `findPairs` placed them. Only when the script binds `P` or `H` |
+| `refitGapPx`, `refitErrorPx`, `refitErrorMm`, `refitCubeOffsetPx`, `refitTableOffsetPx` | the same, with the two edges where `fitPairs` or `findPairs` placed them. Only when the script binds `P` or `H` |
 | `gapSigma`, `stripLevel` | from that pair's record |
 | `refitFrom` | `pair`: two detected segments, placed again. `segment`: both edges found inside one detection |
 | `pairFound` | both facing edges detected AND reaching the measuring point; when false, `reason` says which failed and the error columns are empty |
@@ -1508,6 +1508,29 @@ both facing edges, and no gap is measured at any step.
 the moving part's position in the scene file is contact. `--skip-render`
 reruns the lab and the analysis over renders already made, and refuses if they
 were made from different shots.
+
+**`--yaw` and `--elevation` repeat the sweep from a grid of viewpoints.** Each
+takes a list of degrees; every yaw is taken with every elevation. The scene's
+saved camera is orbited about its own target at its own distance, with yaw 0
+looking along −z and elevation measured above the horizontal. A list left out
+is the saved camera's own angle. With neither, there is one view, the saved
+camera exactly, and nothing about the sweep changes.
+
+```bash
+npm run gap-sweep -- --name gap-grid-1 --scene saved:gap-1-front \
+    --yaw 0,20,45,70 --elevation 0,5,15,30,45,60,75 --gaps 5,2,1,0.5,0 \
+    --script pipelines/pairs.lab
+```
+
+Shots are named for their view, `y20-e15-gap-2mm.png`, and the table gains
+`yaw`, `elevation`, `pxPerMm` and `overlapPx` (the length the two truth
+edges share). **Pixels per millimetre is per view**, because the same gap is
+fewer pixels the more nearly the camera looks along it, and `errorMm` and
+`refitErrorMm` use their own view's. `gap-grid.txt` holds the same numbers as
+small tables, elevation down the side and yaw across the top, which is where a
+pattern shows. In those, `.` means the truth has no facing pair from that view
+and `-` means it has one and nothing read it. The lights stay where the scene
+put them; only the camera moves.
 
 **Renders are made with linear tone mapping by default** (`--tone-mapping
 linear --exposure 0.5`), unlike `npm run generate`, whose default is ACES.

@@ -272,6 +272,7 @@ function gapRow({ truth, segments, explained, matches, pairs }, shot, { moving, 
   const row = {
     gapMm: shot.gapMm,
     trueGapPx: null,
+    overlapPx: null,
     measuredGapPx: null,
     errorPx: null,
     pairFound: false,
@@ -290,6 +291,9 @@ function gapRow({ truth, segments, explained, matches, pairs }, shot, { moving, 
   const pair = truthPair(truth, moving, target, shot.gapMm / 1000, opts);
   if (!pair) return { ...row, reason: 'no facing pair in the ground truth' };
   row.trueGapPx = pair.facing.gap;
+  // How much edge there is to measure it on: the stretch the two truth edges
+  // share, which a view from the side foreshortens.
+  row.overlapPx = pair.facing.overlap;
   row.truthPair = [pair.a.id, pair.b.id];
   row.causes = causesInGap(explained, pair, opts);
 
@@ -463,4 +467,49 @@ function changedInputs(previous, now) {
   return out;
 }
 
-module.exports = { gapRow, pxPerMm, truthPair, facing, line, changedInputs, DEFAULTS };
+/**
+ * The views of a grid: a camera orbited about its own target, at its own
+ * distance. Yaw and elevation are the generator's (src/generate/driver.js):
+ * the camera sits at target + r * (sin yaw cos el, sin el, cos yaw cos el),
+ * so yaw 0 looks along -z and elevation is above the horizontal. Degrees.
+ *
+ * Every yaw is taken with every elevation, elevation outermost. A list left
+ * out is the camera's own angle, so one list alone sweeps one axis through
+ * the saved view.
+ *
+ * Null when neither is given: there is one view, the saved camera to the
+ * bit, and it is the caller's to use as it stands rather than a reconstruction
+ * of it through two arctangents.
+ *
+ * @param {{position: number[], target: number[]}} camera
+ * @param {{yaw?: number[]|null, elevation?: number[]|null}} angles
+ * @returns {{yaw: number, elevation: number, camera: number[]}[]|null}
+ */
+function orbitViews(camera, { yaw, elevation }) {
+  if (!yaw && !elevation) return null;
+  const d = camera.position.map((c, k) => c - camera.target[k]);
+  const flat = Math.hypot(d[0], d[2]);
+  const radius = Math.hypot(flat, d[1]);
+  // To a thousandth of a degree: these become file names and table cells.
+  const deg = (r) => Math.round(((r * 180) / Math.PI) * 1000) / 1000;
+  const yaws = yaw ?? [deg(Math.atan2(d[0], d[2]))];
+  const elevations = elevation ?? [deg(Math.atan2(d[1], flat))];
+  const views = [];
+  for (const el of elevations) {
+    for (const yw of yaws) {
+      const y = (yw * Math.PI) / 180, e = (el * Math.PI) / 180;
+      views.push({
+        yaw: yw,
+        elevation: el,
+        camera: [
+          camera.target[0] + radius * Math.sin(y) * Math.cos(e),
+          camera.target[1] + radius * Math.sin(e),
+          camera.target[2] + radius * Math.cos(y) * Math.cos(e),
+        ],
+      });
+    }
+  }
+  return views;
+}
+
+module.exports = { gapRow, pxPerMm, truthPair, facing, line, changedInputs, orbitViews, DEFAULTS };
