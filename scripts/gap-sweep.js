@@ -210,12 +210,24 @@ function main() {
   const causes = [...new Set(rows.flatMap((r) => Object.keys(r.causes)))].sort();
   const head = ['gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm', 'pairFound', 'spansBoth',
     `${opts.moving}Found`, `${opts.target}Found`, ...causes.map((c) => `inGap_${c}`), 'reason'];
-  const csv = [head.join(',')].concat(rows.map((r) => [
+  const body = rows.map((r) => [
     r.gapMm, fmt(r.trueGapPx, 3), fmt(r.measuredGapPx, 3), fmt(r.errorPx, 3), fmt(r.errorMm, 3),
     r.pairFound, r.spansBoth, `${r.moving.found}/${r.moving.findable}`, `${r.target.found}/${r.target.findable}`,
     ...causes.map((c) => r.causes[c] ?? 0),
-    r.reason ? `"${r.reason.replace(/"/g, "'")}"` : '',
-  ].join(',')));
+    // Unquoted, so the padding below stays valid CSV: a quote must open its
+    // field, and a padded field would start with spaces. No reason contains a
+    // comma today; this keeps it so.
+    (r.reason ?? '').replace(/,/g, ';'),
+  ].map(String));
+  /*
+   * Laid out to be read as well as parsed: ", " between fields, and every
+   * column right-aligned to its widest entry, header included. A reader that
+   * trims leading spaces (pandas' skipinitialspace, a spreadsheet's import)
+   * gets the plain values back.
+   */
+  const widths = head.map((h, k) => Math.max(h.length, ...body.map((cells) => cells[k].length)));
+  const line = (cells) => cells.map((c, k) => c.padStart(widths[k])).join(', ');
+  const csv = [line(head), ...body.map(line)];
   fs.writeFileSync(path.join(ROOT, res, 'gap-sweep.csv'), `${csv.join('\n')}\n`);
 
   console.log(`\n${opts.scene}: ${opts.moving} closing on ${opts.target}, ${opts.size}px, `
