@@ -1247,6 +1247,18 @@ and mesh **boundary** edge projected into image space, each with the fraction of
 it that is really visible taken from the depth pass, plus the vertices they meet
 at.
 
+**Pixel coordinates.** In the lab, pixel *i*'s centre is at *x* = *i*: that is
+how every kernel and every detection counts. The `.gt.json` files are in
+pt-lab's convention, where the frame is [0, size] and pixel *i*'s centre is at
+*i* + 0.5. `groundTruth` moves them by −0.5 as it reads them, so everything
+compared inside the lab agrees. If you read a `.gt.json` yourself, subtract 0.5
+from its x and y before comparing it with a feature record.
+
+Results produced before 2026-10-01 compared the two unconverted. Their match
+distances carry about 0.5 px per axis that was never the detector's. Gaps
+between two edges were unaffected to within 0.02 px. See
+`design-lab-model.md` §5, "A third, which every overlay drew and nobody saw".
+
 ### What it cannot settle
 
 Three limits, and they are not fine print. Every number below has to be read

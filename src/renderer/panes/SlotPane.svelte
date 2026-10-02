@@ -190,8 +190,10 @@
     const ctx = c.getContext('2d');
     const sx = c.width / (viewport.w * s.width);
     const sy = c.height / (viewport.h * s.height);
-    const toX = (x) => (x - viewport.x * s.width) * sx;
-    const toY = (y) => (y - viewport.y * s.height) * sy;
+    // Lab coordinates put pixel i's centre at i; on screen it is the middle
+    // of the drawn pixel, half a pixel in from its corner.
+    const toX = (x) => (x + 0.5 - viewport.x * s.width) * sx;
+    const toY = (y) => (y + 0.5 - viewport.y * s.height) * sy;
 
     ctx.save();
     /*

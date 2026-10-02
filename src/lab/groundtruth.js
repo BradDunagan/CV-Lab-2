@@ -31,6 +31,25 @@ const EDGE_NUMBERS = ['x0', 'y0', 'x1', 'y1', 'z0', 'z1', 'length', 'angle', 'di
 const VERTEX_NUMBERS = ['x', 'y', 'z', 'angle'];
 const CAUSES = new Set(['silhouette', 'crease', 'boundary']);
 
+/**
+ * Where a pixel's centre is, and why ground truth moves at load.
+ *
+ * The lab's detections are fitted through pixel INDICES (native/
+ * addon_kernels.c), so pixel i's centre is at x = i. pt-lab projects the
+ * frame onto [0, size] (groundTruthGeometry's toImage), so pixel i spans
+ * [i, i+1] and its centre is at i + 0.5. Compared as they came, every
+ * detection sat at (-0.5, -0.5) px from its truth -- fitted over every
+ * matched edge of cube1, (-0.507, -0.457), and removing it took the rms
+ * offset from 0.50 to 0.07 px. match's 3 px tolerance hid it from every
+ * table; splitting the gap sweep's error by edge found it, 2026-10-01.
+ *
+ * The file keeps pt-lab's convention; the lab's is the one every kernel
+ * already uses, so the truth moves into it here, once, where it is read.
+ * Anything drawing lab coordinates over an image puts pixel i's centre at
+ * (i + 0.5) * scale.
+ */
+const PIXEL_CENTRE = 0.5;
+
 class GroundTruthError extends Error {}
 
 function fail(where, message) {
@@ -100,6 +119,7 @@ function parseGroundTruth(doc, where = 'the ground-truth document') {
       v1: positiveInt(raw.v1 ?? 0, at, 'v1'),
     };
     for (const field of EDGE_NUMBERS) record[field] = finiteNumber(raw[field], at, field);
+    for (const field of ['x0', 'y0', 'x1', 'y1']) record[field] -= PIXEL_CENTRE;
     if (record.visible < 0 || record.visible > 1) {
       fail(at, `needs "visible" in [0, 1] (got ${record.visible})`);
     }
@@ -119,6 +139,8 @@ function parseGroundTruth(doc, where = 'the ground-truth document') {
       visible: raw.visible === true,
     };
     for (const field of VERTEX_NUMBERS) record[field] = finiteNumber(raw[field], at, field);
+    record.x -= PIXEL_CENTRE;
+    record.y -= PIXEL_CENTRE;
     features.push(record);
   });
 
@@ -146,4 +168,4 @@ function readGroundTruth(text, where) {
   return parseGroundTruth(doc, where);
 }
 
-module.exports = { parseGroundTruth, readGroundTruth, GroundTruthError };
+module.exports = { parseGroundTruth, readGroundTruth, GroundTruthError, PIXEL_CENTRE };

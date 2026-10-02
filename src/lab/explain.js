@@ -201,8 +201,12 @@ function viewGeometry(camera, width, height) {
   if (typeof fov !== 'number' || !(fov > 0) || !(fov < 180)) return null;
   return {
     f: (height / 2) / Math.tan((fov * Math.PI) / 360),
-    cx: width / 2,
-    cy: height / 2,
+    // The optical centre in the lab's pixel convention, where pixel i's
+    // centre is at i: halfway between the middle two pixels. width / 2 is the
+    // middle in pt-lab's convention, half a pixel off from this one; see
+    // PIXEL_CENTRE in groundtruth.js.
+    cx: (width - 1) / 2,
+    cy: (height - 1) / 2,
   };
 }
 
