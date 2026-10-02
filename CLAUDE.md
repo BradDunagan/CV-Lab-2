@@ -43,6 +43,9 @@ src/lab/explain.js   what put each edge in the picture — reads the AOV
                      passes: occlusion, crease, texture, or shading
 src/lab/gapsweep.js  the image gap between two parts, detected against
                      true, one row per step of a gap sweep (pure JS)
+src/lab/position.js  one relative position from several gap readings, and
+                     what a set of views is worth before anything is
+                     detected (pure JS)
 src/lab/pairs.js     two close edges placed again, jointly, against the
                      unblurred image -- and found, where the detector
                      reported the two as one segment (pure JS)
@@ -55,6 +58,8 @@ scripts/overlay.js   draws ground truth and detections over an image — every
 scripts/gap-sweep.js steps one part toward another, renders each step, runs
                      the lab over them and tabulates the gap -- from one
                      view, or a grid of them (needs a GPU)
+scripts/solve-position.js  three such sweeps, one an axis, solved for where
+                     the part is: per set of views, in millimetres
 pt-lab/              the path tracer + scene editor library, TypeScript, moved in
                      from its own repository — see pt-lab/README.md
 src/generate/        the generator: page (bundled separately) + main-process
@@ -67,7 +72,7 @@ src/menu.js          the application menu — global commands live here, not in 
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
-test/                eighteen suites; seventeen run under plain node
+test/                nineteen suites; eighteen run under plain node
 pipelines/           .lab scripts for the batch runner
 ```
 
@@ -78,14 +83,16 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — eighteen suites, ~530 tests
+npm test                # everything — nineteen suites, ~548 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
 npm run score -- results/           # found, against what is really there
 npm run overlay -- <img> results/   # ...and the same thing as a picture
 npm run gap-sweep -- --name gap-1   # a part closing on another, down to contact
-                                    # (--yaw, --elevation: from a grid of views)
+                                    # (--yaw, --elevation: from a grid of views;
+                                    #  --offset: across a gap already open)
+npm run position -- --x <dir> --y <dir> --z <dir>   # where the part is, from several
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run check:pt-lab    # type-check pt-lab/ — the build strips types unchecked
@@ -209,15 +216,18 @@ gap is over about 1.1 px in the image. Pixels per millimetre of a vertical gap
 runs from 1.22 square-on and level to 0.11 at 70° round and 75° up
 (`design-lab-model.md` §5, "A seventh"). Still open from it:
 
-- **an edge pair measures one direction.** Sliding the part along the edge
-  changes nothing in any view. `scenes/stack-1.json`, a cube lowered onto a
-  cube, has two pairs at right angles for that; only the vertical approach
-  has been run on it. Sideways and in-and-out sweeps, and solving for position
-  from several pairs and views, are next;
+- **an edge pair measures one direction**, and one view of the stack's two
+  pairs does not determine a position: two readings, three unknowns. Two views
+  do. From `scenes/stack-2.json`, two views give the top cube's position to
+  about 0.1 mm on each axis (`design-lab-model.md` §5, "A ninth");
+- **only poses along an axis have been solved**, one render each. A pose off
+  the axes, and a rotation of the top cube, have not;
 - **a crease can have no contrast.** On the stack's side pair the two faces
   that meet at the base cube's edge are lit alike, and the image's edge is the
   shadow 0.2 to 2.5 px inside it. Nothing in the pipeline can tell
-  (`design-lab-model.md` §5, "An eighth");
+  (`design-lab-model.md` §5, "An eighth"). Under that light sideways position
+  cannot be read at all; `stack-2` moves the light and it can. Nothing chooses
+  a light, or notices a bad one;
 - **combining views.** The grid is a multi-view data set and nothing uses it
   as one yet: a view where the gap is wide in pixels could supply the strip's
   level, or the gap itself, to a view where it is narrow;

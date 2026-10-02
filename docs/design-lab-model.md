@@ -1184,6 +1184,84 @@ as on the view.** A second view does not fix it. A second light might.
 At 50 mm the side pair is not a pair: its two edges are 7.9° apart in the
 image, from perspective alone, and the limit is 5°.
 
+#### A ninth: three directions, from two pairs and two views
+
+A gap is one number and a part's position is three. The stack's two pairs at
+right angles were meant to supply the other two, and they do, with two
+conditions that had to be found.
+
+`gap-sweep --offset` slides the top cube across a gap that is already open.
+Lifted 2 mm and slid ±5 mm, one view, pixels of gap per millimetre from the
+truth:
+
+| pair | sideways (x) | up (y) | toward the camera (z) |
+|---|---|---|---|
+| front | 0.00 | 1.20 | −0.50 |
+| side | −0.81 | 1.04 | 0.00 |
+
+Each pair is blind to a slide along its own edges, and each mixes the vertical
+with one horizontal direction. Two readings, three unknowns: **one view of two
+pairs does not determine a position.** A second view mixes them in other
+proportions and does.
+
+**First condition: the light.** Under `stack-1`'s light the side pair did not
+track the slide it is the only one to see:
+
+| sideways step, mm | −2 | −1 | −0.5 | 0 | +0.5 | +1 |
+|---|---|---|---|---|---|---|
+| true gap, px | 3.68 | 2.87 | 2.46 | 2.06 | 1.65 | 1.24 |
+| read, `stack-1` | 1.73 | 1.77 | 1.70 | 1.90 | 1.91 | 1.47 |
+| read, `stack-2` | 3.52 | 2.63 | 2.32 | 1.98 | 1.70 | 1.30 |
+
+The gap opens by uncovering a ledge of the base cube's top face. Under the
+first light that ledge is as bright as the side face below it, so the crease
+that bounds it is invisible and the reading stays at the width of the shadow.
+`stack-2` moves the one light low and between the two visible faces: both
+bright, the top faces dark, every crease with contrast. The reading follows.
+In and out, which the front pair sees, reads to within 0.11 px over ±2 mm
+under either light.
+
+**Second condition: the sign.** The true gap was signed toward the moving
+*edge*, which makes it positive whichever side that edge is on. A part slid
+until its edge passes the target's then reads as a gap closing to zero and
+opening again, and a straight line fitted through that V has the wrong slope.
+With the gaps signed toward the middle of the moving *part*, an edge that has
+crossed is negative, and the linear model is exact: solved from the true gaps,
+20 poses come back to 0.01 mm. Before the fix they came back to 0.1 to 0.5.
+
+**Then, four views** (`stack-2`, yaw 35° and 60°, elevation 20° and 50°, the
+top cube lifted 4 mm and moved ±4 mm along each axis, 80 renders). RMS error in
+millimetres over the 20 poses, x / y / z:
+
+| views combined | mm per px of reading error | detections | refit |
+|---|---|---|---|
+| any one | not determined | | |
+| 35°/20° + 60°/50° | 1.07 / 0.97 / 0.93 | 1.72 / 0.80 / 1.98 | **0.11 / 0.08 / 0.08** |
+| 35°/20° + 35°/50° | 0.93 / 1.00 / 1.16 | 1.81 / 0.82 / 1.90 | 0.09 / 0.12 / 0.13 |
+| 35°/20° + 60°/20° | 2.79 / 1.66 / 2.45 | 1.32 / 0.40 / 1.15 | 0.19 / 0.12 / 0.16 |
+| 35°/50° + 60°/50° | 1.59 / 3.22 / 1.43 | 2.17 / 2.38 / 2.20 | 0.13 / 0.20 / 0.11 (16 of 20) |
+| all four | 0.73 / 0.69 / 0.68 | 1.88 / 0.85 / 1.84 | 0.11 / 0.14 / 0.10 |
+
+- **A tenth of a millimetre on each axis from two views**, at 1.2 px per mm,
+  where the detections' own gaps give one to two millimetres.
+- **The second column is known before anything is rendered.** It is
+  sqrt(diag((JᵀJ)⁻¹)), from the truth's Jacobian alone, and it says which
+  views are worth combining: two at the same elevation leave three times the
+  error of two at different ones, and two both looking down leave the
+  vertical badly determined.
+- **Four views are not better than the best two.** More readings lower the
+  second column, but the views at 50° read gaps of 1.4 to 2.6 px, in the
+  regime where readings are worse, and they bring that with them.
+- **The worst pose is always the widest sideways one**, 4 mm: 0.2 to 0.6 mm
+  off.
+
+One render per pose, one scene, and the poses are all along an axis. A pose
+off the axes has not been tried, and neither has a rotation.
+
+A pose solved from readings that barely separate the axes comes back with
+numbers anyway: one, having lost a reading, was put 1.3 m from where the part
+was. Its own sigma said so, and `--max-sigma` is what refuses it.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
