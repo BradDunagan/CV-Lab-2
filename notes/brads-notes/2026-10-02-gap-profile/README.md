@@ -30,7 +30,13 @@ chosen with the determinism rules in mind.
 ```bash
 node 01-profile.js                                      # the note's tables; ~3 m 45 s
 node 01-profile.js profile gap-1-front-linear gap-1mm   # one frame's raw profile
+node 02-seeded.js                                       # fitPairs, seeded from truth
 ```
+
+`02-seeded.js` belongs to the note's later section. It calls `fitPairs` from
+`src/lab/pairs.js` as it was on 10-02, with the two truth edges standing in
+for detections at 2, 1 and 0.5 mm, where the pipeline finds no pair of its
+own below 2.
 
 ## What it prints
 
