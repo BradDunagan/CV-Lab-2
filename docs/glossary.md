@@ -1473,6 +1473,46 @@ cannot be precomputed.
 
 ---
 
+## Strip
+
+**The band of image between two close, parallel edges: what is seen through a
+gap.**
+
+Here, specifically: the middle of the three regions `fitPairs` fits. Crossing
+a pair of edges, the image is one flat level, then the strip, then another
+flat level, and the strip's width is the gap. In the gap sweep, going up the
+image:
+
+| region | what it is | level, linear renders |
+|---|---|---|
+| beyond edge `a` | the Table's front face | about 0.60 |
+| **the strip** | the table top, seen under the Cube and in its shadow | about 0.12 |
+| beyond edge `b` | the Cube's front face | about 0.31 |
+
+The **strip level** is its brightness: the middle value of a record's
+`levels`.
+
+**Why it has a name.** While the strip is a few pixels wide, some pixels lie
+wholly inside it and its level can be read straight off them. Under about a
+pixel wide, none do. Every pixel touching it is a mix of strip and neighbour,
+and a narrow, very dark strip puts nearly the same light on them as a wider,
+less dark one. The image then fixes how much light is missing and not how the
+loss divides between width and darkness. At 1.16 px the fit still separates
+them. At 0.58 px it does not, and the level has to be supplied
+(`strip=held, stripLevel=…`) from a frame where the gap was wider.
+
+**It need not be dark.** A strip can be darker than both sides (a shadowed
+gap), brighter than both (a gap lit from behind), or between them (a third
+surface seen through the gap). The last is the hard one: a narrow strip midway
+between its neighbours is, pixel for pixel, a single soft edge. See
+[aperture](#aperture-of-a-pixel).
+
+**It is not always a gap between two parts.** `fitPairs` fits any two close
+parallel segments, so the strip can be the top face of a cube seen nearly
+edge-on, or the band between an edge and the shadow boundary beside it.
+
+---
+
 ## Structured clone
 
 **The algorithm browsers use to *copy* a JavaScript value across a boundary
