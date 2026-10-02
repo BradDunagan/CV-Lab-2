@@ -1510,12 +1510,65 @@ npm run gap-sweep -- --name stack-1 --scene saved:stack-1 --moving Cube2 --targe
                      --script pipelines/pairs.lab
 ```
 
+`scenes/stack-2.json` is the same stack under a different light: low, and
+between the two faces the camera sees, so that both are bright and the top
+faces are dark. Under `stack-1`'s light the base cube's side and top faces are
+equally bright and the edge between them cannot be seen; see
+`design-lab-model.md` §5.
+
 **A fixture with more than one facing pair gets a row for each.** The stack
 has two, one down each side of its near vertical edge, and the table gains a
 `pair` column numbering them left to right, with `pxPerMm` and `overlapPx`
 per pair. Two edges are a pair when each is the other's nearest facing edge.
-With the camera held still, pair 1 is the same pair in every shot; from a
-different view it need not be. Under the lamp alone, the cube's own shadow takes the contrast out of
+Pairs are numbered by the direction they run in the image, so pair 1 is the
+same pair down a sweep even through a shot that lost the other. From a
+different view the same pair may have another number.
+
+**`--offset x,y,z` sweeps across a gap that is already open.** It adds a fixed
+displacement, in millimetres, to every step, and allows negative steps. Lift
+the top cube 2 mm and slide it sideways:
+
+```bash
+npm run gap-sweep -- --name stack-2-x --scene saved:stack-2 --moving Cube2 --target Cube \
+    --axis 1,0,0 --offset 0,2,0 --gaps -5,-2,-1,-0.5,0,0.5,1,2,5 --script pipelines/pairs.lab
+```
+
+`pxPerMm` is then the **slope** of the true gap against the step: how many
+pixels this pair's gap moves per millimetre along the sweep, signed. A pair
+whose edges run along the swept direction has a slope near zero. It cannot see
+that direction, and its `errorMm` is left empty rather than divided by nearly
+nothing. A true gap can be negative: the moving part's edge has passed the
+target's, an overhang.
+
+### `npm run position`
+
+```bash
+npm run position -- --x results/stack-2g-x/pairs --y results/stack-2g-y/pairs \
+                    --z results/stack-2g-z/pairs --max-views 4
+```
+
+One relative position from several gap readings. A gap is one number and a
+position is three, and each pair's gap mixes two of them: lifting the top cube
+and sliding it toward the camera both open the front pair's gap. Another pair,
+or the same pair from another view, mixes them differently, and enough
+different mixtures separate the three.
+
+It takes three gap sweeps of one fixture, one along each axis, made from the
+same `--offset` and the same views, and prints:
+
+- **the Jacobian**: for each pair in each view, pixels of gap per millimetre
+  along x, y and z, from the truth alone;
+- **what each set of views is worth**: millimetres of error per axis per pixel
+  of reading error, for every view alone, every two, and so on up to
+  `--max-views`. One view of two pairs is always "not determined": two
+  readings, three unknowns;
+- **what was read**: every shot of the three sweeps is a pose whose
+  displacement is known. Each is solved from the true gaps (which checks that
+  a linear model is good enough), from the detections, and from the refit, and
+  the RMS error per axis is reported.
+
+`--max-sigma` (default 10 mm per px) refuses a pose whose surviving readings
+barely separate the axes. Plain node; it reads each sweep's `gap-sweep.json`. Under the lamp alone, the cube's own shadow takes the contrast out of
 both facing edges, and no gap is measured at any step.
 
 `--moving`, `--target`, `--axis` and `--gaps` name the parts and the steps;
