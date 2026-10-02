@@ -114,7 +114,7 @@ having tried.
 
 ## 3. Operation reference
 
-Twenty-one operations. Every one is a single entry in `src/lab/ops.js`, declared
+Twenty-two operations. Every one is a single entry in `src/lab/ops.js`, declared
 against the schema in `src/lab/registry.js` — which is also what validates your
 arguments and generates the error messages.
 
@@ -492,6 +492,72 @@ So each candidate carries its evidence instead:
 
 Which of those you should threshold on is measured, not guessed — see §7.
 
+#### `fitPairs(src features, image[1] linear, …)` → features (`edge-pair`)
+
+Place two close, near-parallel segments again, jointly, against the image
+**before** the blur.
+
+```lab
+G = gray(A)
+B = gaussian(G, sigma=1.4)
+…
+F = fit(R)
+P = fitPairs(F, G)
+```
+
+Every segment was found in a blurred image, and two edges a few pixels apart
+displace each other there: a true gap of 2.3 px reads 3.5. `fitPairs` takes
+each pair of segments closer than `maxGap` and fits three plateaus and two
+straight steps to the unblurred pixels around them. On the gap sweep that takes
+the 2.3 px gap from +1.2 px of error to within 0.1.
+
+| parameter | default | what it does |
+|---|---|---|
+| `maxGap` | 6 px | segments further apart than this are left alone |
+| `maxAngle` | 5° | and so are ones further from parallel |
+| `minOverlap` | 10 px | how much length they must share |
+| `pad` | 4 px | plateau taken beyond each edge |
+| `inset` | 2 px | left off each end of the shared stretch |
+| `strip`, `stripLevel` | `fit`, 0 | `held` fixes the strip's level at `stripLevel` |
+| `aperture`, `apertureWidth` | `fit`, 1 | `held` fixes the aperture at `apertureWidth` |
+| `minSigmas` | 3 | a gap under this many `gapSigma` produces no record |
+
+Per pair: `id`; the two edges `a` and `b`, each with the `segment` it came
+from, its line `x0 y0 x1 y1` over the stretch they share, and `shift`, how far
+it moved from its detection; the frame's origin `x y` and normal `nx ny`;
+`gap` and `gapSigma`; `detectedGap`; the three `levels` (beyond `a`, the
+strip, beyond `b`); `strip`; `aperture`, `apertureFrom` and
+`apertureSegments`; `rms`, `samples`, `iterations`, `converged`.
+
+**`image` must be the gray image before `gaussian`, and linear.** Nothing can
+check the first: a blurred buffer has the same shape, and fitting it returns
+the blurred answer with a small residual.
+
+**The aperture is how far a pixel gathers its light from**, as the side of a
+square in pixels. It decides how soft every step looks, so a narrow gap
+cannot be read without it. `fit` measures it on the image's *lone* segments,
+those in no pair, and holds it for every pair; `apertureFrom` says `segments`
+and `apertureSegments` how many. With no lone segment long enough (20 px) and
+off the pixel axes, it falls back to `apertureWidth` and says `default`. An
+axis-aligned edge says nothing about the aperture, so a synthetic image of
+horizontal and vertical edges always falls back.
+
+**`gapSigma` says how well the pixels pin the gap.** It grows as the strip
+narrows, and under about a pixel the strip's width and its level trade off:
+a narrow dark strip and a wider, less dark one are nearly the same pixels. If
+you know the level, from a frame where the gap was wider, hold it with
+`strip=held, stripLevel=…`. It is a scale for comparing fits, not a confidence
+interval.
+
+**A pair is not always two parts.** Any two close parallel segments are
+fitted: an edge and the shadow boundary beside it, or the two sides of a thin
+line. Join on `a.segment` and `b.segment` to find the pair you mean.
+
+**No record** means the two are not a pair (too far apart, not parallel, not
+overlapping), or the model could not describe them, or the gap could not be
+told from none. The last is one edge detected twice, or two parts in contact;
+this cannot say which.
+
 #### `match(src features, truth features, …)` → features (`edge-match`)
 
 Score detected features against ground truth. Dispatches on what the *detected*
@@ -720,13 +786,14 @@ numbers.
 npm run lab -- --script pipelines/geometry.lab --as linear --out results/ generated/*.png
 ```
 
-Three scripts ship in `pipelines/`:
+Four scripts ship in `pipelines/`:
 
 | | |
 |---|---|
 | `geometry.lab` | the straight-edge pipeline, all the way to scored corners |
 | `explained.lab` | the same, plus `explain` over the renderer's AOV passes |
 | `curves.lab` | the curve branch — `chain` and `fitArcs` beside `fit`. Needs no ground truth, because arcs are not scored |
+| `pairs.lab` | `explained.lab` plus `fitPairs`: close pairs placed again against the unblurred image. For `gap-sweep --script` |
 
 | option | |
 |---|---|
@@ -1319,7 +1386,10 @@ npm run overlay -- generated/p0-l0.png results/ overlays/
 
 Draws ground truth and detections over the image: white/grey for visible/hidden
 ground-truth edges, green/red for matched/unmatched detections, blue rings for
-ground-truth corners, yellow/red dots for detected ones.
+ground-truth corners, yellow/red dots for detected ones. Where the results hold
+`edge-pair` records, each pair's two edges are drawn thin, in cyan, over the
+segments they came from; `--scale 8` is about what it takes to see one beside
+the other.
 
 **This is not a convenience.** A scoring table reports a number whether or not
 that number is right, and both defects ever found in this machinery were
@@ -1348,6 +1418,9 @@ lab has no pose estimator, and one would put its own error into the result.
 | column | |
 |---|---|
 | `trueGapPx`, `measuredGapPx`, `errorPx`, `errorMm` | the gap, and the error; `errorMm` uses the sweep's own pixels per millimetre of gap |
+| `CubeOffsetPx`, `TableOffsetPx` | the error split by edge: each detected edge against its own truth edge, positive toward the moving part |
+| `refitGapPx`, `refitErrorPx`, `refitCubeOffsetPx`, `refitTableOffsetPx` | the same four, with the two edges where `fitPairs` placed them. Only when the script binds `P` |
+| `gapSigma`, `stripLevel` | from that pair's record |
 | `pairFound` | both facing edges detected AND reaching the measuring point; when false, `reason` says which failed and the error columns are empty |
 | `spansBoth` | detected segments lying along both parts' edges: the merge failure |
 | `CubeFound`, `TableFound` | findable truth edges of each part that were found |
@@ -1386,6 +1459,12 @@ under the same name. For another sample of the same shots, use a new `--name`.
 example a copy of `explained.lab` with another `sigma`. It must bind `T`, `F`,
 `EF` and `MF` as `explained.lab` does. Its results go to
 `results/<name>/<script name>/`, so a variant never overwrites the default's.
+
+`--script pipelines/pairs.lab` also binds `P = fitPairs(F, G)`, and the table
+gains the refit columns: the same gap, measured at the same point, with the
+two edges placed jointly against the unblurred image. Both readings stay in
+the row, because the difference between them is the blur's displacement. A
+refit needs both edges detected; where `pairFound` is false there is none.
 
 `gap-sweep.json` records a SHA-256 of every file the lab read for each shot:
 the render, its ground truth and the three passes. If a `--skip-render` finds
@@ -1466,6 +1545,7 @@ complaint.
 |---|---|---|
 | `edge-segment` | `fit` | `id`, `pixels`, `x0 y0 x1 y1`, `length`, `angle`, `residual`, `rms`, `cx cy` |
 | `edge-arc` | `fitArcs` | `id`, `pixels`, `cx cy r`, `x0 y0 x1 y1`, `angle0`, `angle1`, `sweep`, `arcLength`, `chord`, `sagitta`, `residual`, `rms`, `lineRms`, `mx my` |
+| `edge-pair` | `fitPairs` | `id`, `a` and `b` (each `segment`, `x0 y0 x1 y1`, `shift`), `x y`, `nx ny`, `gap`, `gapSigma`, `detectedGap`, `levels`, `strip`, `aperture`, `apertureFrom`, `apertureSegments`, `rms`, `samples`, `iterations`, `converged` |
 | `edge-corner` | `corners` | `id`, `x y`, `support`, `segments`, `sigma`, `reach`, `endpointGap`, `angle` |
 | `gt-edge` | `groundTruth` | `id`, `cause`, `objects`, `x0 y0 x1 y1`, `z0 z1`, `length`, `angle`, `dihedral`, `visible`, `clipped`, `v0 v1` |
 | `gt-vertex` | `groundTruth` | `id`, `x y z`, `degree`, `visibleDegree`, `onFrame`, `visible`, `angle`, `objects` |
@@ -1621,6 +1701,9 @@ Stated plainly, so you do not go looking:
   missed by the arcs and the other way round. Nothing builds one list from
   both, so a combined recall cannot be computed. Precision is the column that
   means what it says.
+- **`fitPairs` refits pairs the detector found; it does not find them.** Where
+  two edges are so close that only one is detected, there is no pair and no
+  record. On the gap sweep that is 1 mm (1.2 px) and below.
 - **Ground truth models geometry, so an image-space T-junction is scored as an
   invention.** Where two real occluding contours cross, the picture has a
   corner and the scene has no vertex — nothing touches there. `explain` makes

@@ -874,6 +874,79 @@ an estimate.
 sensor integrates light over each pixel. Undoing a measured response on load,
 with a `from=` that names a curve, is the general fix. It is not built.
 
+#### A fifth: two edges close together displace each other
+
+This one is the pipeline's, not the truth's or the renderer's. Every edge is
+found in a blurred image, and for an edge on its own that costs nothing: a
+symmetric blur leaves a step's gradient peak where the step is. Two steps a few
+pixels apart are not on their own. Each one's gradient is displaced by the
+other's tail, and the weaker step is displaced more.
+
+In the gap sweep (linear renders, σ = 1.4), a true gap of 2.32 px read 3.50.
+The Table's step is 0.60 → 0.12 and the Cube's 0.12 → 0.31, and 1.14 of the
+1.18 px error was the Cube's edge. It is not fixed by choosing σ. Less blur
+trades the displacement for noise: σ = 0.7 leaves +0.36 px at 2 mm, and at
+1 mm (1.16 px) no σ finds both edges in the linear renders.
+
+**The gap is in the pixels all the same.** Sampled unblurred, a 1.16 px gap is
+two steps with a dip between them (`notes/brads-notes/2026-10-02.md`). So
+detection keeps the job it is good at, saying that there are two edges and
+roughly where, and `fitPairs` places them again, jointly, against the gray
+image before `gaussian`. The model is three plateaus and two straight steps,
+with each pixel holding the area-weighted mix of what it covers.
+
+Gap error in px over two independent linear renders of the same sweep,
+detections against the refit (`pipelines/pairs.lab`):
+
+| gap (true px) | detected | refit | refit, Cube / Table edge |
+|---|---|---|---|
+| 5 mm (5.82) | +0.10, +0.10 | −0.07, −0.06 | −0.03 / +0.04, −0.06 / −0.00 |
+| 2 mm (2.32) | +1.18, +1.22 | −0.10, −0.05 | −0.06 / +0.03, −0.03 / +0.02 |
+
+**The refit does not depend on the blur that found the edges.** At 2 mm the
+detections read +1.18, +0.55 and +0.36 px at σ = 1.4, 1.0 and 0.7. The refit
+read −0.10, −0.08 and −0.07 from the same three sets of detections.
+
+Two things were wrong before that table was right, and both are in
+`src/lab/pairs.js` as decisions:
+
+- **The aperture cannot be assumed.** How far a pixel gathers light from sets
+  how soft every step looks. Held at 1 px (a pixel that averages exactly its
+  own square), a true 1.16 px gap read +0.15 px; at 1.4 it read −0.26, each
+  time with a claimed uncertainty of ±0.04.
+- **It cannot be fitted per pair either.** One step seen through an aperture
+  of 1 is, pixel for pixel, two steps half a pixel apart seen through an
+  aperture of a half. Fitted that way, a single edge detected twice came back
+  as a pair 0.50 px apart with an uncertainty of ±0.002.
+
+The aperture belongs to the camera. So it is measured on the image's *lone*
+segments, each fitted as a single step, and held for every pair. The lower
+quartile is taken: nothing in an image is sharper than the aperture allows,
+and shadow edges are much softer (5 px and more here). pt-lab's 512 px renders
+come out at 1.1 to 1.3.
+
+**What it still does not do:**
+
+- **It needs both edges detected.** At 1 mm and below the linear renders have
+  no detection of the Cube's edge, so there is no pair to refit. Where a pair
+  was detected at 1 mm (`gap-1-front-low`, and the ACES renders), the refit
+  read +0.07 and +0.04 px.
+- **Under about a pixel the strip's level has to be supplied.** Seeded from
+  ground truth, a 0.58 px gap read nothing in one render and 0.91 ± 0.13 in the
+  other with the level fitted, and 0.25 and 0.28 with it held at the value the
+  5 mm frame measured. At 1.16 px the fit finds the level itself, to 0.002.
+- **`gapSigma` is a scale, not a confidence interval.** It is the fit's
+  curvature under its own residual, and neighbouring pixels' residuals are not
+  independent. At 2 mm it is 0.015 and 0.027 px, the two renders differ by
+  0.05, and both sit further from the truth than either.
+- **It does not undo the renderer.** Over the ACES renders the refit at 2 mm
+  is −0.28 px, and +0.28 of that is the Table's edge, where the tone curve
+  put it.
+- **A third edge inside the band breaks the model.** A shadow boundary in the
+  gap is paired with the nearest edge and fitted as if nothing else were there.
+- **A gap it cannot tell from none produces no record.** That is one edge
+  found twice, or two parts in contact. It cannot say which.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

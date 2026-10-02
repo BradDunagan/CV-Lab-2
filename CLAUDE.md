@@ -30,7 +30,7 @@ native/buffer.*      the buffer type: allocation, dtypes, overflow-checked sizin
 native/kernels.*     the compute kernels, behind one uniform C signature
 native/render.*      display transforms and downsampling, done in C
 native/addon_*.c     the Node-API surface
-src/lab/ops.js       the twenty-one operations themselves: inputs, params,
+src/lab/ops.js       the twenty-two operations themselves: inputs, params,
                      defaults, and the kernel each one binds to
 src/lab/registry.js  the schema they are declared against — validation,
                      error messages, provenance records
@@ -43,6 +43,9 @@ src/lab/explain.js   what put each edge in the picture — reads the AOV
                      passes: occlusion, crease, texture, or shading
 src/lab/gapsweep.js  the image gap between two parts, detected against
                      true, one row per step of a gap sweep (pure JS)
+src/lab/pairs.js     two close parallel segments placed again, jointly,
+                     against the unblurred image: blur finds edges and
+                     displaces close ones (pure JS)
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
 scripts/generate-cli.js  drives pt-lab to render varied images (needs a GPU)
 scripts/score.js     tallies match records: precision, recall, and which
@@ -63,7 +66,7 @@ src/menu.js          the application menu — global commands live here, not in 
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
-test/                seventeen suites; sixteen run under plain node
+test/                eighteen suites; seventeen run under plain node
 pipelines/           .lab scripts for the batch runner
 ```
 
@@ -74,7 +77,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — seventeen suites, ~469 tests
+npm test                # everything — eighteen suites, ~498 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -173,3 +176,15 @@ under both populations, because both live at a silhouette.
 
 Still open from the same run: **ground-truth visibility is computed at the
 render size**, so recall is not comparable across resolutions.
+
+The gap sweep's largest error is answered: **two edges a few pixels apart
+displace each other in the blurred image**, +1.2 px on a 2.3 px gap, and
+`fitPairs` places them again against the unblurred one to within 0.1
+(`design-lab-model.md` §5, "A fifth"). The aperture a pixel gathers light over
+has to be measured for that, on the image's lone segments; assumed, or fitted
+per pair, it gives confident wrong answers. Still open from it:
+
+- **1 mm and below has no pair to refit.** Only one edge is detected there, so
+  the next step is finding a strip hidden inside a single segment;
+- **under a pixel the strip's level must be supplied**, and nothing carries it
+  from one frame of an approach to the next.
