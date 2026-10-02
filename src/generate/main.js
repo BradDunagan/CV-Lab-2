@@ -256,6 +256,12 @@ const api = {
     if (typeof scale === 'number') lab.setRenderScale(scale);
   },
 
+  /** 'aces' (pt-lab's default) or 'linear', and the exposure; returns what pt-lab now holds. */
+  toneMapping({ kind, exposure }) {
+    lab.setToneMapping(kind, exposure);
+    return lab.getToneMapping();
+  },
+
   /**
    * Render and export one beauty image.
    *

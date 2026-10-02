@@ -58,6 +58,9 @@ CV-Lab image generator — renders from pt-lab
   --truth            also write <name>.gt.json: where the edges really are
   --crease-angle <d> how sharp a fold counts as an edge  (default 20)
   --denoise          run OIDN over each export (off in pt-lab by default)
+  --tone-mapping <k> aces | linear                       (default aces)
+                     linear for measurement -- see TONE MAPPING below
+  --exposure <x>     multiplies radiance before tone mapping (default 1)
   --show             show the render window and watch it converge
   --shots <file>     render these shots instead of the scene's own plan: a
                      JSON array of {name, camera, target, intensity,
@@ -124,6 +127,18 @@ are absolute, so no shot depends on the one before. The whole list is checked
 before anything renders, and moving an object the scene does not include is
 refused. scripts/gap-sweep.js writes one.
 
+TONE MAPPING
+
+Renders are tone-mapped with ACES Filmic by default: an S-curve, which is
+what makes them look photographic. It also moves edges. A pixel straddling an
+edge is averaged in linear light BEFORE the curve, so under ACES its value is
+not the midpoint of its two sides, and the lab -- which undoes the sRGB
+encoding and nothing else -- places the edge up to ~0.2 px off the geometry.
+--tone-mapping linear applies no curve: radiance times --exposure, clamped to
+1. Choose the exposure so the surfaces being measured stay below 1; what
+clips is flat, and a flat region has no edge to place. Each image's
+.gt.json records the tone mapping it was made with.
+
 GROUND TRUTH
 
 --truth asks the renderer where the edges actually are, and writes one JSON per
@@ -182,6 +197,8 @@ function parseArgs(argv) {
       case '--no-lights': opts.lights = []; break;
       case '--aovs': opts.aovs = true; break;
       case '--denoise': opts.denoise = true; break;
+      case '--tone-mapping': opts.toneMapping = argv[++i]; break;
+      case '--exposure': opts.exposure = num(); break;
       case '--truth': opts.truth = true; break;
       case '--show': opts.show = true; break;
       case '--shots': {
@@ -302,6 +319,8 @@ app.whenReady().then(async () => {
       console.log(event.lights.length === 0
         ? '  no editor lights -- the room lights the scene'
         : event.lights.map((l) => `  light  ${describeLight(l)}  ${l.name}`).join('\n'));
+    } else if (event.type === 'tone') {
+      console.log(`  tone mapping  ${event.kind}, exposure ${event.exposure}`);
     } else if (event.type === 'shot' && event.dryRun) {
       console.log(`  (dry run) ${event.name}  ${describeShot(event)}`);
     } else if (event.type === 'shot') {
