@@ -213,8 +213,21 @@ function truthPairs(truth, moving, target, gapM, opts) {
     return best;
   };
   const ofMoving = nearest('a'), ofTarget = nearest('b');
-  return all
-    .filter((c) => ofMoving.get(c.a.id) === c && ofTarget.get(c.b.id) === c)
+  const mutual = all.filter((c) => ofMoving.get(c.a.id) === c && ofTarget.get(c.b.id) === c);
+  /*
+   * And not far further apart than the closest pair is. Each-other's-nearest
+   * is true of two edges that have nothing nearer, however far apart: in two
+   * of the gap sweep's 28 views the cube's top edge and the table's far edge
+   * were such a pair, 205 px apart beside a real one at 6, and got a row.
+   * Pairs across one gap are the same gap seen from different sides, and
+   * differ by the views' foreshortening and by a slide's few pixels, not by
+   * a factor of thirty. Three times the closest, or 10 px more than it,
+   * whichever is larger: the second is for a closest pair that is nearly
+   * closed.
+   */
+  const closest = Math.min(...mutual.map((c) => Math.abs(c.facing.gap)));
+  return mutual
+    .filter((c) => Math.abs(c.facing.gap) <= Math.max(3 * closest, closest + 10))
     .sort((p, q) => p.facing.at[0] - q.facing.at[0] || p.facing.at[1] - q.facing.at[1]);
 }
 

@@ -340,6 +340,19 @@ test('an edge pairs only with its nearest facing edge, both ways round', () => {
   assert.deepEqual(far.map((p) => [p.a.id, p.b.id]), [[5, 3]]);
 });
 
+test('two edges with nothing nearer are not a pair of this gap if they are far further apart', () => {
+  // The top cube's far top edge and the base's far bottom edge, off to the
+  // right where nothing else is: each is the other's nearest, 200 px apart.
+  const far = [...STACK,
+    gt(7, ['Top'], 300, 10, 400, 10), gt(8, ['Base'], 300, 210, 400, 210)];
+  const pairs = truthPairs(far, 'Top', 'Base', 0.005, DEFAULTS);
+  assert.deepEqual(pairs.map((p) => [p.a.id, p.b.id]), [[1, 3], [2, 4]]);
+  // A pair a few pixels further apart than a nearly closed one is still one:
+  // a slide closes one pair's gap and leaves the other's where it was.
+  const slid = STACK.map((e) => (e.id === 1 ? gt(1, ['Top'], 50, 79.5, 150, 99.5) : e));
+  assert.equal(truthPairs(slid, 'Top', 'Base', 0.005, DEFAULTS).length, 2);
+});
+
 test('the closest pair of all is one of the pairs, so the one-pair reading has not moved', () => {
   const closest = truthPair(STACK, 'Top', 'Base', 0.005, DEFAULTS);
   const pairs = truthPairs(STACK, 'Top', 'Base', 0.005, DEFAULTS);
