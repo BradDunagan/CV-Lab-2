@@ -133,11 +133,11 @@ const only = (edge, name, other) => edge.objects.includes(name) && !edge.objects
  * @param {object[]} truth  gt-edge records
  * @param {number} gapM     the shot's gap in metres, for the depth test
  */
-function truthPair(truth, moving, target, gapM, opts) {
+function facingCandidates(truth, moving, target, gapM, opts) {
   const visible = truth.filter((e) => e.type === 'gt-edge' && e.visible >= opts.minVisible);
   const movingEdges = visible.filter((e) => only(e, moving, target));
   const targetEdges = visible.filter((e) => only(e, target, moving));
-  let best = null;
+  const out = [];
   for (const ea of movingEdges) {
     const a = line(ea);
     if (!a) continue;
@@ -153,12 +153,49 @@ function truthPair(truth, moving, target, gapM, opts) {
       const depthA = depthAt(ea, a, onLine(a, f.at));
       const depthB = depthAt(eb, b, f.at);
       if (Math.abs(depthA - depthB) > gapM + opts.depthSlack) continue;
-      if (!best || Math.abs(f.gap) < Math.abs(best.facing.gap)) {
-        best = { a: ea, b: eb, facing: f };
-      }
+      out.push({ a: ea, b: eb, facing: f });
     }
   }
+  return out;
+}
+
+function truthPair(truth, moving, target, gapM, opts) {
+  let best = null;
+  for (const c of facingCandidates(truth, moving, target, gapM, opts)) {
+    if (!best || Math.abs(c.facing.gap) < Math.abs(best.facing.gap)) best = c;
+  }
   return best;
+}
+
+/**
+ * EVERY pair of truth edges facing each other across the gap, for a fixture
+ * that has more than one: a cube stacked on a cube shows two, at right angles,
+ * and each measures a different direction of the same displacement.
+ *
+ * A pair is kept when each edge is the other's NEAREST facing edge. That is
+ * what makes a top cube's bottom edge pair with the base's top edge and not
+ * with the base's bottom edge 10 cm below, which is also parallel, also
+ * overlapping and also near in depth; and what stops the top cube's own top
+ * edge, whose nearest target edge is that same one, from being a second pair
+ * with it.
+ *
+ * In order of where each is measured, left to right and then top to bottom,
+ * so that with the camera held still pair k is the same pair in every shot.
+ */
+function truthPairs(truth, moving, target, gapM, opts) {
+  const all = facingCandidates(truth, moving, target, gapM, opts);
+  const nearest = (key) => {
+    const best = new Map();
+    for (const c of all) {
+      const was = best.get(c[key].id);
+      if (!was || Math.abs(c.facing.gap) < Math.abs(was.facing.gap)) best.set(c[key].id, c);
+    }
+    return best;
+  };
+  const ofMoving = nearest('a'), ofTarget = nearest('b');
+  return all
+    .filter((c) => ofMoving.get(c.a.id) === c && ofTarget.get(c.b.id) === c)
+    .sort((p, q) => p.facing.at[0] - q.facing.at[0] || p.facing.at[1] - q.facing.at[1]);
 }
 
 /**
@@ -267,8 +304,29 @@ function causesInGap(explained, pair, opts) {
  * @param {object} shot  { gapMm }
  * @param {object} parts { moving, target } -- object names, as the truth has them
  */
-function gapRow({ truth, segments, explained, matches, pairs }, shot, { moving, target }, options = {}) {
+function gapRow(input, shot, parts, options = {}) {
   const opts = { ...DEFAULTS, ...options };
+  const row = rowBase(input, shot, parts, opts);
+  const pair = truthPair(input.truth, parts.moving, parts.target, shot.gapMm / 1000, opts);
+  if (!pair) return { ...row, reason: 'no facing pair in the ground truth' };
+  return rowFor(row, pair, input, parts, opts);
+}
+
+/**
+ * One row per facing truth pair in the image -- `truthPairs` -- each numbered
+ * in `pair`, from 1. A shot with no facing pair still gets its one row, saying
+ * so, with `pair` null. What is counted over the whole image (segments
+ * spanning both parts, edges found) is the same in each of a shot's rows.
+ */
+function gapRows(input, shot, parts, options = {}) {
+  const opts = { ...DEFAULTS, ...options };
+  const base = rowBase(input, shot, parts, opts);
+  const found = truthPairs(input.truth, parts.moving, parts.target, shot.gapMm / 1000, opts);
+  if (found.length === 0) return [{ ...base, pair: null, reason: 'no facing pair in the ground truth' }];
+  return found.map((pair, k) => ({ ...rowFor({ ...base }, pair, input, parts, opts), pair: k + 1 }));
+}
+
+function rowBase({ truth, segments, matches }, shot, { moving, target }, opts) {
   const row = {
     gapMm: shot.gapMm,
     trueGapPx: null,
@@ -287,9 +345,10 @@ function gapRow({ truth, segments, explained, matches, pairs }, shot, { moving, 
     refit: null,
     reason: null,
   };
+  return row;
+}
 
-  const pair = truthPair(truth, moving, target, shot.gapMm / 1000, opts);
-  if (!pair) return { ...row, reason: 'no facing pair in the ground truth' };
+function rowFor(row, pair, { segments, explained, matches, pairs }, { moving, target }, opts) {
   row.trueGapPx = pair.facing.gap;
   // How much edge there is to measure it on: the stretch the two truth edges
   // share, which a view from the side foreshortens.
@@ -512,4 +571,4 @@ function orbitViews(camera, { yaw, elevation }) {
   return views;
 }
 
-module.exports = { gapRow, pxPerMm, truthPair, facing, line, changedInputs, orbitViews, DEFAULTS };
+module.exports = { gapRow, gapRows, pxPerMm, truthPair, truthPairs, facing, line, changedInputs, orbitViews, DEFAULTS };
