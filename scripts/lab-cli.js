@@ -43,7 +43,7 @@ const ROOT = path.join(__dirname, '..');
 
 function parseArgs(argv) {
   const opts = { images: [], script: null, out: null, from: 'srgb', as: 'srgb',
-                 slot: 'A', truth: null, truthSlot: 'T', aovs: null, quiet: false };
+                 slot: 'A', truth: null, truthSlot: 'T', aovs: null, extra: null, quiet: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = () => {
@@ -68,6 +68,9 @@ function parseArgs(argv) {
       case '--truth': opts.truth = next(); break;
       case '--aovs': opts.aovs = next(); break;
       case '--truth-slot': opts.truthSlot = next(); break;
+      // And commands of its own, after the script: what an earlier frame
+      // measured, written in as numbers -- gap-sweep --carry's trackPair.
+      case '--extra': opts.extra = next(); break;
       case '--quiet': opts.quiet = true; break;
       case '--help': case '-h': opts.help = true; break;
       default:
@@ -94,6 +97,8 @@ cv-lab-2 batch runner
   --truth-slot <n>  slot the ground truth loads into     (default T)
   --aovs <dir>      the renderer's auxiliary passes, for explain():
                     <dir>/aov/<name>-{depth,normal,albedo}.png
+  --extra <json>    more commands per image, run after the script:
+                    {"<name>": ["K1 = trackPair(G, x0=...)", ...], ...}
   --quiet           only report failures
 
 The script is the command language, unchanged — no variables, no loops. Each
@@ -126,6 +131,12 @@ With --truth, one more line is prepended:
 so a script can end with 'M = match(C, T)' and score itself. Write that
 directory with 'npm run generate -- --truth'. A missing file for one image is a
 failure for that image and not for the run.
+
+With --extra, each image named in the file runs its own commands after the
+script. They are ordinary commands, so they go into that image's log like any
+other; an image the file does not name runs the script alone. This is how a
+value measured in one frame reaches another without the language growing
+variables: the driver writes the number into the command.
 `.trim();
 
 /**
@@ -211,7 +222,8 @@ async function runOne(win, { image, script, opts }) {
     }
   }
 
-  const commands = [...prelude, ...script];
+  const own = opts.extraCommands?.[path.basename(image).replace(/\.[^.]+$/, '')] ?? [];
+  const commands = [...prelude, ...script, ...own];
   for (const command of commands) {
     // One statement at a time, so a failure names the line that failed
     // rather than the whole script.
@@ -253,6 +265,15 @@ if (opts && (opts.help || (!opts.script && opts.images.length === 0))) {
     bail(process.stderr, `no such image:\n  ${missing.join('\n  ')}`, 2);
   } else if (opts.script && !fs.existsSync(opts.script)) {
     bail(process.stderr, `no such script: ${opts.script}`, 2);
+  } else if (opts.extra) {
+    try {
+      const extra = JSON.parse(fs.readFileSync(opts.extra, 'utf8'));
+      const bad = Object.entries(extra).find(([, v]) => !Array.isArray(v) || v.some((c) => typeof c !== 'string'));
+      if (bad) throw new Error(`"${bad[0]}" is not a list of commands`);
+      opts.extraCommands = extra;
+    } catch (err) {
+      bail(process.stderr, `--extra ${opts.extra}: ${err.message}`, 2);
+    }
   }
 }
 
