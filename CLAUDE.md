@@ -30,7 +30,7 @@ native/buffer.*      the buffer type: allocation, dtypes, overflow-checked sizin
 native/kernels.*     the compute kernels, behind one uniform C signature
 native/render.*      display transforms and downsampling, done in C
 native/addon_*.c     the Node-API surface
-src/lab/ops.js       the twenty-three operations themselves: inputs, params,
+src/lab/ops.js       the twenty-four operations themselves: inputs, params,
                      defaults, and the kernel each one binds to
 src/lab/registry.js  the schema they are declared against — validation,
                      error messages, provenance records
@@ -85,7 +85,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — nineteen suites, ~551 tests
+npm test                # everything — nineteen suites, ~563 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -93,7 +93,8 @@ npm run score -- results/           # found, against what is really there
 npm run overlay -- <img> results/   # ...and the same thing as a picture
 npm run gap-sweep -- --name gap-1   # a part closing on another, down to contact
                                     # (--yaw, --elevation: from a grid of views;
-                                    #  --offset: across a gap already open)
+                                    #  --offset: across a gap already open;
+                                    #  --carry: each pair tracked down its approach)
 npm run position -- --x <dir> --y <dir> --z <dir>   # where the part is, from several
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
@@ -200,10 +201,11 @@ per pair, it gives confident wrong answers. Still open from it:
   edge and the aperture also carried from a frame where the gap was wide,
   `trackPair` fits only the moving edge, and the stack's 0.5 mm gap (0.31 to
   0.61 px) reads to +0.02 ± 0.02 px in six of eight pair-views, where one
-  frame alone read two ("A twelfth"). It is not a workflow yet: the frames
-  were refitted in plain node, and the lab's way would be an operation the
-  driver writes the carried values into. Holding the level is
-  sound: at 2048 px the level reads 0.119, 0.122, 0.116 and 0.104 at 5, 2, 1
+  frame alone read two ("A twelfth"). `gap-sweep --carry` does it: the
+  carried values are written into each narrower frame's `trackPair` command,
+  so they are in its log. What to carry from a pair that never read wide, and
+  carrying between frames anything but a gap (a pose, for one), are open.
+  Holding the level is sound: at 2048 px the level reads 0.119, 0.122, 0.116 and 0.104 at 5, 2, 1
   and 0.5 mm. And **more pixels do the whole job**: at 2048 px the 1 mm and
   0.5 mm gaps are ordinary pairs, read to −0.011 and −0.017 mm. `findPairs`
   finds the 1 mm gap (1.16 px) inside the single segment the detector leaves,
