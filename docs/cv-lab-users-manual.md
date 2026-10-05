@@ -1540,6 +1540,17 @@ that direction, and its `errorMm` is left empty rather than divided by nearly
 nothing. A true gap can be negative: the moving part's edge has passed the
 target's, an overhang.
 
+**`--poses "x,y,z[,turn];..."` renders a list of poses instead of a sweep.**
+Each is a displacement from contact in millimetres and, optionally, a turn
+about the vertical in degrees; one shot per pose per view, named `pose-1.png`
+and on. The table gains `pose`, `poseX`, `poseY`, `poseZ` and `turnDeg`.
+
+Every row also reads the gap a sixth of the way in from each end of the pair
+(`endsTruePx`, `endsDetectedPx`, and `endsPx` in the refit, in the JSON). One
+number says how far apart two edges are; two say whether they are parallel,
+and a part turned about the vertical opens a pair at one end and closes it at
+the other.
+
 ### `npm run position`
 
 ```bash
@@ -1566,6 +1577,12 @@ same `--offset` and the same views, and prints:
   displacement is known. Each is solved from the true gaps (which checks that
   a linear model is good enough), from the detections, and from the refit, and
   the RMS error per axis is reported.
+
+`--turn <dir>` adds a fourth unknown, the turn about the vertical, from a
+`--poses` run of turns at the reference offset. `--test <dir>` scores a
+`--poses` run the Jacobian was not measured on, which is the honest test.
+`--readings mid|ends|both` (default both) chooses where along each pair the gap
+is read; a turn is only visible in the ends.
 
 `--max-sigma` (default 10 mm per px) refuses a pose whose surviving readings
 barely separate the axes. Plain node; it reads each sweep's `gap-sweep.json`. Under the lamp alone, the cube's own shadow takes the contrast out of
