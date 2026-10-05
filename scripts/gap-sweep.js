@@ -86,14 +86,18 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
                      the same gap with the two edges placed jointly against
                      the unblurred image, whether the detector found both or
                      one
-  --carry            carry each pair down its approach: from the widest frame
-                     whose refit read it as a detected pair, the still part's
-                     edge, the strip level and the aperture are written into a
-                     trackPair command for every narrower frame of that view,
-                     and those frames run again with it. Adds the tracked
-                     columns. Needs a script binding G and P = fitPairs(F, G)
-  --carry-min <px>   how wide the gap must be in the frame carried from
-                                                          (default 3)
+  --carry            hold each pair's still edge where one frame read it
+                     cleanly: per view and pair, the widest frame whose refit
+                     read it as a detected pair, with no ledge in it, gives the
+                     still part's edge, the strip level and the aperture; every
+                     frame of that view runs again with a trackPair command
+                     holding that edge (and, where the frame's own gap is
+                     narrow, that level). Adds the tracked columns. Needs a
+                     script binding G and P = fitPairs(F, G)
+  --carry-min <px>   how wide a gap must be to be carried from, or to fit its
+                     own strip level                      (default 3)
+  --ledge-max <x>    a frame whose fitPairs ledge gain reaches this is not
+                     carried from                         (default 1.2)
   --skip-render      reuse generated/<run>/, re-run the lab and the analysis
   --overwrite        render into generated/<run>/ even though it holds a sweep
   --dry-run          print the shots and stop
@@ -121,7 +125,7 @@ function parseArgs(argv) {
     gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], size: 512, samples: 96, skipRender: false, overwrite: false,
     script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
     yaw: null, elevation: null, offset: null, poses: null,
-    carry: false, carryMin: 3, dryRun: false,
+    carry: false, carryMin: 3, ledgeMax: 1.2, dryRun: false,
   };
   const list = (s, what) => {
     const v = String(s).split(',').map(Number);
@@ -169,6 +173,7 @@ function parseArgs(argv) {
       case '--skip-render': opts.skipRender = true; break;
       case '--carry': opts.carry = true; break;
       case '--carry-min': opts.carryMin = list(argv[++i], '--carry-min')[0]; break;
+      case '--ledge-max': opts.ledgeMax = list(argv[++i], '--ledge-max')[0]; break;
       case '--overwrite': opts.overwrite = true; break;
       case '--script': opts.script = argv[++i]; break;
       case '--tone-mapping': opts.toneMapping = argv[++i]; break;
@@ -180,9 +185,6 @@ function parseArgs(argv) {
   }
   // Checked once every option is in, since they depend on each other.
   if (opts.poses && opts.offset) throw new Error('--poses are displacements from contact; --offset does not apply');
-  // Carrying runs down an approach, widest gap first. A list of poses is not
-  // one, and neither is a sweep across a gap already open.
-  if (opts.carry && (opts.poses || opts.offset)) throw new Error('--carry needs a sweep down to contact: not --poses or --offset');
   if (!opts.poses && !opts.offset && opts.gaps.some((v) => v < 0)) {
     throw new Error('--gaps cannot be negative without --offset: that is the part inside the other');
   }
@@ -388,49 +390,86 @@ function gridMaps(rows, opts) {
 }
 
 /**
- * What --carry writes into each frame: for every view and every pair, the
- * widest frame of its approach whose refit read the pair as two DETECTED
- * edges at least `carryMin` px apart, and from that frame's fitPairs record
- * the still part's edge, a point on the moving part's side, the strip level
- * and the aperture -- as numbers in a trackPair command for each narrower
- * frame. Only the first such frame is carried from: a level fitted at 2.4 px
- * is still traded against width (design-lab-model.md §5, "A twelfth").
+ * What --carry writes into each frame.
+ *
+ * For every view and every pair, ONE frame is carried from: of the frames
+ * whose refit read the pair as two detected edges at least `carryMin` px
+ * apart with no ledge in them (fitPairs's `ledge.gain` under `ledgeMax`),
+ * the one whose still edge is the median of theirs. Its fitPairs record gives the still part's edge, a point on
+ * the moving side, the strip level and the aperture. Every frame of that view,
+ * in any order, then reads the pair again with `K<pair> = trackPair(G, ...)`:
+ *
+ *   - the still edge HELD, everywhere. The still part does not move, and a
+ *     frame where a ledge in soft shadow lies along its edge cannot place it
+ *     (design-lab-model.md §5, the fifteenth); a frame without one can;
+ *   - the strip FITTED where the frame read the pair at least `carryMin` px
+ *     wide itself, and HELD at the carried level where it did not: under
+ *     about a pixel and a half, width and level trade (the twelfth).
+ *
+ * A pair with no frame to carry from -- every wide frame has a ledge, or none
+ * is wide -- gets nothing, and the plan says so.
  */
 function carryPlan(rows, shots, featuresOf, opts) {
   const viewOf = (x) => `${x.view?.yaw ?? x.yaw ?? ''},${x.view?.elevation ?? x.elevation ?? ''}`;
   const n = (v) => v.toFixed(6);
+  const shotOf = (s) => (r) => r.gapMm === s.gapMm && (s.pose === undefined || r.pose === s.pose);
   const commands = {};
   const sources = [];
+  const missing = [];
   for (const view of new Set(shots.map(viewOf))) {
-    const frames = shots.filter((s) => viewOf(s) === view).sort((a, b) => b.gapMm - a.gapMm);
+    const frames = shots.filter((s) => viewOf(s) === view);
     const pairs = [...new Set(rows.filter((r) => viewOf(r) === view && r.pair).map((r) => r.pair))].sort((a, b) => a - b);
     for (const pair of pairs) {
-      let carried = null;
+      const rowIn = (s) => rows.find((r) => viewOf(r) === view && r.pair === pair && shotOf(s)(r));
+      const candidates = frames.map((s) => ({ s, row: rowIn(s) }))
+        .filter(({ row }) => row?.refit?.from === 'pair' && row.refit.gapPx >= opts.carryMin)
+        .filter(({ row }) => !(row.refit.ledge?.gain >= opts.ledgeMax))
+        .sort((a, b) => b.row.refit.gapPx - a.row.refit.gapPx);
+      // Each candidate's still edge, from its fitPairs record. detectedPair is
+      // [moving, target]; the record's edges name segments.
+      const placed = candidates.map((c) => {
+        const record = (featuresOf(c.s).fitted ?? []).find((p) => p.id === c.row.refit.pair);
+        if (!record) return null;
+        const [moving, still] = record.a.segment === c.row.detectedPair[1] ? [record.b, record.a] : [record.a, record.b];
+        return { ...c, record, moving, still };
+      }).filter(Boolean);
+      if (placed.length === 0) { missing.push({ view, pair }); continue; }
+      /*
+       * The median of them, not the widest. A mild ledge can stay under
+       * ledgeMax and still move its frame's still edge 0.1 px: on the x
+       * sweep the widest frame under it read that edge 0.09 to 0.13 px off,
+       * and every frame carried it. Ordered by where each puts the still edge
+       * -- its offset along the first one's normal at the first one's middle
+       * -- the middle one is outvoted by nothing.
+       */
+      const ref = placed[0].still;
+      const len = Math.hypot(ref.x1 - ref.x0, ref.y1 - ref.y0);
+      const normal = [-(ref.y1 - ref.y0) / len, (ref.x1 - ref.x0) / len];
+      const m = [(ref.x0 + ref.x1) / 2, (ref.y0 + ref.y1) / 2];
+      const cross = (a, b) => a[0] * b[1] - a[1] * b[0];
+      // Where line e crosses the normal through ref's middle, along that normal.
+      const offsetOf = (e) => {
+        const u = [e.x1 - e.x0, e.y1 - e.y0];
+        return cross([e.x0 - m[0], e.y0 - m[1]], u) / cross(normal, u);
+      };
+      placed.sort((a, b) => offsetOf(a.still) - offsetOf(b.still));
+      const { s: from, row, record, moving, still } = placed[(placed.length - 1) >> 1];
+      const carried = { line: still, toward: [(moving.x0 + moving.x1) / 2, (moving.y0 + moving.y1) / 2],
+        stripLevel: record.levels[1], aperture: record.aperture };
+      sources.push({ ...(from.view ?? {}), pair, from: from.name, fromMm: from.gapMm, gapPx: row.refit.gapPx,
+        ledgeGain: row.refit.ledge?.gain ?? null, of: placed.length, stripLevel: carried.stripLevel, aperture: carried.aperture });
       for (const s of frames) {
-        const base = s.name.replace(/\.png$/, '');
-        if (carried) {
-          (commands[base] ??= []).push(`K${pair} = trackPair(G, x0=${n(carried.line.x0)}, y0=${n(carried.line.y0)}, `
-            + `x1=${n(carried.line.x1)}, y1=${n(carried.line.y1)}, towardX=${n(carried.toward[0])}, `
-            + `towardY=${n(carried.toward[1])}, stripLevel=${n(carried.stripLevel)}, aperture=${n(carried.aperture)}, `
-            + `guess=${n(carried.gapPx)})`);
-          continue;
-        }
-        const row = rows.find((r) => viewOf(r) === view && r.pair === pair && r.gapMm === s.gapMm);
-        if (!(row?.refit?.from === 'pair' && row.refit.gapPx >= opts.carryMin)) continue;
-        const record = (featuresOf(s).fitted ?? []).find((p) => p.id === row.refit.pair);
-        if (!record) continue;
-        // detectedPair is [moving, target]; the record's edges name segments.
-        const [moving, still] = record.a.segment === row.detectedPair[1] ? [record.b, record.a] : [record.a, record.b];
-        carried = {
-          line: still, toward: [(moving.x0 + moving.x1) / 2, (moving.y0 + moving.y1) / 2],
-          stripLevel: record.levels[1], aperture: record.aperture, gapPx: row.refit.gapPx,
-        };
-        sources.push({ ...(s.view ?? {}), pair, fromMm: s.gapMm, gapPx: row.refit.gapPx,
-          stripLevel: carried.stripLevel, aperture: carried.aperture });
+        const own = rowIn(s);
+        const read = own?.refit?.gapPx ?? own?.measuredGapPx ?? null;
+        const wide = read !== null && read >= opts.carryMin;
+        (commands[s.name.replace(/\.png$/, '')] ??= []).push(`K${pair} = trackPair(G, x0=${n(carried.line.x0)}, y0=${n(carried.line.y0)}, `
+          + `x1=${n(carried.line.x1)}, y1=${n(carried.line.y1)}, towardX=${n(carried.toward[0])}, `
+          + `towardY=${n(carried.toward[1])}, stripLevel=${n(carried.stripLevel)}, aperture=${n(carried.aperture)}, `
+          + `guess=${n(read ?? row.refit.gapPx)}, strip=${wide ? 'fit' : 'held'})`);
       }
     }
   }
-  return { minPx: opts.carryMin, sources, commands };
+  return { minPx: opts.carryMin, ledgeMax: opts.ledgeMax, sources, missing, commands };
 }
 
 function main() {
@@ -542,7 +581,8 @@ function main() {
     // What was carried from where, and the commands it became: the latter in
     // the form lab-cli's --extra reads.
     fs.writeFileSync(path.join(ROOT, res, 'carry.json'),
-      `${JSON.stringify({ minPx: carry.minPx, sources: carry.sources }, null, 2)}\n`);
+      `${JSON.stringify({ minPx: carry.minPx, ledgeMax: carry.ledgeMax, sources: carry.sources, missing: carry.missing }, null, 2)}\n`);
+    if (carry.missing.length) console.log(`--carry: nothing to carry from for ${carry.missing.map((m) => `${m.view} pair ${m.pair}`).join('; ')}`);
     const commandsFile = path.join(res, 'carry-commands.json');
     fs.writeFileSync(path.join(ROOT, commandsFile), `${JSON.stringify(carry.commands, null, 2)}\n`);
     const later = shots.filter((s) => carry.commands[s.name.replace(/\.png$/, '')]).map((s) => path.join(gen, s.name));
@@ -550,7 +590,7 @@ function main() {
     rows = analyse();
     for (const r of rows) {
       const from = carry.sources.find((c) => c.yaw === r.yaw && c.elevation === r.elevation && c.pair === r.pair);
-      if (r.tracked && from) r.tracked.carriedFromMm = from.fromMm;
+      if (r.tracked && from) { r.tracked.carriedFrom = from.from; r.tracked.carriedFromMm = from.fromMm; }
     }
   }
 
@@ -612,7 +652,7 @@ function main() {
     ...(gridded ? { views: { yaw: opts.yaw, elevation: opts.elevation } } : {}),
     ...(opts.offset ? { offsetMm: opts.offset } : {}),
     ...(posed ? { poses: opts.poses } : {}),
-    ...(carry ? { carry: { minPx: carry.minPx, sources: carry.sources } } : {}),
+    ...(carry ? { carry: { minPx: carry.minPx, ledgeMax: carry.ledgeMax, sources: carry.sources, missing: carry.missing } } : {}),
     analysedAt: new Date().toISOString(), script, inputs, rows,
   };
   fs.writeFileSync(recordFile, JSON.stringify(record, null, 2));

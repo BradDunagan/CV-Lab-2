@@ -286,15 +286,22 @@ function main() {
   for (let n = 1; n <= Math.min(opts.maxViews, views.length); n++) sets.push(...choose(views, n));
 
   const refitPick = (r) => r.refit ?? r.detected;
+  // A --carry run's tracked reading first: the still edge held where a frame
+  // without a ledge read it (design-lab-model.md §5, the fifteenth).
+  const carriedPick = (r) => r.tracked ?? r.refit ?? r.detected;
   const MODES = [
     ['truth', (r) => r.truth],
     ['detected', (r) => r.detected],
     ['refit', refitPick],
+    ['carried', carriedPick],
   ];
+  const sigmaOf = (pick, r) => (pick === carriedPick && r?.tracked != null ? r.trackedSigma
+    : (pick === refitPick || pick === carriedPick) && r?.refit != null ? r.sigma : null);
   const report = { unknowns, reference, readings: [...readings.values()], sets: [] };
 
   const score = (used, poses, pick) => {
     const errors = unknowns.map(() => []);
+    const byPose = [];
     let solved = 0;
     const worst = { size: 0, text: '' };
     for (const pose of poses) {
@@ -310,8 +317,9 @@ function main() {
        */
       const obs = used.map((p) => {
         const r = pose.readings.get(p.key);
+        const sigma = sigmaOf(pick, r);
         return { jacobian: p.jacobian, reference: p.reference, measured: r ? pick(r) : null,
-          weight: opts.weights === 'sigma' && pick === refitPick && r?.refit != null && r.sigma > 0 ? 1 / (r.sigma * r.sigma) : 1 };
+          weight: opts.weights === 'sigma' && sigma > 0 ? 1 / (sigma * sigma) : 1 };
       });
       const s = solvePosition(obs);
       /*
@@ -324,10 +332,11 @@ function main() {
       solved++;
       const e = s.d.map((v, k) => v - pose.d[k]);
       e.forEach((v, k) => errors[k].push(v));
+      byPose.push({ pose: pose.label, error: e });
       const size = Math.hypot(...e);
       if (size > worst.size) { worst.size = size; worst.text = `${pose.label}, off by ${e.map((v) => fmt(v, 2)).join(', ')}`; }
     }
-    return { solved, of: poses.length, rms: errors.map(rms), worst: worst.text };
+    return { solved, of: poses.length, rms: errors.map(rms), worst: worst.text, byPose };
   };
   const line = (mode, r) => `  ${mode.padEnd(9)} ${String(r.solved).padStart(2)}/${r.of} solved   rms:  `
     + unknowns.map((u, k) => `${u} ${fmt(r.rms[k], 2)}`).join('   ') + (r.solved ? `   worst: ${r.worst}` : '');

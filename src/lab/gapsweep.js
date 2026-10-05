@@ -508,6 +508,9 @@ function refitReading(pairs, pair, da, db, opts) {
       gapSigma: record.gapSigma,
       strip: record.strip,
       stripLevel: record.levels[1],
+      // Whether a shadow ramp lies inside the strip (fitPairs's `ledge`):
+      // the edge it starts at is the one this reading cannot be trusted on.
+      ledge: record.ledge ?? null,
     };
   };
 
@@ -585,6 +588,7 @@ function trackedReading(tracks, pair, opts) {
     targetOffsetPx: r.targetOffset,
     gapSigma: best.record.gapSigma,
     rms: best.record.rms,
+    strip: best.record.strip,
     stripLevel: best.record.stripLevel,
   };
 }
