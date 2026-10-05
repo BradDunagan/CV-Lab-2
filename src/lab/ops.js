@@ -15,7 +15,7 @@ const { findCorners } = require('./corners');
 const { readGroundTruth } = require('./groundtruth');
 const { matchFeatures } = require('./match');
 const { explainFeatures } = require('./explain');
-const { fitPairs, findPairs } = require('./pairs');
+const { fitPairs, findPairs, trackPair } = require('./pairs');
 
 /**
  * Bind a declared operation to its C kernel.
@@ -152,6 +152,33 @@ function pairKernel(name, run, inputs, params) {
     width: src.width,
     height: src.height,
   };
+}
+
+/**
+ * trackPair's kernel: the gray image alone, and what an earlier frame measured
+ * as parameters. One `edge-track` record, or none.
+ */
+function trackKernel(inputs, params) {
+  const native = require('../../native');
+  const [image] = inputs;
+  const info = native.bufferInfo(image.handle);
+  if (info.channels !== 1) {
+    throw new Error(
+      `trackPair: image has ${info.channels} channels and needs 1. ` +
+        `Pass the gray image, before gaussian: G = gray(A)`
+    );
+  }
+  if (!(Math.hypot(params.x1 - params.x0, params.y1 - params.y0) > 0)) {
+    throw new Error('trackPair: the carried line has no length; give x0, y0, x1, y1');
+  }
+  const raster = { width: info.width, height: info.height, channels: 1, data: native.bufferRead(image.handle) };
+  const record = trackPair(raster, {
+    line: { x0: params.x0, y0: params.y0, x1: params.x1, y1: params.y1 },
+    toward: [params.towardX, params.towardY],
+    stripLevel: params.stripLevel,
+    aperture: params.aperture,
+  }, { guess: params.guess, pad: params.pad, levelSlope: params.levelSlope });
+  return { kind: 'features', features: record ? [record] : [], width: info.width, height: info.height };
 }
 
 function defaultReadTextFile(filePath) {
@@ -631,6 +658,49 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       ],
       output: { kind: 'features' },
       kernel: ({ inputs, params }) => pairKernel('findPairs', findPairs, inputs, params),
+    }),
+
+    defineOp({
+      name: 'trackPair',
+      version: 1,
+      summary: 'Read a pair again beside a line carried from an earlier frame: one edge fitted, nothing detected.',
+      /*
+       * Under about a pixel a gap is not in one image: width and strip level
+       * trade, and the detector reports one segment or none. In an approach
+       * only one part moves, so the other's edge -- and the strip's level and
+       * the aperture, measured while the gap was wide -- are carried in from
+       * that frame and held, and only the moving edge is fitted.
+       *
+       * No features input: what an earlier frame measured comes in as
+       * PARAMETERS, numbers in the command, so that it is in this frame's log
+       * and the frame replays without the other. The command language has no
+       * variables (§4); whoever drives the frames writes them in -- gap-sweep
+       * --carry does.
+       *
+       * Contact is not refused in every view (a few return 0.02 to 0.10 px),
+       * so the record reports the gap and leaves contact to the caller.
+       */
+      inputs: [{ name: 'image', channels: [1], space: 'linear' }],
+      params: [
+        // The still part's edge, as the earlier frame fitted it, over the
+        // stretch the pair shared. Held: see pairs.js for what an error in
+        // it does above and below a pixel.
+        { name: 'x0', type: 'number', default: 0 },
+        { name: 'y0', type: 'number', default: 0 },
+        { name: 'x1', type: 'number', default: 0 },
+        { name: 'y1', type: 'number', default: 0 },
+        // Any point on the moving part's side of that line.
+        { name: 'towardX', type: 'number', default: 0 },
+        { name: 'towardY', type: 'number', default: 0 },
+        { name: 'stripLevel', type: 'number', default: 0 },
+        { name: 'aperture', type: 'number', default: 1, min: 0.25, max: 8 },
+        // Where the fit starts, px; it also starts at 0.25, 0.5, 1 and 2.
+        { name: 'guess', type: 'number', default: 1, min: 0 },
+        { name: 'pad', type: 'number', default: 4, min: 1, max: 32 },
+        { name: 'levelSlope', type: 'enum', values: ['fit', 'none'], default: 'fit' },
+      ],
+      output: { kind: 'features' },
+      kernel: ({ inputs, params }) => trackKernel(inputs, params),
     }),
 
     defineOp({

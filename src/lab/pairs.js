@@ -843,8 +843,9 @@ function findPairs(segments, raster, options = {}) {
  * `options.guess` is where to start, in px (default 1); the fit is also
  * started at a quarter, a half, one and two pixels, and the best is kept.
  *
- * Returns the gap at the middle of the line, positive toward `toward`, with
- * `gapSigma` and the moving edge over the same stretch; or null when no
+ * Returns one `edge-track` record: the gap at the middle of the line, positive
+ * toward `toward`, with `gapSigma`, the `still` line as given and the `moving`
+ * edge over the same stretch; or null when no
  * strip can be fitted -- the edges cross, which is what contact does in most
  * views. A gap returned is NOT tested against its sigma: at contact a few
  * views return 0.02 to 0.09 px with sigmas that would pass, and the caller is
@@ -880,6 +881,10 @@ function trackPair(raster, carried, options = {}) {
   };
   const [x0, y0] = at(-frame.half), [x1, y1] = at(frame.half);
   return {
+    type: 'edge-track',
+    id: 1,
+    still: { x0: carried.line.x0, y0: carried.line.y0, x1: carried.line.x1, y1: carried.line.y1 },
+    toward: [carried.toward[0], carried.toward[1]],
     gap: side * moving.c,
     gapSigma: best.gapSigma,
     moving: { x0, y0, x1, y1 },

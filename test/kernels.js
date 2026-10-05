@@ -877,6 +877,34 @@ test('fitPairs and findPairs refuse a colour image and one of another size, and 
   native.bufferRelease(gray);
 });
 
+test('trackPair reads a half-pixel strip beside the carried line, and refuses what it cannot use', () => {
+  const op = require('../src/lab/ops').createRegistry().get('trackPair');
+  const defaults = Object.fromEntries(op.params.map((p) => [p.name, p.default]));
+  const call = (handle, params) => op.kernel({ inputs: [{ kind: 'buffer', handle }], params: { ...defaults, ...params } });
+  // 0.6 below y = 19.5, a strip at 0.12 up to y = 20, 0.31 above: pixel row
+  // 20 is half strip.
+  const W = 40;
+  const gray = run('pattern', [], { kind: 'constant', width: W, height: W, channels: 1, value: 0 });
+  native.bufferWrite(gray, Float32Array.from({ length: W * W }, (_, i) => {
+    const y = Math.floor(i / W);
+    return y < 20 ? 0.6 : y === 20 ? 0.5 * 0.12 + 0.5 * 0.31 : 0.31;
+  }));
+  const carried = { x0: 2, y0: 19.5, x1: 37, y1: 19.5, towardX: 20, towardY: 30, stripLevel: 0.12, aperture: 1 };
+  const out = call(gray, carried);
+  assert.equal(out.width, W);
+  assert.equal(out.features.length, 1);
+  const [r] = out.features;
+  assert.equal(r.type, 'edge-track');
+  assert.ok(Math.abs(r.gap - 0.5) < 1e-4, `gap ${r.gap}`);
+  assert.deepEqual(r.still, { x0: 2, y0: 19.5, x1: 37, y1: 19.5 });
+
+  assert.throws(() => call(gray, { ...carried, x1: 2, y1: 19.5 }), /carried line has no length/);
+  const colour = run('pattern', [], { kind: 'ramp', width: 16, height: 16, channels: 3 });
+  assert.throws(() => call(colour, carried), /trackPair: image has 3 channels and needs 1.*gray\(A\)/);
+  native.bufferRelease(colour);
+  native.bufferRelease(gray);
+});
+
 /* --- hostile inputs ---------------------------------------------------- */
 
 test('a released input buffer is refused, not dereferenced', () => {

@@ -44,6 +44,8 @@ const ROLES = {
    * known thing with nothing to draw rather than an unknown one.
    */
   'edge-pair': 'none',
+  // The same, for a pair read beside a line carried from an earlier frame.
+  'edge-track': 'none',
 };
 
 /**

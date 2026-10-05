@@ -312,14 +312,15 @@ All three are explained in `docs/electron-guide.md`.
 
 Working: the buffer type, the operation registry, the command language, the
 session log with provenance and replay, the display path, and the UI.
-Twenty-three operations — `load`, `pattern`, `gray`, `gaussian`, `sobel`,
+Twenty-four operations — `load`, `pattern`, `gray`, `gaussian`, `sobel`,
 `threshold`, `stats`, `toLinear`, `toSrgb`, `nms`, `hysteresis`, `orient`,
 `segments`, `merge`, `chain`, `fit`, `fitArcs`, `fitPairs`, `findPairs`,
-`corners`, `groundTruth`, `match`, `explain` — enough for Canny end to end,
-for straight edges with sub-pixel endpoints, for curved ones with sub-pixel
-endpoints of their own, for corner hypotheses carrying their own uncertainty,
-and for the gap between two edges too close to be placed one at a time, or
-too close to be detected as two. Three-platform CI
+`trackPair`, `corners`, `groundTruth`, `match`, `explain` — enough for Canny
+end to end, for straight edges with sub-pixel endpoints, for curved ones with
+sub-pixel endpoints of their own, for corner hypotheses carrying their own
+uncertainty, and for the gap between two edges too close to be placed one at
+a time, too close to be detected as two, or too close to be read at all
+without what an earlier frame measured. Three-platform CI
 produces unsigned installers.
 
 Outstanding, in rough order:

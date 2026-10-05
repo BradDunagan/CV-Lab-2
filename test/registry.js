@@ -202,7 +202,7 @@ test('the first slice registers cleanly', () => {
     ['chain', 'corners', 'explain', 'findPairs', 'fit', 'fitArcs', 'fitPairs', 'gaussian', 'gray',
      'groundTruth', 'hysteresis', 'load', 'match', 'merge', 'nms', 'orient',
      'pattern', 'segments', 'sobel', 'stats', 'threshold', 'toLinear',
-     'toSrgb']);
+     'toSrgb', 'trackPair']);
 });
 
 test('load is unimplemented without a decoder, implemented with one', () => {

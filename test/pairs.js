@@ -650,7 +650,8 @@ test('which way the carried line was written does not matter', () => {
   const c = carriedFrom(lo, hi);
   const { x0, y0, x1, y1 } = c.line;
   const back = trackPair(raster, { ...c, line: { x0: x1, y0: y1, x1: x0, y1: y0 } });
-  assert.deepEqual(back, trackPair(raster, c));
+  // All but the line itself, which is reported as it was given.
+  assert.deepEqual({ ...back, still: null }, { ...trackPair(raster, c), still: null });
 });
 
 test('at contact there is no strip to fit, and almost nothing is returned', () => {
@@ -665,6 +666,8 @@ test('at contact there is no strip to fit, and almost nothing is returned', () =
   test('a pair is a feature type the tile overlay knows, with nothing of its own to draw', () => {
     assert.equal(overlayRole({ type: 'edge-pair' }), 'none');
     assert.equal(isDetection({ type: 'edge-pair' }), false);
+    assert.equal(overlayRole({ type: 'edge-track' }), 'none');
+    assert.equal(isDetection({ type: 'edge-track' }), false);
   });
 
   if (failures > 0) {
