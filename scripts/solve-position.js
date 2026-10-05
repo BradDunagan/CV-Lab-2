@@ -54,6 +54,24 @@ CV-Lab relative position -- several gap readings solved for one displacement
                         proportion to 1/gapSigma^2, the fit's own say of how
                         well its pixels pin the gap. Truth and detections are
                         never weighted                        (default sigma)
+  --sequence <dir>      a gap sweep to solve as a sequence of frames, in the
+                        order it was swept (repeatable): each frame alone, and
+                        each with the previous frame's pose carried in -- its
+                        solution moved by the motion commanded since, which a
+                        robot knows, as a prior. Run with --carry, its tracked
+                        readings are used too (the "carried" readings)
+  --reading-sigma <px>  a reading's error, for weighing readings against the
+                        carried pose; gapSigma sets readings' weights relative
+                        to one another                       (default 0.1)
+  --motion-sigma <mm>   how far a commanded move may miss, per frame and axis
+                                                              (default 0.1)
+  --turn-sigma <deg>    the same for the turn                 (default 0.1)
+  --start-sigma <mm>    how well the first frame's pose is known before it is
+                        seen: the commanded one, to this; degrees for a turn
+                                                              (default 1)
+  --trials <n>          the commanded poses and moves are the true ones with
+                        errors of these sizes drawn at random (seeded); each
+                        sequence is run this many times      (default 20)
   --out <file>          also write everything as JSON
   --max-views <n>       the largest set of views to combine   (default 3)
   --max-sigma <n>       a pose is not solved from readings that would turn one
@@ -62,11 +80,18 @@ CV-Lab relative position -- several gap readings solved for one displacement
 `.trim();
 
 function parseArgs(argv) {
-  const opts = { dirs: {}, test: null, readings: 'both', weights: 'sigma', out: null, maxViews: 3, maxSigma: 10 };
+  const opts = { dirs: {}, test: null, readings: 'both', weights: 'sigma', out: null, maxViews: 3, maxSigma: 10,
+    sequences: [], readingSigma: 0.1, motionSigma: 0.1, turnSigma: 0.1, startSigma: 1, trials: 20 };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (['--x', '--y', '--z', '--turn'].includes(arg)) opts.dirs[arg.slice(2)] = argv[++i];
     else if (arg === '--test') opts.test = argv[++i];
+    else if (arg === '--sequence') opts.sequences.push(argv[++i]);
+    else if (arg === '--reading-sigma') opts.readingSigma = Number(argv[++i]);
+    else if (arg === '--motion-sigma') opts.motionSigma = Number(argv[++i]);
+    else if (arg === '--turn-sigma') opts.turnSigma = Number(argv[++i]);
+    else if (arg === '--start-sigma') opts.startSigma = Number(argv[++i]);
+    else if (arg === '--trials') opts.trials = Number(argv[++i]);
     else if (arg === '--readings') opts.readings = argv[++i];
     else if (arg === '--weights') opts.weights = argv[++i];
     else if (arg === '--out') opts.out = argv[++i];
@@ -111,9 +136,12 @@ function readingsOf(r) {
     detected: r.endsDetectedPx?.[k] ?? null,
     refit: r.refit?.endsPx?.[k] ?? null,
     sigma: r.refit?.gapSigma ?? null,
+    tracked: r.tracked?.endsPx?.[k] ?? null,
+    trackedSigma: r.tracked?.gapSigma ?? null,
   });
   return {
-    mid: { truth: r.trueGapPx, detected: r.measuredGapPx, refit: r.refit?.gapPx ?? null, sigma: r.refit?.gapSigma ?? null },
+    mid: { truth: r.trueGapPx, detected: r.measuredGapPx, refit: r.refit?.gapPx ?? null, sigma: r.refit?.gapSigma ?? null,
+      tracked: r.tracked?.gapPx ?? null, trackedSigma: r.tracked?.gapSigma ?? null },
     'end 1': at(0),
     'end 2': at(1),
   };
@@ -278,6 +306,154 @@ function main() {
       }
     }
     report.sets.push(entry);
+  }
+
+  /* ---- 4. sequences, each frame alone and with the last one carried --- */
+
+  /*
+   * A reading's value and its sigma in each mode. "carried" prefers the
+   * tracked reading -- trackPair's, from a gap-sweep --carry run -- then the
+   * refit, then the detection.
+   */
+  const SEQUENCE_MODES = [
+    ['truth', (r) => [r.truth, null]],
+    ['refit', (r) => (r.refit !== null ? [r.refit, r.sigma] : [r.detected, null])],
+    ['carried', (r) => (r.tracked !== null ? [r.tracked, r.trackedSigma]
+      : r.refit !== null ? [r.refit, r.sigma] : [r.detected, null])],
+  ];
+  const sequences = opts.sequences.map((dir) => {
+    const run = load(dir);
+    if (run.poses) throw new Error(`${dir} is a list of poses, not a sequence`);
+    const offset = run.offsetMm ?? [0, 0, 0];
+    const rows = run.rows.filter((r) => r.pair !== null && r.pair !== undefined);
+    const frames = posesFrom(rows, (r) => [
+      ...offset.map((o, k) => o + run.axis[k] * r.gapMm - reference[k]),
+      ...(opts.dirs.turn ? [r.turnDeg ?? 0] : []),
+    ]).map((f, k) => ({ ...f, label: `frame ${k + 1}` }));
+    return { dir, frames };
+  });
+  /*
+   * Absolute weights, because a prior in millimetres is weighed against them:
+   * a reading's variance is readingSigma squared, scaled by its gapSigma
+   * against the median of all of them -- so the readings keep the weights
+   * they have among themselves.
+   */
+  const allSigmas = sequences.flatMap((q) => q.frames.flatMap((f) => [...f.readings.values()]
+    .flatMap((r) => [r.sigma, r.trackedSigma]))).filter((v) => v > 0).sort((a, b) => a - b);
+  const medianSigma = allSigmas.length ? allSigmas[(allSigmas.length - 1) >> 1] : null;
+  const weightOf = (sigma) => {
+    const rel = opts.weights === 'sigma' && sigma > 0 && medianSigma ? sigma / medianSigma : 1;
+    return 1 / (opts.readingSigma * rel) ** 2;
+  };
+  const motion = unknowns.map((u) => (u === 'turn' ? opts.turnSigma : opts.motionSigma) ** 2);
+  const start = unknowns.map((u) => opts.startSigma ** 2);
+  const diagonal = (v) => v.map((x, a) => v.map((_, b) => (a === b ? x : 0)));
+
+  /*
+   * What the robot believes, which is not the truth: the first pose it was
+   * told to reach, off by startSigma, and each move after it, off by
+   * motionSigma -- drawn from a seeded generator, so a run is repeatable. Fed
+   * the TRUE poses instead, the carried solve inherits the truth in every
+   * direction its readings cannot see, and a single view looks perfect. That
+   * is how the first version of this measured it.
+   */
+  const gaussians = (seed) => {
+    let x = seed >>> 0;
+    const u = () => { x = (Math.imul(x, 1664525) + 1013904223) >>> 0; return (x + 0.5) / 4294967296; };
+    return () => Math.sqrt(-2 * Math.log(u())) * Math.cos(2 * Math.PI * u());
+  };
+  const commandedFor = (frames, trial) => {
+    const g = gaussians(1000 + trial);
+    const sd = (u, size) => (u === 'turn' ? (size === 'start' ? opts.startSigma : opts.turnSigma)
+      : size === 'start' ? opts.startSigma : opts.motionSigma);
+    const startErr = unknowns.map((u) => g() * sd(u, 'start'));
+    const stepErr = frames.map(() => unknowns.map((u) => g() * sd(u, 'step')));
+    return { startErr, stepErr };
+  };
+
+  const runSequence = (used, frames, pick, mode) => {
+    const errors = unknowns.map(() => []);
+    const byFrame = frames.map(() => []);
+    let solved = 0;
+    for (let trial = 0; trial < (mode === 'alone' ? 1 : opts.trials); trial++) {
+      const { startErr, stepErr } = commandedFor(frames, trial);
+      let state = null, believed = null;
+      frames.forEach((frame, k) => {
+        // Where dead reckoning puts the part: the commanded start, then each
+        // commanded move, each with its own error.
+        believed = k === 0 ? frame.d.map((v, a) => v + startErr[a])
+          : believed.map((v, a) => v + frame.d[a] - frames[k - 1].d[a] + stepErr[k][a]);
+        if (mode === 'commanded') {
+          solved++;
+          believed.forEach((v, a) => errors[a].push(v - frame.d[a]));
+          byFrame[k].push(believed.map((v, a) => v - frame.d[a]));
+          return;
+        }
+        const obs = used.map((p) => {
+          const r = frame.readings.get(p.key);
+          const [value, sigma] = r ? pick(r) : [null, null];
+          return { jacobian: p.jacobian, reference: p.reference, measured: value, weight: weightOf(sigma) };
+        });
+        /*
+         * Carried: the last solution moved by the commanded move, its
+         * covariance grown by the move's; the first frame's prior is the
+         * commanded pose. A frame that cannot be solved drops the chain back
+         * to dead reckoning.
+         */
+        let prior = null;
+        if (mode === 'carried') {
+          prior = state
+            ? { d: state.d.map((v, a) => v + frame.d[a] - frames[k - 1].d[a] + stepErr[k][a]),
+              covariance: state.covariance.map((row, a) => row.map((x, b) => x + (a === b ? motion[a] : 0))) }
+            : { d: believed.slice(), covariance: diagonal(k === 0 ? start : start.map((v, a) => v + k * motion[a])) };
+        }
+        const s = solvePosition(obs, { prior });
+        if (!s.determined || (mode === 'alone' && Math.max(...s.sigma) > opts.maxSigma * opts.readingSigma)) {
+          state = null;
+          return;
+        }
+        state = s;
+        solved++;
+        s.d.forEach((v, a) => errors[a].push(v - frame.d[a]));
+        byFrame[k].push(s.d.map((v, a) => v - frame.d[a]));
+      });
+    }
+    const runs = mode === 'alone' ? 1 : opts.trials;
+    return { solved: solved / runs, of: frames.length, rms: errors.map(rms), byFrame };
+  };
+  /** RMS per unknown over the frames `keep` says, from runSequence's byFrame. */
+  const rmsOver = (r, keep) => unknowns.map((_, a) => rms(r.byFrame.flatMap((list, k) => (keep(k) ? list.map((e) => e[a]) : []))));
+
+  report.sequences = [];
+  for (const q of sequences) {
+    console.log(`\nSEQUENCE ${q.dir}: ${q.frames.length} frames, each alone and with the last carried in`
+      + ` (reading ${opts.readingSigma} px, motion ${opts.motionSigma} mm${opts.dirs.turn ? `, ${opts.turnSigma} deg` : ''}`
+      + ` a frame, start ${opts.startSigma}; ${opts.trials} trials)`);
+    const entry = { dir: q.dir, sets: [] };
+    // The camera's contribution is what carrying does better than this.
+    { const { byFrame, ...c } = runSequence([], q.frames, null, 'commanded'); entry.commanded = c; }
+    console.log(`  commanded moves alone, no camera: ${unknowns.map((u, k) => `${u} ${fmt(entry.commanded.rms[k], 2)}`).join('  ')}`);
+    for (const set of sets) {
+      const used = [...readings.values()].filter((p) => set.includes(p.view));
+      console.log(`  ${set.join('  +  ')}`);
+      const result = { views: set };
+      const cell = (r) => `${fmt(r.solved, 0).padStart(2)}/${r.of}  ${unknowns.map((u, k) => `${u} ${fmt(r.rms[k], 2)}`).join('  ')}`;
+      for (const [mode, pick] of SEQUENCE_MODES) {
+        const alone = runSequence(used, q.frames, pick, 'alone');
+        const carried = runSequence(used, q.frames, pick, 'carried');
+        // Like for like: the frames a frame alone could solve, and apart from
+        // them the ones only carrying reached.
+        const both = (k) => alone.byFrame[k].length > 0;
+        const same = rmsOver(carried, both), extra = rmsOver(carried, (k) => !both(k));
+        const strip = ({ byFrame, ...rest }) => rest;
+        result[mode] = { alone: strip(alone), carried: { ...strip(carried), rmsSameFrames: same, rmsOtherFrames: extra } };
+        const v = (x) => unknowns.map((u, k) => `${u} ${fmt(x[k], 2)}`).join('  ');
+        console.log(`    ${mode.padEnd(8)} alone ${cell(alone)}   |   carried, same frames: ${v(same)}`
+          + `${q.frames.length - alone.solved > 0 && carried.solved > alone.solved ? `   + ${fmt(carried.solved - alone.solved, 0)} more: ${v(extra)}` : ''}`);
+      }
+      entry.sets.push(result);
+    }
+    report.sequences.push(entry);
   }
 
   if (opts.out) {
