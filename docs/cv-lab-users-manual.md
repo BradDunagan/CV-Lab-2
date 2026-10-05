@@ -634,6 +634,48 @@ segment you are asking about.
 It costs about a second an image at 512 px, far more than everything before
 it together.
 
+#### `trackPair(image[1] linear, …)` → features (`edge-track`)
+
+```
+K1 = trackPair(G, x0=173.06, y0=262.04, x1=268.29, y1=288.18, towardX=222.2, towardY=269.3, stripLevel=0.069, aperture=1.42, guess=5.97)
+```
+
+Read a pair again beside a line carried in from an **earlier frame**. Under
+about a pixel neither `fitPairs` nor `findPairs` can read a gap reliably: the
+strip's width and level trade, and the detector reports one segment or none.
+But in an approach only one part moves. The other part's edge is the same
+line in every frame, and the strip's level and the aperture were measured
+while the gap was wide. Given all three, held, only the moving part's edge is
+fitted, and nothing has to have been detected.
+
+| param | default | |
+|---|---|---|
+| `x0`, `y0`, `x1`, `y1` | 0 | the still part's edge, as an earlier frame's `fitPairs` record placed it, over the stretch the pair shared |
+| `towardX`, `towardY` | 0 | any point on the moving part's side of that line |
+| `stripLevel` | 0 | the strip's level from that record |
+| `aperture` | 1 | the aperture from that record |
+| `guess` | 1 px | where the fit starts; it also starts at 0.25, 0.5, 1 and 2 and keeps the best |
+| `pad` | 4 px | plateau taken beyond each edge |
+| `levelSlope` | `fit` | as for `fitPairs` |
+
+The carried values are **parameters**, numbers in the command, so they are
+in this frame's log and the frame replays on its own. Nothing in the
+language computes them; `gap-sweep --carry` writes them in.
+
+One record, or none when no strip can be fitted (the edges cross): `still`
+(the line as given), `toward`, `moving` (the fitted edge over the same
+stretch), `gap` at the line's middle (positive toward `toward`), `gapSigma`,
+`levels`, `levelSlopes`, `stripLevel`, `aperture`, `rms`, `samples`,
+`iterations`, `converged`.
+
+- **An error in the carried line**: over a pixel it is an error in the gap,
+  one for one. Under one, the strip's darkness sets the width and the moving
+  edge follows the line instead: 0.2 px off cost a 0.6 px gap 0.02. Either
+  way `rms` rises, about a hundredfold for 0.2 px.
+- **Contact is not refused in every view.** Most return nothing; a few return
+  0.02 to 0.10 px with a `gapSigma` small enough to pass a 3-sigma test.
+  Whether the parts can be touching is the caller's to decide.
+
 #### `match(src features, truth features, …)` → features (`edge-match`)
 
 Score detected features against ground truth. Dispatches on what the *detected*
@@ -881,6 +923,7 @@ Four scripts ship in `pipelines/`:
 | `--slot <name>` | slot the image loads into (default `A`) |
 | `--truth <dir>` | ground truth to score against: `<dir>/<name>.gt.json` |
 | `--truth-slot <n>` | slot it loads into (default `T`) |
+| `--extra <json>` | more commands per image, run after the script: `{"<name>": ["K1 = trackPair(G, …)", …]}` |
 | `--quiet` | only report failures |
 
 Each image gets a **fresh session**, because slot names repeat and a leftover
@@ -892,6 +935,12 @@ runs your script:
 A = load("<image>", from=<from>, as=<as>)
 T = groundTruth("<truth-dir>/<name>.gt.json")
 ```
+
+With `--extra`, an image named in the file then runs its own commands too.
+They are ordinary commands and go into that image's log like any other. This
+is how a number measured in one frame reaches another without the language
+growing variables: whoever drives the frames writes it into the command.
+`gap-sweep --carry` does exactly this with `trackPair`.
 
 so write your script against `A` and `T`.
 
@@ -1497,6 +1546,7 @@ lab has no pose estimator, and one would put its own error into the result.
 | `CubeOffsetPx`, `TableOffsetPx` | the error split by edge: each detected edge against its own truth edge, positive toward the moving part |
 | `refitGapPx`, `refitErrorPx`, `refitErrorMm`, `refitCubeOffsetPx`, `refitTableOffsetPx` | the same, with the two edges where `fitPairs` or `findPairs` placed them. Only when the script binds `P` or `H` |
 | `gapSigma`, `stripLevel` | from that pair's record |
+| `trackedGapPx`, `trackedErrorPx`, `trackedErrorMm`, `trackedSigma`, `trackedRms` | the same, read beside the line carried in by `--carry` (`trackPair`). Only with `--carry` |
 | `refitFrom` | `pair`: two detected segments, placed again. `segment`: both edges found inside one detection |
 | `pairFound` | both facing edges detected AND reaching the measuring point; when false, `reason` says which failed and the error columns are empty |
 | `spansBoth` | detected segments lying along both parts' edges: the merge failure |
@@ -1510,7 +1560,10 @@ error that looks like the detector's and is not.
 `scenes/gap-1.json` rests the Cube on the Table with its front face flush with
 the table's front edge, lit by the room's overhead lamp alone.
 `scenes/gap-1-front.json` is the same scene with an area light on the camera
-side. `scenes/stack-1.json` is a different fixture: a cube on the table and a
+side. Under the lamp alone, the cube's own shadow takes the contrast out of
+both facing edges, and no gap is measured at any step.
+
+`scenes/stack-1.json` is a different fixture: a cube on the table and a
 second, `Cube2`, the same size, lowered onto it, seen from a corner so that two
 faces of each show.
 
@@ -1560,48 +1613,29 @@ number says how far apart two edges are; two say whether they are parallel,
 and a part turned about the vertical opens a pair at one end and closes it at
 the other.
 
-### `npm run position`
+**`--carry` carries each pair down its approach.** For every view and every
+pair, the widest frame whose refit read the pair as two detected edges at
+least `--carry-min` px apart (default 3) is the one carried from. Its
+`fitPairs` record gives the still part's edge, a point on the moving side, the
+strip level and the aperture, and every narrower frame of that view runs
+again with `K<pair> = trackPair(G, …)` and those numbers. It needs a script
+that binds `G` and `P`, as `pipelines/pairs.lab` does, and a sweep down to
+contact: not `--poses` or `--offset`.
 
 ```bash
-npm run position -- --x results/stack-2g-x/pairs --y results/stack-2g-y/pairs \
-                    --z results/stack-2g-z/pairs --max-views 4
+npm run gap-sweep -- --name stack-2g-approach --scene saved:stack-2 --moving Cube2 --target Cube \
+    --axis 0,1,0 --gaps 5,2,1,0.5,0 --yaw 35,60 --elevation 20,50 --script pipelines/pairs.lab --carry
 ```
 
-One relative position from several gap readings. A gap is one number and a
-position is three, and each pair's gap mixes two of them: lifting the top cube
-and sliding it toward the camera both open the front pair's gap. Another pair,
-or the same pair from another view, mixes them differently, and enough
-different mixtures separate the three.
-
-It takes three gap sweeps of one fixture, one along each axis, made from the
-same `--offset` and the same views, and prints:
-
-- **the Jacobian**: for each pair in each view, pixels of gap per millimetre
-  along x, y and z, from the truth alone;
-- **what each set of views is worth**: millimetres of error per axis per pixel
-  of reading error, for every view alone, every two, and so on up to
-  `--max-views`. One view of two pairs is always "not determined": two
-  readings, three unknowns;
-- **what was read**: every shot of the three sweeps is a pose whose
-  displacement is known. Each is solved from the true gaps (which checks that
-  a linear model is good enough), from the detections, and from the refit, and
-  the RMS error per axis is reported.
-
-`--turn <dir>` adds a fourth unknown, the turn about the vertical, from a
-`--poses` run of turns at the reference offset. `--test <dir>` scores a
-`--poses` run the Jacobian was not measured on, which is the honest test.
-`--readings mid|ends|both` (default both) chooses where along each pair the gap
-is read; a turn is only visible in the ends.
-
-`--weights sigma|none` (default sigma): each refit reading counts in
-proportion to 1/`gapSigma`², the ends with their middle's. Sigma is a poor
-predictor of any one reading's error, but among the readings of one pose it
-is lowest where they are best; on the stack's test poses it took the turn from
-0.19° to 0.05° RMS. Truth and detections are never weighted.
-
-`--max-sigma` (default 10 mm per px) refuses a pose whose surviving readings
-barely separate the axes. Plain node; it reads each sweep's `gap-sweep.json`. Under the lamp alone, the cube's own shadow takes the contrast out of
-both facing edges, and no gap is measured at any step.
+The table gains the tracked columns and `gap-grid.txt` a map per gap.
+`carry.json` says what was carried from where; `carry-commands.json` holds
+the commands, as `npm run lab -- --extra` reads them, and they are also in
+each frame's session. A track is matched to a truth pair by where its line
+lies, within 3 px of the target's edge. At contact, where the truth has no
+facing pair, each track is a row of its own, and its gap is its error. On
+the stack, tracking reads 0.5 mm (0.31 to 0.61 px) to +0.02 ± 0.02 px in six
+of eight pair-views, where a frame alone read two (`design-lab-model.md` §5,
+"A twelfth").
 
 `--moving`, `--target`, `--axis` and `--gaps` name the parts and the steps;
 the moving part's position in the scene file is contact. `--skip-render`
@@ -1665,6 +1699,48 @@ changed and keeps the previous record as `gap-sweep.replaced-<time>.json`
 instead of overwriting it. The pipeline script is recorded and checked the same
 way. Under the hood it hands the generator a shot
 list with `npm run generate -- --shots <file>`, which any other sweep can use.
+
+### `npm run position`
+
+```bash
+npm run position -- --x results/stack-2g-x/pairs --y results/stack-2g-y/pairs \
+                    --z results/stack-2g-z/pairs --max-views 4
+```
+
+One relative position from several gap readings. A gap is one number and a
+position is three, and each pair's gap mixes two of them: lifting the top cube
+and sliding it toward the camera both open the front pair's gap. Another pair,
+or the same pair from another view, mixes them differently, and enough
+different mixtures separate the three.
+
+It takes three gap sweeps of one fixture, one along each axis, made from the
+same `--offset` and the same views, and prints:
+
+- **the Jacobian**: for each pair in each view, pixels of gap per millimetre
+  along x, y and z, from the truth alone;
+- **what each set of views is worth**: millimetres of error per axis per pixel
+  of reading error, for every view alone, every two, and so on up to
+  `--max-views`. One view of two pairs is always "not determined": two
+  readings, three unknowns;
+- **what was read**: every shot of the three sweeps is a pose whose
+  displacement is known. Each is solved from the true gaps (which checks that
+  a linear model is good enough), from the detections, and from the refit, and
+  the RMS error per axis is reported.
+
+`--turn <dir>` adds a fourth unknown, the turn about the vertical, from a
+`--poses` run of turns at the reference offset. `--test <dir>` scores a
+`--poses` run the Jacobian was not measured on, which is the honest test.
+`--readings mid|ends|both` (default both) chooses where along each pair the gap
+is read; a turn is only visible in the ends.
+
+`--weights sigma|none` (default sigma): each refit reading counts in
+proportion to 1/`gapSigma`², the ends with their middle's. Sigma is a poor
+predictor of any one reading's error, but among the readings of one pose it
+is lowest where they are best; on the stack's test poses it took the turn from
+0.19° to 0.05° RMS. Truth and detections are never weighted.
+
+`--max-sigma` (default 10 mm per px) refuses a pose whose surviving readings
+barely separate the axes. Plain node; it reads each sweep's `gap-sweep.json`.
 
 ---
 
@@ -1737,6 +1813,7 @@ complaint.
 |---|---|---|
 | `edge-segment` | `fit` | `id`, `pixels`, `x0 y0 x1 y1`, `length`, `angle`, `residual`, `rms`, `cx cy` |
 | `edge-arc` | `fitArcs` | `id`, `pixels`, `cx cy r`, `x0 y0 x1 y1`, `angle0`, `angle1`, `sweep`, `arcLength`, `chord`, `sagitta`, `residual`, `rms`, `lineRms`, `mx my` |
+| `edge-track` | `trackPair` | `id`, `still` and `moving` (each `x0 y0 x1 y1`), `toward`, `gap`, `gapSigma`, `levels`, `levelSlopes`, `stripLevel`, `aperture`, `rms`, `samples`, `iterations`, `converged` |
 | `edge-pair` | `fitPairs`, `findPairs` (which adds `gain`) | `id`, `a` and `b` (each `segment`, `x0 y0 x1 y1`, `shift`), `x y`, `nx ny`, `gap`, `gapSigma`, `detectedGap`, `levels`, `levelSlopes` (fitPairs only), `strip`, `aperture`, `apertureFrom`, `apertureSegments`, `rms`, `samples`, `iterations`, `converged` |
 | `edge-corner` | `corners` | `id`, `x y`, `support`, `segments`, `sigma`, `reach`, `endpointGap`, `angle` |
 | `gt-edge` | `groundTruth` | `id`, `cause`, `objects`, `x0 y0 x1 y1`, `z0 z1`, `length`, `angle`, `dihedral`, `visible`, `clipped`, `v0 v1` |

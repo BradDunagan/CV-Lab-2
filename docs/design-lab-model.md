@@ -1413,11 +1413,18 @@ stack and 0.10 on the gap grid.
 - **A pair whose widest frame was under 3 px is not tracked**: two of the
   stack's eight. What to carry from a frame that never read wide is open.
 
-This is an experiment, not yet a workflow. The frames were fitted again in
-plain node (`notes/brads-notes/2026-10-04-carry/`), from a PNG decoder that
-is not the one the lab loads with. The lab's way would be an operation that
-takes the carried values as parameters, written into each frame's command by
-the driver, so that they are in the log.
+This was measured as an experiment, the frames fitted again in plain node
+(`notes/brads-notes/2026-10-04-carry/`) from a PNG decoder that is not the one
+the lab loads with. It is now the lab's own: `trackPair` is an operation whose
+carried values are **parameters**, and `gap-sweep --carry` writes them into
+each narrower frame's command (through `lab-cli --extra`), so every carried
+number is in that frame's log and the frame replays on its own. The command
+language still has no variables (§4). The driver does the carrying, as the
+batch runner already did the iterating. Run that way, the stack's eighteen
+tracked readings agree with the experiment's to 0.002 px. They differ only
+where the fit starts: the experiment started from the previous frame's gap,
+the driver from the carried frame's. Contact, where the truth has no facing
+pair, is reported as rows of tracks alone.
 
 #### What twenty-four views measured
 
