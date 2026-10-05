@@ -212,6 +212,36 @@ test('a hidden pair in some other segment, or away from the measuring point, is 
   assert.equal(gapRow(input(short), { gapMm: 1 }, PARTS).refit, null);
 });
 
+test('the gap is also read a sixth in from each end, which is what shows a turn', () => {
+  // The cube's edge turned: 1 px further from the table at x=100 than the
+  // table's 10, 1 px nearer at x=200. The truth pair overlaps over x=100..200,
+  // so the end points are at x=116.7 and 183.3, and the middle reads 10.
+  const turned = [gt(1, ['Cube'], 100, 99, 200, 101), TRUTH[1]];
+  const segments = [seg(10, 100, 99, 200, 101), seg(11, 50, 110, 250, 110)];
+  const pairs = [pairRecord(1, [10, 100, 99.2, 200, 100.8], [11, 100, 110, 200, 110])];
+  const row = gapRow({ truth: turned, segments, explained: segments, matches: [hit(10, 1), hit(11, 2)], pairs },
+    { gapMm: 8 }, PARTS);
+  const near = (a, b, what) => assert.ok(Math.abs(a - b) < 1e-9, `${what}: ${a}, expected ${b}`);
+  near(row.trueGapPx, 10, 'middle');
+  near(row.endsTruePx[0], 10 + 2 / 3, 'end at x=116.7');
+  near(row.endsTruePx[1], 10 - 2 / 3, 'end at x=183.3');
+  // The detections are on the truth; the refit's line is turned less.
+  near(row.endsDetectedPx[0], row.endsTruePx[0], 'detected end 1');
+  near(row.endsDetectedPx[1], row.endsTruePx[1], 'detected end 2');
+  near(row.refit.endsPx[0], 10 + 0.8 * 2 / 3, 'refit end 1');
+  near(row.refit.endsPx[1], 10 - 0.8 * 2 / 3, 'refit end 2');
+});
+
+test('an end the lines do not reach is not read', () => {
+  // The cube's detection covers only x=140..200, so the end at x=116.7 is 23 px
+  // past it; the other end and the middle are read.
+  const segments = [seg(10, 140, 100, 200, 100), seg(11, 50, 110, 250, 110)];
+  const row = gapRow({ truth: TRUTH, segments, explained: segments, matches: [hit(10, 1), hit(11, 2)] },
+    { gapMm: 8 }, PARTS);
+  assert.equal(row.endsDetectedPx[0], null);
+  assert.ok(Math.abs(row.endsDetectedPx[1] - 10) < 1e-9);
+});
+
 test('no pair, no per-edge offsets', () => {
   const segments = [seg(10, 100, 100, 200, 100)];
   const row = gapRow({ truth: TRUTH, segments, explained: segments, matches: [hit(10, 1)] },
