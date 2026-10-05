@@ -1563,8 +1563,8 @@ same, smaller (0.04 to 0.10 px), when the top cube is slid back in z.
 
 **That was tried, and it detects a ledge without placing one.** `fitBand`
 was given soft edges, free or anchored to start their ramp at another edge
-(branch `shadow-edge`, not merged; scripts in
-`notes/brads-notes/2026-10-05-shadow-edge/` there). On the x sweep's pair 2:
+(pairs.js; the scripts that measured this are in
+`notes/brads-notes/2026-10-05-shadow-edge/`). On the x sweep's pair 2:
 
 | | ledge frames (slid −1, −2 mm) | clean frames |
 |---|---|---|
