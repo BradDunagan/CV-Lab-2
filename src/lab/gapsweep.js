@@ -355,7 +355,33 @@ function gapRows(input, shot, parts, options = {}) {
   const opts = { ...DEFAULTS, ...options };
   const base = rowBase(input, shot, parts, opts);
   const found = truthPairs(input.truth, parts.moving, parts.target, separation(shot), opts);
-  if (found.length === 0) return [{ ...base, pair: null, reason: 'no facing pair in the ground truth' }];
+  if (found.length === 0) {
+    const reason = 'no facing pair in the ground truth';
+    const tracks = (input.tracks ?? []).filter((t) => t.type === 'edge-track');
+    if (tracks.length === 0) return [{ ...base, pair: null, reason }];
+    /*
+     * At contact the two truth edges coincide and there is no facing pair --
+     * and that is the frame where a track's reading matters most: does it say
+     * zero, or a gap? So each track is a row of its own, read at its own
+     * middle, and numbered like the rest by the angle of its still line. On a
+     * sweep down to contact the true gap there is zero by construction;
+     * anywhere else it is not known, and no error is claimed.
+     */
+    const contact = shot.gapMm === 0 && shot.separationMm === undefined;
+    return tracks.map((t, k) => {
+      const l = line(t.still);
+      const deg = l ? (Math.atan2(l.u[1], l.u[0]) * 180) / Math.PI : null;
+      return {
+        ...base,
+        trueGapPx: contact ? 0 : null,
+        pairAngle: deg === null ? null : ((deg % 180) + 180) % 180,
+        tracked: { gapPx: t.gap, endsPx: null, errorPx: contact ? t.gap : null, movingOffsetPx: null,
+          targetOffsetPx: null, gapSigma: t.gapSigma, rms: t.rms, stripLevel: t.stripLevel },
+        pair: k + 1,
+        reason,
+      };
+    });
+  }
   return found.map((pair, k) => ({ ...rowFor({ ...base }, pair, input, parts, opts), pair: k + 1 }));
 }
 
@@ -386,12 +412,13 @@ function rowBase({ truth, segments, matches }, shot, { moving, target }, opts) {
     endsTruePx: null,
     endsDetectedPx: null,
     refit: null,
+    tracked: null,
     reason: null,
   };
   return row;
 }
 
-function rowFor(row, pair, { segments, explained, matches, pairs }, { moving, target }, opts) {
+function rowFor(row, pair, { segments, explained, matches, pairs, tracks }, { moving, target }, opts) {
   row.trueGapPx = pair.facing.gap;
   // How much edge there is to measure it on: the stretch the two truth edges
   // share, which a view from the side foreshortens.
@@ -413,6 +440,8 @@ function rowFor(row, pair, { segments, explained, matches, pairs }, { moving, ta
   // Before the detections' own reading and whatever stops it: a refit can
   // exist where that reading does not, which is the case findPairs is for.
   row.refit = refitReading(pairs ?? [], pair, da, db, opts);
+  // And a reading carried from an earlier frame, which needs no detection.
+  row.tracked = trackedReading(tracks ?? [], pair, opts);
 
   if (!da) return { ...row, reason: `no detection matched ${moving}'s edge` };
   if (!db) return { ...row, reason: `no detection matched ${target}'s edge` };
@@ -517,6 +546,47 @@ function refitReading(pairs, pair, da, db, opts) {
     if (r) return r;
   }
   return null;
+}
+
+/**
+ * The gap as an `edge-track` record has it -- trackPair's, from a line carried
+ * in from an earlier frame -- read exactly as the refit is: at the truth
+ * pair's measuring point, along the still line's normal, and a sixth in from
+ * each end.
+ *
+ * Which record speaks for which truth pair is decided by where its still line
+ * lies, not by its slot's name: the one within TRACK_MATCH px of the target's
+ * truth edge at the measuring point, parallel to it within maxAngle, nearest
+ * first. The driver numbers its slots by the pair numbers of ITS analysis,
+ * and nothing here should have to agree with that.
+ */
+const TRACK_MATCH = 3;
+function trackedReading(tracks, pair, opts) {
+  const T = pair.facing;
+  const tb = line(pair.b);
+  let best = null;
+  for (const record of tracks) {
+    if (record.type !== 'edge-track') continue;
+    const still = line(record.still), moving = line(record.moving);
+    if (!still || !moving || angleBetween(still, tb) > opts.maxAngle) continue;
+    const off = Math.abs(dot(sub(T.at, still.p0), still.n));
+    const along = dot(sub(T.at, still.p0), still.u);
+    if (off > TRACK_MATCH || Math.max(0, -along, along - still.len) > opts.reach) continue;
+    if (!best || off < best.off) best = { off, record, still, moving };
+  }
+  if (!best) return null;
+  const r = measureAt(best.moving, best.still, T);
+  if (!r) return null;
+  return {
+    gapPx: r.gap,
+    endsPx: readAtPoints(best.moving, best.still, T, endPoints(T), opts.reach),
+    errorPx: r.gap - T.gap,
+    movingOffsetPx: r.movingOffset,
+    targetOffsetPx: r.targetOffset,
+    gapSigma: best.record.gapSigma,
+    rms: best.record.rms,
+    stripLevel: best.record.stripLevel,
+  };
 }
 
 /**

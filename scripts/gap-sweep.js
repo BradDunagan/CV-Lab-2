@@ -86,6 +86,14 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
                      the same gap with the two edges placed jointly against
                      the unblurred image, whether the detector found both or
                      one
+  --carry            carry each pair down its approach: from the widest frame
+                     whose refit read it as a detected pair, the still part's
+                     edge, the strip level and the aperture are written into a
+                     trackPair command for every narrower frame of that view,
+                     and those frames run again with it. Adds the tracked
+                     columns. Needs a script binding G and P = fitPairs(F, G)
+  --carry-min <px>   how wide the gap must be in the frame carried from
+                                                          (default 3)
   --skip-render      reuse generated/<run>/, re-run the lab and the analysis
   --overwrite        render into generated/<run>/ even though it holds a sweep
   --dry-run          print the shots and stop
@@ -113,7 +121,7 @@ function parseArgs(argv) {
     gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], size: 512, samples: 96, skipRender: false, overwrite: false,
     script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
     yaw: null, elevation: null, offset: null, poses: null,
-    dryRun: false,
+    carry: false, carryMin: 3, dryRun: false,
   };
   const list = (s, what) => {
     const v = String(s).split(',').map(Number);
@@ -159,6 +167,8 @@ function parseArgs(argv) {
       case '--size': opts.size = list(argv[++i], '--size')[0]; break;
       case '--samples': opts.samples = list(argv[++i], '--samples')[0]; break;
       case '--skip-render': opts.skipRender = true; break;
+      case '--carry': opts.carry = true; break;
+      case '--carry-min': opts.carryMin = list(argv[++i], '--carry-min')[0]; break;
       case '--overwrite': opts.overwrite = true; break;
       case '--script': opts.script = argv[++i]; break;
       case '--tone-mapping': opts.toneMapping = argv[++i]; break;
@@ -170,6 +180,9 @@ function parseArgs(argv) {
   }
   // Checked once every option is in, since they depend on each other.
   if (opts.poses && opts.offset) throw new Error('--poses are displacements from contact; --offset does not apply');
+  // Carrying runs down an approach, widest gap first. A list of poses is not
+  // one, and neither is a sweep across a gap already open.
+  if (opts.carry && (opts.poses || opts.offset)) throw new Error('--carry needs a sweep down to contact: not --poses or --offset');
   if (!opts.poses && !opts.offset && opts.gaps.some((v) => v < 0)) {
     throw new Error('--gaps cannot be negative without --offset: that is the part inside the other');
   }
@@ -264,7 +277,11 @@ function slots(file) {
   // findPairs binds H, and the rows then carry that reading beside the
   // detections' own. Both hold edge-pair records and are read as one list.
   const pairs = by.P || by.H ? [...(by.P ?? []), ...(by.H ?? [])] : null;
-  return { truth: by.T, segments: by.F, explained: by.EF, matches: by.MF, pairs };
+  // K1, K2, ...: trackPair's, written by --carry. Read as one list too; which
+  // speaks for which pair is decided by where its line lies (gapsweep.js).
+  const tracked = Object.keys(by).filter((k) => /^K\d+$/.test(k));
+  const tracks = tracked.length ? tracked.flatMap((k) => by[k]) : null;
+  return { truth: by.T, segments: by.F, explained: by.EF, matches: by.MF, pairs, fitted: by.P ?? null, tracks };
 }
 
 /**
@@ -362,8 +379,58 @@ function gridMaps(rows, opts) {
       out.push(table(`${g} mm: gap error refit, mm (* found inside one segment)`, g,
         (r) => (r.refit ? `${fmt(r.refit.errorMm, 3)}${r.refit.from === 'segment' ? '*' : ''}` : null)));
     }
+    if (rows.some((r) => r.tracked)) {
+      out.push(table(`${g} mm: gap error tracked from a wider frame, mm`, g,
+        (r) => (r.tracked ? fmt(r.tracked.errorMm, 3) : null)));
+    }
   }
   return out.join('\n\n');
+}
+
+/**
+ * What --carry writes into each frame: for every view and every pair, the
+ * widest frame of its approach whose refit read the pair as two DETECTED
+ * edges at least `carryMin` px apart, and from that frame's fitPairs record
+ * the still part's edge, a point on the moving part's side, the strip level
+ * and the aperture -- as numbers in a trackPair command for each narrower
+ * frame. Only the first such frame is carried from: a level fitted at 2.4 px
+ * is still traded against width (design-lab-model.md §5, "A twelfth").
+ */
+function carryPlan(rows, shots, featuresOf, opts) {
+  const viewOf = (x) => `${x.view?.yaw ?? x.yaw ?? ''},${x.view?.elevation ?? x.elevation ?? ''}`;
+  const n = (v) => v.toFixed(6);
+  const commands = {};
+  const sources = [];
+  for (const view of new Set(shots.map(viewOf))) {
+    const frames = shots.filter((s) => viewOf(s) === view).sort((a, b) => b.gapMm - a.gapMm);
+    const pairs = [...new Set(rows.filter((r) => viewOf(r) === view && r.pair).map((r) => r.pair))].sort((a, b) => a - b);
+    for (const pair of pairs) {
+      let carried = null;
+      for (const s of frames) {
+        const base = s.name.replace(/\.png$/, '');
+        if (carried) {
+          (commands[base] ??= []).push(`K${pair} = trackPair(G, x0=${n(carried.line.x0)}, y0=${n(carried.line.y0)}, `
+            + `x1=${n(carried.line.x1)}, y1=${n(carried.line.y1)}, towardX=${n(carried.toward[0])}, `
+            + `towardY=${n(carried.toward[1])}, stripLevel=${n(carried.stripLevel)}, aperture=${n(carried.aperture)}, `
+            + `guess=${n(carried.gapPx)})`);
+          continue;
+        }
+        const row = rows.find((r) => viewOf(r) === view && r.pair === pair && r.gapMm === s.gapMm);
+        if (!(row?.refit?.from === 'pair' && row.refit.gapPx >= opts.carryMin)) continue;
+        const record = (featuresOf(s).fitted ?? []).find((p) => p.id === row.refit.pair);
+        if (!record) continue;
+        // detectedPair is [moving, target]; the record's edges name segments.
+        const [moving, still] = record.a.segment === row.detectedPair[1] ? [record.b, record.a] : [record.a, record.b];
+        carried = {
+          line: still, toward: [(moving.x0 + moving.x1) / 2, (moving.y0 + moving.y1) / 2],
+          stripLevel: record.levels[1], aperture: record.aperture, gapPx: row.refit.gapPx,
+        };
+        sources.push({ ...(s.view ?? {}), pair, fromMm: s.gapMm, gapPx: row.refit.gapPx,
+          stripLevel: carried.stripLevel, aperture: carried.aperture });
+      }
+    }
+  }
+  return { minPx: opts.carryMin, sources, commands };
 }
 
 function main() {
@@ -429,10 +496,63 @@ function main() {
   }
 
   const images = shots.map((s) => path.join(gen, s.name));
-  electron('scripts/lab-cli.js', [
+  const lab = (extra = [], only = images) => electron('scripts/lab-cli.js', [
     '--script', opts.script, '--as', 'linear',
-    '--truth', gen, '--aovs', gen, '--out', res, '--quiet', ...images,
+    '--truth', gen, '--aovs', gen, '--out', res, '--quiet', ...extra, ...only,
   ]);
+  lab();
+
+  const parts = { moving: opts.moving, target: opts.target };
+  const featuresOf = (s) => slots(path.join(ROOT, res, s.name.replace(/\.png$/, '.features.json')));
+  const analyse = () => {
+    // One row per facing pair per shot: a fixture with two pairs -- a cube
+    // stacked on a cube -- gets two rows a shot, and each is its own measurement.
+    const perShot = shots.flatMap((s) => gapRows(featuresOf(s), s, parts).map((r) => ({
+      ...(s.view ?? {}),
+      ...(s.pose ? { pose: s.pose, poseMm: s.poseMm, turnDeg: s.turnDeg } : {}),
+      ...r,
+    })));
+    // Renumbered a view at a time, so that pair 1 is one pair down the sweep
+    // even through the shots that lost the other.
+    const viewOf = (r) => `${r.yaw ?? ''},${r.elevation ?? ''}`;
+    const numbered = new Map([...new Set(perShot.map(viewOf))]
+      .map((v) => [v, numberPairs(perShot.filter((r) => viewOf(r) === v))]));
+    const taken = new Map();
+    return perShot.map((r) => {
+      const k = taken.get(viewOf(r)) ?? 0;
+      taken.set(viewOf(r), k + 1);
+      return numbered.get(viewOf(r))[k];
+    });
+  };
+  let rows = analyse();
+
+  /*
+   * --carry: a second pass over the frames that have something carried into
+   * them, the same script and then their trackPair commands, so each carried
+   * number is in that frame's log. The first pass's slots come out the same
+   * (the lab is deterministic); the K slots are new. Then analysed again.
+   */
+  let carry = null;
+  if (opts.carry) {
+    if (!shots.some((s) => featuresOf(s).fitted)) throw new Error('--carry needs a script that binds P = fitPairs(F, G)');
+    if (!/^\s*G\s*=/m.test(fs.readFileSync(path.resolve(ROOT, opts.script), 'utf8'))) {
+      throw new Error('--carry runs trackPair(G, ...): the script must bind G, the gray image before the blur');
+    }
+    carry = carryPlan(rows, shots, featuresOf, opts);
+    // What was carried from where, and the commands it became: the latter in
+    // the form lab-cli's --extra reads.
+    fs.writeFileSync(path.join(ROOT, res, 'carry.json'),
+      `${JSON.stringify({ minPx: carry.minPx, sources: carry.sources }, null, 2)}\n`);
+    const commandsFile = path.join(res, 'carry-commands.json');
+    fs.writeFileSync(path.join(ROOT, commandsFile), `${JSON.stringify(carry.commands, null, 2)}\n`);
+    const later = shots.filter((s) => carry.commands[s.name.replace(/\.png$/, '')]).map((s) => path.join(gen, s.name));
+    if (later.length > 0) lab(['--extra', commandsFile], later);
+    rows = analyse();
+    for (const r of rows) {
+      const from = carry.sources.find((c) => c.yaw === r.yaw && c.elevation === r.elevation && c.pair === r.pair);
+      if (r.tracked && from) r.tracked.carriedFromMm = from.fromMm;
+    }
+  }
 
   const overlays = path.join(res, 'overlays');
   for (const image of images) {
@@ -441,27 +561,6 @@ function main() {
     if (r.status !== 0) throw new Error(`overlay of ${image} failed`);
   }
 
-  const parts = { moving: opts.moving, target: opts.target };
-  // One row per facing pair per shot: a fixture with two pairs -- a cube
-  // stacked on a cube -- gets two rows a shot, and each is its own measurement.
-  const perShot = shots.flatMap((s) => gapRows(
-    slots(path.join(ROOT, res, s.name.replace(/\.png$/, '.features.json'))), s, parts,
-  ).map((r) => ({
-    ...(s.view ?? {}),
-    ...(s.pose ? { pose: s.pose, poseMm: s.poseMm, turnDeg: s.turnDeg } : {}),
-    ...r,
-  })));
-  // Renumbered a view at a time, so that pair 1 is one pair down the sweep
-  // even through the shots that lost the other.
-  const viewOf = (r) => `${r.yaw ?? ''},${r.elevation ?? ''}`;
-  const numbered = new Map([...new Set(perShot.map(viewOf))]
-    .map((v) => [v, numberPairs(perShot.filter((r) => viewOf(r) === v))]));
-  const taken = new Map();
-  const rows = perShot.map((r) => {
-    const k = taken.get(viewOf(r)) ?? 0;
-    taken.set(viewOf(r), k + 1);
-    return numbered.get(viewOf(r))[k];
-  });
   const paired = rows.some((r) => r.pair > 1);
   /*
    * Pixels per millimetre is a property of the VIEW: the same gap is fewer
@@ -491,6 +590,7 @@ function main() {
     const usable = s !== null && Math.abs(s) >= 0.05;
     r.errorMm = usable && r.errorPx !== null ? r.errorPx / s : null;
     if (r.refit) r.refit.errorMm = usable ? r.refit.errorPx / s : null;
+    if (r.tracked) r.tracked.errorMm = usable ? r.tracked.errorPx / s : null;
   }
   const scale = perKeyScale(gridded, paired, opts) ? null : scales.get(viewKey(rows[0]));
 
@@ -512,6 +612,7 @@ function main() {
     ...(gridded ? { views: { yaw: opts.yaw, elevation: opts.elevation } } : {}),
     ...(opts.offset ? { offsetMm: opts.offset } : {}),
     ...(posed ? { poses: opts.poses } : {}),
+    ...(carry ? { carry: { minPx: carry.minPx, sources: carry.sources } } : {}),
     analysedAt: new Date().toISOString(), script, inputs, rows,
   };
   fs.writeFileSync(recordFile, JSON.stringify(record, null, 2));
@@ -527,6 +628,12 @@ function main() {
     ? [fmt(r.refit?.gapPx, 3), fmt(r.refit?.errorPx, 3), fmt(r.refit?.errorMm, 3), fmt(r.refit?.movingOffsetPx, 3),
       fmt(r.refit?.targetOffsetPx, 3), fmt(r.refit?.gapSigma, 3), fmt(r.refit?.stripLevel, 3), r.refit?.from ?? '']
     : []);
+  const trackedAny = rows.some((r) => r.tracked);
+  const trackHead = trackedAny ? ['trackedGapPx', 'trackedErrorPx', 'trackedErrorMm', 'trackedSigma', 'trackedRms'] : [];
+  const trackCells = (r) => (trackedAny
+    ? [fmt(r.tracked?.gapPx, 3), fmt(r.tracked?.errorPx, 3), fmt(r.tracked?.errorMm, 3), fmt(r.tracked?.gapSigma, 3),
+      fmt(r.tracked?.rms, 4)]
+    : []);
   const perKey = gridded || paired || !!opts.offset;
   const poseHead = posed ? ['pose', 'poseX', 'poseY', 'poseZ', 'turnDeg'] : [];
   const poseCells = (r) => (posed ? [r.pose, fmt(r.poseMm?.[0], 2), fmt(r.poseMm?.[1], 2), fmt(r.poseMm?.[2], 2), fmt(r.turnDeg, 2)] : []);
@@ -535,11 +642,11 @@ function main() {
   const viewCells = (r) => [...poseCells(r), ...(gridded ? [r.yaw, r.elevation] : []), ...(paired ? [r.pair ?? ''] : []),
     ...(perKey ? [fmt(r.pxPerMm, 3), fmt(r.overlapPx, 1)] : [])];
   const head = [...viewHead, 'gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm',
-    `${opts.moving}OffsetPx`, `${opts.target}OffsetPx`, ...refitHead, 'pairFound', 'spansBoth',
+    `${opts.moving}OffsetPx`, `${opts.target}OffsetPx`, ...refitHead, ...trackHead, 'pairFound', 'spansBoth',
     `${opts.moving}Found`, `${opts.target}Found`, ...causes.map((c) => `inGap_${c}`), 'reason'];
   const body = rows.map((r) => [
     ...viewCells(r), r.gapMm, fmt(r.trueGapPx, 3), fmt(r.measuredGapPx, 3), fmt(r.errorPx, 3), fmt(r.errorMm, 3),
-    fmt(r.movingOffsetPx, 3), fmt(r.targetOffsetPx, 3), ...refitCells(r), r.pairFound, r.spansBoth, `${r.moving.found}/${r.moving.findable}`, `${r.target.found}/${r.target.findable}`,
+    fmt(r.movingOffsetPx, 3), fmt(r.targetOffsetPx, 3), ...refitCells(r), ...trackCells(r), r.pairFound, r.spansBoth, `${r.moving.found}/${r.moving.findable}`, `${r.target.found}/${r.target.findable}`,
     ...causes.map((c) => r.causes[c] ?? 0),
     // Unquoted, so the padding below stays valid CSV: a quote must open its
     // field, and a padded field would start with spaces. No reason contains a
