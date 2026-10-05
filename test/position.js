@@ -127,6 +127,52 @@ test('readings that were never made are left out, not read as zero', () => {
   D.forEach((v, a) => near(r.d[a], v, 1e-9, `axis ${a}`));
 });
 
+/* ---- carried from the previous frame ------------------------------------ */
+
+const diag = (...v) => v.map((x, a) => v.map((_, b) => (a === b ? x : 0)));
+
+test('a prior and a reading of one axis meet where their variances say', () => {
+  // A reading of x with variance 1/4 (weight 4) says 3; the prior, variance 1, says 1.
+  const r = solvePosition([{ jacobian: [1], reference: 0, measured: 3, weight: 4 }],
+    { prior: { d: [1], covariance: [[1]] } });
+  near(r.d[0], (4 * 3 + 1 * 1) / (4 + 1), 1e-12, 'mean');
+  near(r.covariance[0][0], 1 / (4 + 1), 1e-12, 'variance');
+});
+
+test('one view of two pairs, never determined alone, is determined with the previous frame carried in', () => {
+  const obs = [reading(LOW.front, 2.4, D), reading(LOW.side, 2.1, D)].map((o) => ({ ...o, weight: 100 }));
+  assert.equal(solvePosition(obs).determined, false);
+  const prior = { d: [D[0] + 0.3, D[1] - 0.2, D[2] + 0.4], covariance: diag(0.25, 0.25, 0.25) };
+  const r = solvePosition(obs, { prior });
+  assert.equal(r.determined, true);
+  // The two directions the readings see are pulled to them; the one they do
+  // not see stays where the prior put it, and keeps the prior's uncertainty.
+  for (const [o, name] of [[obs[0], 'front'], [obs[1], 'side']]) {
+    const read = o.jacobian.reduce((s, j, a) => s + j * r.d[a], o.reference);
+    near(read, o.measured, 0.02, `${name} reading`);
+  }
+  const blind = [LOW.front[1] * LOW.side[2] - LOW.front[2] * LOW.side[1],
+    LOW.front[2] * LOW.side[0] - LOW.front[0] * LOW.side[2],
+    LOW.front[0] * LOW.side[1] - LOW.front[1] * LOW.side[0]];
+  const len = Math.hypot(...blind);
+  const along = (v) => v.reduce((s, x, a) => s + x * blind[a], 0) / len;
+  near(along(r.d), along(prior.d), 1e-9, 'the unseen direction');
+  r.sigma.forEach((s) => assert.ok(s < 0.5 + 1e-12, `sigma ${s} over the prior's`));
+});
+
+test('a vague prior changes nothing that the readings decide', () => {
+  const obs = [reading(LOW.front, 2.4, D), reading(LOW.side, 2.1, D), reading(HIGH.front, 1.4, D), reading(HIGH.side, 1.2, D)];
+  const r = solvePosition(obs, { prior: { d: [50, -50, 50], covariance: diag(1e12, 1e12, 1e12) } });
+  D.forEach((v, a) => near(r.d[a], v, 1e-6, `axis ${a}`));
+});
+
+test('a prior with no readings is the prior, and a singular one is refused', () => {
+  const r = solvePosition([], { prior: { d: [1, 2], covariance: diag(0.04, 0.09) } });
+  assert.deepEqual(r.d.map((v) => +v.toFixed(12)), [1, 2]);
+  near(r.sigma[1], 0.3, 1e-12, 'sigma');
+  assert.match(solvePosition([], { prior: { d: [1, 2], covariance: diag(0.04, 0) } }).reason, /singular/);
+});
+
 test('no readings at all is an answer too', () => {
   const r = solvePosition([]);
   assert.equal(r.determined, false);

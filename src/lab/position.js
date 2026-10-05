@@ -43,17 +43,24 @@ const { solve } = require('./pairs');
  * @param {{jacobian: number[], reference: number, measured: number, weight?: number}[]} observations
  *   `jacobian` in px per mm along each axis; `reference` and `measured` in px;
  *   `weight` multiplies that observation's squared residual (default 1).
+ * @param {{prior?: {d: number[], covariance: number[][]}}} [options]
+ *   `prior`: what is already known of the displacement -- carried from the
+ *   previous frame -- as a mean and a covariance, in the unknowns' own units.
+ *   It counts as one more set of observations, of d itself; with it, weights
+ *   must be absolute (1 / variance in px^2), or the two cannot be balanced.
  * @returns {{determined: boolean, d: number[]|null, sigma: number[]|null,
- *            residualRms: number|null, observations: number, reason: string|null}}
+ *            covariance: number[][]|null, residualRms: number|null,
+ *            observations: number, reason: string|null}}
  */
-function solvePosition(observations) {
+function solvePosition(observations, { prior = null } = {}) {
   const obs = observations.filter((o) => Number.isFinite(o.measured) && Number.isFinite(o.reference)
     && o.jacobian.every(Number.isFinite));
   const n = obs.length;
-  const k = n > 0 ? obs[0].jacobian.length : 0;
-  const none = (reason) => ({ determined: false, d: null, sigma: null, residualRms: null, observations: n, reason });
-  if (n === 0) return none('no readings');
-  if (n < k) return none(`${n} reading${n === 1 ? '' : 's'} for ${k} unknowns`);
+  const k = n > 0 ? obs[0].jacobian.length : prior ? prior.d.length : 0;
+  const none = (reason) => ({ determined: false, d: null, sigma: null, covariance: null, residualRms: null,
+    observations: n, reason });
+  if (n === 0 && !prior) return none('no readings');
+  if (n < k && !prior) return none(`${n} reading${n === 1 ? '' : 's'} for ${k} unknowns`);
 
   const JtJ = Array.from({ length: k }, () => new Array(k).fill(0));
   const Jtr = new Array(k).fill(0);
@@ -63,6 +70,27 @@ function solvePosition(observations) {
     for (let a = 0; a < k; a++) {
       Jtr[a] += w * o.jacobian[a] * r;
       for (let b = 0; b < k; b++) JtJ[a][b] += w * o.jacobian[a] * o.jacobian[b];
+    }
+  }
+  /*
+   * The prior is d observed directly, with the prior's covariance: its
+   * information matrix joins the readings' and its mean the right-hand side.
+   * A singular covariance is refused rather than inverted.
+   */
+  if (prior) {
+    const info = prior.covariance.map((row) => row.slice());
+    const eye = Array.from({ length: k }, (_, a) => Array.from({ length: k }, (__, b) => (a === b ? 1 : 0)));
+    const inv = [];
+    for (let c = 0; c < k; c++) {
+      const col = eye.map((row) => row[c]);
+      if (!solve(info.map((row) => row.slice()), col, 1e-300)) return none('the prior\'s covariance is singular');
+      inv.push(col);
+    }
+    for (let a = 0; a < k; a++) {
+      for (let b = 0; b < k; b++) {
+        JtJ[a][b] += inv[b][a];
+        Jtr[a] += inv[b][a] * prior.d[b];
+      }
     }
   }
 
@@ -82,12 +110,13 @@ function solvePosition(observations) {
   if (!solve(scaled(), rhs, 1e-6)) return none('the readings do not separate the axes');
   const d = rhs.map((x, a) => x / scale[a]);
 
-  const sigma = [];
+  const covariance = [];
   for (let a = 0; a < k; a++) {
     const e = new Array(k).fill(0); e[a] = 1;
     if (!solve(scaled(), e, 1e-6)) return none('the readings do not separate the axes');
-    sigma.push(Math.sqrt(e[a]) / scale[a]);
+    covariance.push(e.map((x, b) => x / (scale[a] * scale[b])));
   }
+  const sigma = covariance.map((row, a) => Math.sqrt(row[a]));
 
   let sse = 0;
   for (const o of obs) {
@@ -95,7 +124,7 @@ function solvePosition(observations) {
     for (let a = 0; a < k; a++) r -= o.jacobian[a] * d[a];
     sse += r * r;
   }
-  return { determined: true, d, sigma, residualRms: Math.sqrt(sse / n), observations: n, reason: null };
+  return { determined: true, d, sigma, covariance, residualRms: n ? Math.sqrt(sse / n) : null, observations: n, reason: null };
 }
 
 module.exports = { solvePosition };
