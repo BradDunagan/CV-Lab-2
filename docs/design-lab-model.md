@@ -1651,6 +1651,44 @@ All four views together: 0.08 / 0.02 / 0.05 mm and 0.03 degrees.
 - **The y sweep's side pair got slightly worse** (0.108 → 0.124 px), the one
   place it did; not chased.
 
+#### A seventeenth: calibrating with no truth, jointly
+
+With the still edge held (the sixteenth), calibrating from the readings
+alone gave the test poses 0.23 / 0.17 / 0.15 mm and 0.11 degrees, against
+0.11 / 0.06 / 0.07 and 0.04 from the truth. Split: references measured and
+slopes from the truth cost x alone (0.11 → 0.18); measuring the slopes too
+cost y, z and the turn. `--calibrate full` fitted each slope as a line down
+one sweep, five to seven frames, each sweep with its own intercept.
+
+`--calibrate joint` fits each reading's reference and all four slopes in one
+least-squares fit over every frame of every sweep -- 17 to 25 frames a
+reading -- drops frames more than 3 MADs off and fits again. Test poses, mean
+over the eleven multi-view sets, x / y / z mm and turn degrees, no truth
+anywhere:
+
+| readings | full | joint |
+|---|---|---|
+| detections | 0.73 / 0.29 / 0.58 / 0.44 | 0.71 / 0.32 / 0.64 / 0.43 |
+| refit | 0.25 / 0.21 / 0.23 / 0.14 | 0.18 / 0.16 / 0.19 / 0.08 |
+| still edge held | 0.23 / 0.17 / 0.15 / 0.11 | **0.19 / 0.09 / 0.10 / 0.06** |
+
+All four views, held, no truth: 0.18 / 0.05 / 0.08 mm and 0.06 degrees.
+
+- **Every slope the joint fit measures is within a few hundredths of the
+  truth's except one:** the side pair's slope with x reads 5 to 10% too steep
+  at the 50-degree views (−1.34 against −1.22, −1.22 against −1.13). Its
+  readings carry an error that grows as the top cube slides back -- the
+  ledge, where the gap is too narrow (under 2 px) for the ledge detector to
+  see it -- and a one-sided error fitted with a line is a slope. That is what
+  is left of x.
+- **Leaving ledge frames out of the fit** corrects the slope at 20 degrees,
+  where they are detected, and not at 50, where they are not; the test poses
+  did not change. Not kept.
+- **Weighting the solve by each reading's calibration scatter** (0.016 to
+  0.13 px) made every axis worse, x to 0.33 mm and the turn to 0.29
+  degrees: the readings it marks down are the end readings, which carry the
+  turn. Not kept; the scatter is reported.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

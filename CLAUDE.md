@@ -221,8 +221,10 @@ per pair, it gives confident wrong answers. Still open from it:
   every frame**, from the median of the ledge-free frames, and `trackPair`
   reads an overhang as a negative gap: the test poses come out at 0.11 /
   0.06 / 0.07 mm and 0.04° over every multi-view set, 0.08 / 0.02 / 0.05 and
-  0.03° from all four views ("A sixteenth"). With no truth at all, 0.23 /
-  0.17 / 0.15: the measured Jacobian is the weak part now. Holding the level is sound: at 2048 px it reads
+  0.03° from all four views ("A sixteenth"). With no truth at all,
+  `--calibrate joint` (every slope and the reference in one robust fit) gives
+  0.19 / 0.09 / 0.10 mm and 0.06°; what is left is x, from the side pair's
+  slope at 50°, steepened by a ledge too narrow to detect ("A seventeenth"). Holding the level is sound: at 2048 px it reads
   0.119, 0.122, 0.116 and 0.104 at 5, 2, 1 and 0.5 mm. And **more pixels do the whole job**: at 2048 px the 1 mm and
   0.5 mm gaps are ordinary pairs, read to −0.011 and −0.017 mm. `findPairs`
   finds the 1 mm gap (1.16 px) inside the single segment the detector leaves,
