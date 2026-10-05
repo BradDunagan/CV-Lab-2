@@ -171,6 +171,34 @@ turned off. Similar in spirit to Java's `.jar` and Python's `.whl`.
 
 ---
 
+## Carrying (a value from one frame to the next)
+
+**Using what an earlier frame measured, in a later frame where the image alone
+cannot measure it.**
+
+In an approach, the frames come in order and the gap closes. While it is wide,
+everything about a pair can be read off the image: where each edge is, the
+[strip](#strip) level, the [aperture](#aperture-of-a-pixel). Under about a
+pixel, it cannot. Width and darkness trade, and the detector reports one
+segment or none. But some of what was measured has not changed: the light in
+the gap, the camera's aperture, and the edge of the part that is not moving.
+Carried in and held, they leave less to find. Carrying all three leaves
+only the moving edge, and gaps of a third of a pixel read to a few hundredths
+(`trackPair`, `design-lab-model.md` §5, "A twelfth").
+
+What is carried is only as good as "has not changed". A light that moves, or
+a part that is nudged, makes the carried value wrong, and the frame that uses
+it cannot see that by itself. Below a pixel, a carried line that is off moves
+the moving edge with it more than it moves the gap, and the fit's rms grows,
+which is how it shows.
+
+**Elsewhere**: tracking, in the computer-vision sense: a model of the object
+carried forward and fitted again to each frame, rather than detected afresh.
+A Kalman filter carries a state and its uncertainty in the same way, with a
+model of how it changes between frames; nothing here models change yet.
+
+---
+
 ## CDP — Chrome DevTools Protocol
 
 **The wire protocol Chrome DevTools itself speaks to a browser: a JSON-RPC

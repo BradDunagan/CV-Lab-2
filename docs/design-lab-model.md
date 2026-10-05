@@ -1361,6 +1361,64 @@ The tenth's table, redone with both:
 - `findPairs` still fits flat levels. Its gain threshold was calibrated on
   them, and it has not been tried sloped.
 
+#### A twelfth: what a wider frame knows, carried into a narrower one
+
+Under about a pixel and a half the image alone does not determine a gap (the
+sixth): width and strip level trade, the detector reports one segment or none,
+and `findPairs` finds the strip in some views and not others. But a gap sweep
+is an approach, and so is an assembly. Frames come in order, the gap closing,
+and only one part moves. The other part's edge is the same line in every
+frame. The strip's level and the aperture were measured while the gap was
+wide.
+
+**Carrying the level alone** (`strip=held`, from the last frame that read the
+pair over 3 px) makes a reading better where there already was one: on the
+gap grid at 1 mm, mean error −0.15 → −0.05 px, RMS 0.23 → 0.13, over the seven
+views that read either way. It finds no new readings. Carried from a frame
+only 2.4 px wide, the level was still traded against width (0.03 to 0.09,
+against 0.10 to 0.14 from 6 px) and helped less.
+
+**Carrying the still part's edge as well** changes what is asked. With the
+line, the level and the aperture held, one edge is left to fit, the moving
+part's, and nothing needs to have been detected: `trackPair` (pairs.js) fits
+it beside the line, from four starting widths. `fitBand` takes `heldEdges`
+for it.
+
+| | 2 mm | 1 mm | 0.5 mm |
+|---|---|---|---|
+| gap grid, read without carrying | 17 of 28 | 8 | 1 |
+| gap grid, tracked | 16 (−0.21 ± 0.10 px) | 16 (−0.19 ± 0.12) | 16 (−0.16 ± 0.07) |
+| stack, read without carrying | 7 of 8 | 6 (−0.07 ± 0.18) | 2 (+0.19) |
+| stack, tracked | 6 (−0.07 ± 0.06) | 6 (−0.04 ± 0.04) | 6 (+0.02 ± 0.02) |
+
+The stack is `stack-2g-approach`, the top cube lowered onto the bottom one
+from 5 mm, four views, two pairs each. Tracked gaps go down to 0.31 px on the
+stack and 0.10 on the gap grid.
+
+- **On the stack, tracking is unbiased**: 0.5 mm, 0.31 to 0.61 px in the image,
+  reads to +0.02 ± 0.02 px. The gap grid's −0.2 px is the same −0.2 px it shows
+  in every view at every gap without carrying (the seventh), so it belongs to
+  that scene and not to tracking.
+- **An error in the carried line is not an error in the gap, below a pixel.**
+  Over a pixel it is, one for one. Under one, a strip of known level is as wide
+  as its darkness says, and the moving edge follows the line instead: in a
+  synthetic test a line carried 0.2 px off cost a 0.6 px gap 0.02. The fit's
+  rms grows with the line's error either way, so a stale line can be noticed.
+- **Contact is not refused everywhere.** Where the strip vanishes the fit's
+  edges cross and nothing is returned. In 4 of 18 gap-grid views and 3 of the
+  stack's 6 it returns 0.02 to 0.10 px instead, with a sigma that would pass a
+  3-sigma test. On the stack every view still separates contact (0.05 to 0.10)
+  from 0.5 mm (0.31 to 0.65), but a threshold that does it is set by the
+  scene, so `trackPair` reports the gap and leaves contact to the caller.
+- **A pair whose widest frame was under 3 px is not tracked**: two of the
+  stack's eight. What to carry from a frame that never read wide is open.
+
+This is an experiment, not yet a workflow. The frames were fitted again in
+plain node (`notes/brads-notes/2026-10-04-carry/`), from a PNG decoder that
+is not the one the lab loads with. The lab's way would be an operation that
+takes the carried values as parameters, written into each frame's command by
+the driver, so that they are in the log.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

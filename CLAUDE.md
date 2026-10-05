@@ -48,7 +48,8 @@ src/lab/position.js  one relative position from several gap readings, and
                      detected (pure JS)
 src/lab/pairs.js     two close edges placed again, jointly, against the
                      unblurred image -- and found, where the detector
-                     reported the two as one segment (pure JS)
+                     reported the two as one segment; and one tracked beside
+                     the other's line, carried from a wider frame (pure JS)
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
 scripts/generate-cli.js  drives pt-lab to render varied images (needs a GPU)
 scripts/score.js     tallies match records: precision, recall, and which
@@ -194,15 +195,23 @@ displace each other in the blurred image**, +1.2 px on a 2.3 px gap, and
 has to be measured for that, on the image's lone segments; assumed, or fitted
 per pair, it gives confident wrong answers. Still open from it:
 
-- **under about a pixel and a half the strip's level must be supplied**, and
-  nothing carries it from one frame of an approach to the next. Holding it is
+- **under about a pixel and a half the strip's level must be supplied**.
+  Carried down an approach it is, in an experiment: with the still part's
+  edge and the aperture also carried from a frame where the gap was wide,
+  `trackPair` fits only the moving edge, and the stack's 0.5 mm gap (0.31 to
+  0.61 px) reads to +0.02 ± 0.02 px in six of eight pair-views, where one
+  frame alone read two ("A twelfth"). It is not a workflow yet: the frames
+  were refitted in plain node, and the lab's way would be an operation the
+  driver writes the carried values into. Holding the level is
   sound: at 2048 px the level reads 0.119, 0.122, 0.116 and 0.104 at 5, 2, 1
   and 0.5 mm. And **more pixels do the whole job**: at 2048 px the 1 mm and
   0.5 mm gaps are ordinary pairs, read to −0.011 and −0.017 mm. `findPairs`
   finds the 1 mm gap (1.16 px) inside the single segment the detector leaves,
   and reads it 0.25–0.28 px short with the level fitted, 0.14–0.16 with it
   held;
-- **0.5 mm and contact are not told apart** at 512 px, and contact is told
+- **0.5 mm and contact are not told apart** at 512 px by one frame; tracked,
+  they are on the stack (0.31 to 0.65 px against 0.05 to 0.10), by a margin
+  the scene sets. Contact is told
   from nothing at any size;
 - **the strip is not flat.** It is darkest against the Cube, in the same
   proportion at every gap, and the model fits one level to it. Whether that is
