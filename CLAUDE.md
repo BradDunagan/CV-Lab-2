@@ -210,9 +210,13 @@ per pair, it gives confident wrong answers. Still open from it:
   their readings (contact, to ~0.1 mm) and does not improve the ones that
   read well; one view stays at half dead reckoning's error, its blind
   direction never seen. Calibrating the solve from what was read, with no
-  truth at all, keeps the refit at ~0.2 mm: what is left is scatter, which a
-  calibration cannot remove, and no light tried makes both pairs steady
-  ("A fourteenth"). Holding the level is sound: at 2048 px it reads
+  truth at all, keeps the refit at ~0.2 mm: what is left varies from pose to
+  pose, which a calibration cannot remove, and no light tried makes both
+  pairs steady ("A fourteenth"). It is not noise. It is **a ledge in soft
+  shadow**: slid back, the top cube exposes a strip of the base's top face
+  inside the gap, the area light's penumbra makes the base's edge a 2 px ramp,
+  and the fit -- sharp edges only -- reads that edge up to 0.5 px into the
+  gap ("A fifteenth"). The fit has no soft edge inside a strip yet. Holding the level is sound: at 2048 px it reads
   0.119, 0.122, 0.116 and 0.104 at 5, 2, 1 and 0.5 mm. And **more pixels do the whole job**: at 2048 px the 1 mm and
   0.5 mm gaps are ordinary pairs, read to −0.011 and −0.017 mm. `findPairs`
   finds the 1 mm gap (1.16 px) inside the single segment the detector leaves,
@@ -247,8 +251,8 @@ runs from 1.22 square-on and level to 0.11 at 70° round and 75° up
   to slope along the pair**: one flat level turned the two edges opposite
   ways, 0.3 px of gap end to end. With that, and readings weighted by
   1/gapSigma², the test poses come out at 0.13 to 0.2 mm and 0.05° from three
-  or four views. What is left is the side pair's scatter, which nothing in its
-  record predicts ("An eleventh");
+  or four views. What is left is mostly the side pair's, and it follows the
+  pose: an exposed ledge in soft shadow ("An eleventh", "A fifteenth");
 - **a crease can have no contrast.** On the stack's side pair the two faces
   that meet at the base cube's edge are lit alike, and the image's edge is the
   shadow 0.2 to 2.5 px inside it. Nothing in the pipeline can tell

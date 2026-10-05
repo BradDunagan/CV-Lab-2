@@ -1357,7 +1357,8 @@ The tenth's table, redone with both:
 - **What is left is the side pair**, 0.13 to 0.18 px of scatter from pose to
   pose where the front pair has 0.02 to 0.04. It is the pair whose crease the
   light nearly erased (the eighth), and nothing in its record says which of
-  its readings are the bad ones.
+  its readings are the bad ones. (It is not scatter. It follows the pose, and
+  its cause is in the fifteenth.)
 - `findPairs` still fits flat levels. Its gain threshold was calibrated on
   them, and it has not been tried sloped.
 
@@ -1517,6 +1518,48 @@ x / y / z mm and turn degrees:
 - So no light tried keeps both strips dark and steady, and stack-2's is still
   the best. Calibrating from more frames than three would make the reference
   less noisy; it cannot make scattered readings steady.
+
+#### A fifteenth: the side pair's error is a ledge in soft shadow
+
+The side pair's error was called scatter from the eleventh on: 0.13 to
+0.18 px from pose to pose, unpredicted by its record, untouched by
+calibration (the fourteenth). Sorted by the pose instead of pooled, it is
+not scatter at all. On the x sweep it is the base cube's edge, not the moving
+one, that is misplaced, and only on one side:
+
+| top cube slid along x | base cube's edge read into the gap | gap error |
+|---|---|---|
+| −2, −1 mm | 0.35 to 0.49 px (20° views) | −0.31 to −0.41 px |
+| 0 mm | 0.09 to 0.13 px | −0.09 to −0.13 px |
+| +1 to +4 mm | within 0.04 px | within 0.06 px |
+
+On the ten test poses the same: every pose slid toward −x reads that edge 0.1
+to 0.5 px into the gap, every pose slid +0.5 mm or more within 0.03.
+
+**The brightness across the gap says why.** Averaged along the pair, binned
+by distance from the true base edge (`notes/brads-notes/2026-10-05-profile/`):
+slid +2 mm, the profile is a clean step at the edge, and the fit's own model
+matches it to 0.003 everywhere. Slid −2 mm, it falls from the face's 0.31 to
+the strip's 0.07 over about 2 px instead (0.27, 0.21, 0.17, 0.13, 0.09),
+where the aperture alone would soften it over 0.7. The model has one sharp
+edge and a flat strip, and it puts the edge in the middle of the ramp, half a
+pixel into the gap.
+
+**The ramp is geometry and light.** Slid back, the top cube's side face sits
+behind the base cube's, and a ledge of the base cube's top face shows inside
+the gap. The scene's light is an area light, so the top cube's shadow across
+that ledge has a penumbra. Slid the other way, the top cube overhangs, the
+ledge is hidden, and the gap is one dark strip. The front pair shows the
+same, smaller (0.04 to 0.10 px), when the top cube is slid back in z.
+
+- It is a real-world effect and not a renderer's: any ledge under a light
+  of any size does it.
+- It explains why the side light helped one pair and hurt the other (the
+  fourteenth): moving the light moves the penumbras.
+- What would describe it: a third, soft edge inside the strip -- a shadow
+  boundary with its own position and its own width -- so a ledge can be a
+  level of its own. Over a gap a few pixels wide that is identifiable; under
+  a pixel and a half it is not, and there is no ledge to see either.
 
 #### What twenty-four views measured
 
