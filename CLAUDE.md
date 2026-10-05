@@ -85,7 +85,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — nineteen suites, ~567 tests
+npm test                # everything — nineteen suites, ~573 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -216,9 +216,13 @@ per pair, it gives confident wrong answers. Still open from it:
   shadow**: slid back, the top cube exposes a strip of the base's top face
   inside the gap, the area light's penumbra makes the base's edge a 2 px ramp,
   and the fit -- sharp edges only -- reads that edge up to 0.5 px into the
-  gap ("A fifteenth"). A soft shadow edge in the fit detects the ledge
-  reliably but cannot place the base's edge under it; holding that edge
-  where a clean frame read it cuts the error by two-thirds. Not built yet. Holding the level is sound: at 2048 px it reads
+  gap ("A fifteenth"). A soft shadow edge detects the ledge but cannot place
+  the base's edge under it. **`gap-sweep --carry` now holds the still edge in
+  every frame**, from the median of the ledge-free frames, and `trackPair`
+  reads an overhang as a negative gap: the test poses come out at 0.11 /
+  0.06 / 0.07 mm and 0.04° over every multi-view set, 0.08 / 0.02 / 0.05 and
+  0.03° from all four views ("A sixteenth"). With no truth at all, 0.23 /
+  0.17 / 0.15: the measured Jacobian is the weak part now. Holding the level is sound: at 2048 px it reads
   0.119, 0.122, 0.116 and 0.104 at 5, 2, 1 and 0.5 mm. And **more pixels do the whole job**: at 2048 px the 1 mm and
   0.5 mm gaps are ordinary pairs, read to −0.011 and −0.017 mm. `findPairs`
   finds the 1 mm gap (1.16 px) inside the single segment the detector leaves,
