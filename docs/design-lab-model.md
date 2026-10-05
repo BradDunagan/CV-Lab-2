@@ -1561,6 +1561,31 @@ same, smaller (0.04 to 0.10 px), when the top cube is slid back in z.
   level of its own. Over a gap a few pixels wide that is identifiable; under
   a pixel and a half it is not, and there is no ledge to see either.
 
+**That was tried, and it detects a ledge without placing one.** `fitBand`
+was given soft edges, free or anchored to start their ramp at another edge
+(branch `shadow-edge`, not merged; scripts in
+`notes/brads-notes/2026-10-05-shadow-edge/` there). On the x sweep's pair 2:
+
+| | ledge frames (slid −1, −2 mm) | clean frames |
+|---|---|---|
+| as fitted | −0.31 to −0.41 px | within 0.06 |
+| with a soft edge, anchored | −0.26 to +0.29 (the base edge pushed out) | unchanged |
+| the base edge held where a clean frame read it | +0.09 to +0.15 | within 0.03 |
+| held, and the soft edge | −0.17 to +0.41, erratic | can run away (0.85) |
+
+- **As a detector the soft edge is reliable**: it fits ledge frames 1.4 to
+  2.5 times better than two edges do, clean frames 1.0 to 1.1.
+- **As a measurement it is not.** Blurred to the pixel, a ramp starting at an
+  edge and an edge a little further out with a ramp beyond it are nearly the
+  same picture; the pixels do not pin the edge under a penumbra to better than
+  about 0.2 px.
+- **What works is not measuring that edge there at all.** The base cube does
+  not move, so its edge is one line in every frame of a view; read where no
+  ledge hides it and held, it takes the ledge frames' error from 0.31–0.41 to
+  0.09–0.15 px and leaves clean frames as they were. That is the twelfth's
+  carrying, applied to every frame rather than the narrow ones: detect the
+  ledge with the soft edge, take the still edge from a frame without one.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

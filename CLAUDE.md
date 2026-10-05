@@ -216,7 +216,9 @@ per pair, it gives confident wrong answers. Still open from it:
   shadow**: slid back, the top cube exposes a strip of the base's top face
   inside the gap, the area light's penumbra makes the base's edge a 2 px ramp,
   and the fit -- sharp edges only -- reads that edge up to 0.5 px into the
-  gap ("A fifteenth"). The fit has no soft edge inside a strip yet. Holding the level is sound: at 2048 px it reads
+  gap ("A fifteenth"). A soft shadow edge in the fit detects the ledge
+  reliably but cannot place the base's edge under it; holding that edge
+  where a clean frame read it cuts the error by two-thirds. Not built yet. Holding the level is sound: at 2048 px it reads
   0.119, 0.122, 0.116 and 0.104 at 5, 2, 1 and 0.5 mm. And **more pixels do the whole job**: at 2048 px the 1 mm and
   0.5 mm gaps are ordinary pairs, read to −0.011 and −0.017 mm. `findPairs`
   finds the 1 mm gap (1.16 px) inside the single segment the detector leaves,
