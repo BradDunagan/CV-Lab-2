@@ -358,7 +358,8 @@ test('one step on its own is placed where it was drawn', () => {
   const fit = fitBand(bandSamples(raster, frame, DEFAULTS), frame, { aperture: 1 });
   near(fit.edges[0].c, -0.7, 1e-4, 'offset back to the drawn line');
   near(fit.levels[0], 0.6, 1e-4, 'below'); near(fit.levels[1], 0.2, 1e-4, 'above');
-  assert.equal(fit.gapSigma, null);
+  // One edge: its sigma is its position's, tiny on a noiseless step.
+  assert.ok(fit.gapSigma >= 0 && fit.gapSigma < 1e-3, `sigma ${fit.gapSigma}`);
 });
 
 /* ---- what is not a pair --------------------------------------------- */
@@ -643,6 +644,77 @@ test('a carried line\'s error is the gap\'s over a pixel; under one, the strip\'
   }
   // Either way the pixels say so.
   assert.ok(read(0.6, 0.2).rms > 100 * read(0.6, 0).rms, 'rms does not grow with the line\'s error');
+});
+
+/**
+ * The standard scene's geometry with a penumbra inside the strip: from the
+ * lower edge the strip's level falls linearly from `top` to the strip's over
+ * `ramp` px, as an area light's shadow across a ledge does. Each pixel is the
+ * mean of 8 x 8 points across it.
+ */
+function ledged(gap, ramp, top = 0.3) {
+  const { lo, hi } = scene(gap);
+  const at = (x, y) => {
+    const h = (x - lo.px) * lo.nx + (y - lo.py) * lo.ny;
+    if (h < 0) return LEVELS[0];
+    if (h >= gap) return LEVELS[2];
+    return h < ramp ? top + (LEVELS[1] - top) * (h / ramp) : LEVELS[1];
+  };
+  const data = new Float32Array(160 * 120);
+  for (let y = 0; y < 120; y++) {
+    for (let x = 0; x < 160; x++) {
+      let sum = 0;
+      for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) sum += at(x - 0.5 + (i + 0.5) / 8, y - 0.5 + (j + 0.5) / 8);
+      data[y * 160 + x] = sum / 64;
+    }
+  }
+  return { lo, hi, raster: { width: 160, height: 120, channels: 1, data } };
+}
+
+test('a ramp from one edge into the strip is a ledge, and the record names that edge', () => {
+  const { lo, hi, raster } = ledged(4, 2);
+  const [p] = fitPairs([segOn(1, lo, -40, 40), segOn(2, hi, -40, 40)], raster);
+  assert.ok(p.ledge.gain > 1.3, `gain ${p.ledge.gain}`);
+  assert.equal(p.ledge.edge, 'a');
+});
+
+test('a plain strip is not a ledge, a narrow one is not asked, and `none` asks nothing', () => {
+  const { lo, hi, raster } = scene(4);
+  const segs = [segOn(1, lo, -40, 40, -0.3), segOn(2, hi, -40, 40, 0.3)];
+  const [p] = fitPairs(segs, raster);
+  assert.ok(p.ledge.gain < 1.05, `gain ${p.ledge.gain}`);
+  const narrow = scene(1.5);
+  const [q] = fitPairs([segOn(1, narrow.lo, -40, 40, -0.5), segOn(2, narrow.hi, -40, 40, 0.5)], narrow.raster);
+  assert.equal(q.ledge, null);
+  assert.equal('ledge' in fitPairs(segs, raster, { ledge: 'none' })[0], false);
+});
+
+test('with strip=fit only the line is carried: a wrong strip level costs nothing over a wide gap', () => {
+  const { lo, hi, raster } = scene(3);
+  const wrong = carriedFrom(lo, hi, { level: 0.2 });
+  near(trackPair(raster, wrong, { strip: 'fit' }).gap, 3, 1e-3, 'fitted');
+  assert.equal(trackPair(raster, wrong, { strip: 'fit' }).strip, 'fit');
+  assert.ok(Math.abs(trackPair(raster, wrong).gap - 3) > 0.05, 'held at the wrong level, it should be wrong');
+});
+
+test('where the moving edge has passed the still one, the gap is that edge\'s, and negative', () => {
+  // No strip: the moving face meets the still face 0.8 px on the wrong side of the line.
+  const lo = lineAt(80, 60, 8);
+  const over = lineAt(80 - lo.nx * 0.8, 60 - lo.ny * 0.8, 8);
+  const far = lineAt(80 + lo.nx * 50, 60 + lo.ny * 50, 8);
+  const raster = strip(160, 120, over, far, [LEVELS[0], LEVELS[2], LEVELS[2]]);
+  const r = trackPair(raster, carriedFrom(lo, { ...lo, px: lo.px + lo.nx, py: lo.py + lo.ny }));
+  assert.equal(r.model, 'edge');
+  near(r.gap, -0.8, 0.01, 'gap');
+});
+
+test('a carried line a little off does not turn a thin strip into an overhang', () => {
+  for (const off of [0.1, 0.2]) {
+    const { lo, hi, raster } = scene(0.6);
+    const r = trackPair(raster, carriedFrom(lo, hi, { off }));
+    assert.equal(r.model, 'strip', `line ${off} off`);
+    assert.ok(r.gap > 0.5, `line ${off} off: gap ${r.gap}`);
+  }
 });
 
 test('which way the carried line was written does not matter', () => {
