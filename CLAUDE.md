@@ -224,7 +224,13 @@ runs from 1.22 square-on and level to 0.11 at 70° round and 75° up
 - **poses off the axes and turned cost about twice as much**: 0.1 to 0.3 mm
   and 0.1 to 0.25° from two views, on ten test poses with one render each.
   A turn is only seen at the ends of a pair, so each is now read at its middle
-  and a sixth in from each end (`design-lab-model.md` §5, "A tenth");
+  and a sixth in from each end (`design-lab-model.md` §5, "A tenth").
+  The ends read worse than the middles until **each face's level was allowed
+  to slope along the pair**: one flat level turned the two edges opposite
+  ways, 0.3 px of gap end to end. With that, and readings weighted by
+  1/gapSigma², the test poses come out at 0.13 to 0.2 mm and 0.05° from three
+  or four views. What is left is the side pair's scatter, which nothing in its
+  record predicts ("An eleventh");
 - **a crease can have no contrast.** On the stack's side pair the two faces
   that meet at the base cube's edge are lit alike, and the image's edge is the
   shadow 0.2 to 2.5 px inside it. Nothing in the pipeline can tell

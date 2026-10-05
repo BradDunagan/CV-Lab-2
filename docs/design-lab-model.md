@@ -1303,6 +1303,64 @@ RMS error on the ten test poses, x / y / z in mm and turn in degrees:
   elevation is best on the test poses, which it was not on the sweeps. With
   ten poses the order of the best few combinations is not settled.
 
+#### An eleventh: a face's shading turned the edges, and weights only help once it does not
+
+The refit's readings at the ends of a pair were worse than at its middle,
+0.19 px RMS against 0.12, which a line fitted to noise would explain. Per
+pair they were not noise. Every view of the stack's front pair read the gap
+0.16 px wide at one end and 0.16 narrow at the other, the side pair the same
+the other way round, and the middle true: the two fitted edges turned by
+0.12° each, in opposite directions, scissors. The detections' own end
+readings had no such tilt, so it came from the fit.
+
+**The cause was the faces, not the strip.** Each face is brighter at one end
+of the pair than the other, and the fit had one flat level per face. Where a
+step is brighter than the model, the fit moves the edge to match; either side
+of a strip, that moves the two edges apart at one end and together at the
+other. Sloping the strip's level alone changed nothing. Giving every level a
+slope along the pair (`fitPairs`'s `levelSlope`, on by default; v3) took the
+end-to-end tilt error from 0.2–0.4 px to under 0.08 on every pair and view,
+and the end readings to 0.12 px RMS, the same as the middle.
+
+**Then the weights.** `gapSigma` hardly predicts a reading's error: over the
+test poses its rank correlation with the absolute error is 0.34, and the worst
+readings (the side pair at its widest gaps, 0.35 to 0.41 px short) have
+ordinary sigmas. Weighting each reading by 1/gapSigma² still helps, because
+within one pose it is lowest where the gap is wide and the edges long. Only
+with the levels sloped does it help, though. With the ends still tilted, it
+trusts those confident wrong readings and does nothing.
+
+Mean RMS over the eleven sets of two or more views, x / y / z in mm and turn
+in degrees:
+
+| | sweep poses | test poses |
+|---|---|---|
+| as in the tenth | 0.18 / 0.18 / 0.14 / 0.18 | 0.30 / 0.31 / 0.34 / 0.25 |
+| weighted only | 0.15 / 0.14 / 0.14 / 0.17 | 0.29 / 0.34 / 0.38 / 0.18 |
+| levels sloped only | 0.18 / 0.18 / 0.13 / 0.12 | 0.29 / 0.30 / 0.32 / 0.19 |
+| **both** | **0.09 / 0.10 / 0.08 / 0.06** | **0.18 / 0.25 / 0.30 / 0.05** |
+
+The tenth's table, redone with both:
+
+| views | refit, test poses |
+|---|---|
+| 35°/20° + 60°/20° | 0.34 / 0.16 / 0.23 / 0.07 |
+| 60°/20° + 60°/50° | 0.17 / 0.33 / 0.31 / 0.04 (9 of 10) |
+| 35°/20° + 60°/50° | 0.21 / 0.42 / 0.72 / 0.04 (9 of 10) |
+| three: 35°/20°, 60°/20°, 60°/50° | 0.14 / 0.19 / 0.27 / 0.05 |
+| all four | 0.13 / 0.20 / 0.27 / 0.04 |
+
+- **The turn is settled**: 0.03 to 0.07° on every set of views.
+- **Not every set got better.** The pair at one elevation, best before, is
+  worse in all three directions, and 35°/20° + 60°/50° is worse in z. More
+  views no longer cost anything: three and four are now among the best.
+- **What is left is the side pair**, 0.13 to 0.18 px of scatter from pose to
+  pose where the front pair has 0.02 to 0.04. It is the pair whose crease the
+  light nearly erased (the eighth), and nothing in its record says which of
+  its readings are the bad ones.
+- `findPairs` still fits flat levels. Its gain threshold was calibrated on
+  them, and it has not been tried sloped.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

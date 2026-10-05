@@ -521,13 +521,22 @@ the 2.3 px gap from +1.2 px of error to about −0.1.
 | `strip`, `stripLevel` | `fit`, 0 | `held` fixes the strip's level at `stripLevel` |
 | `aperture`, `apertureWidth` | `fit`, 1 | `held` fixes the aperture at `apertureWidth` |
 | `minSigmas` | 3 | a gap under this many `gapSigma` produces no record |
+| `levelSlope` | `fit` | each level may brighten or darken along the pair; `none` holds them flat |
 
 Per pair: `id`; the two edges `a` and `b`, each with the `segment` it came
 from, its line `x0 y0 x1 y1` over the stretch they share, and `shift`, how far
 it moved from its detection; the frame's origin `x y` and normal `nx ny`;
 `gap` and `gapSigma`; `detectedGap`; the three `levels` (beyond `a`, the
-strip, beyond `b`); `strip`; `aperture`, `apertureFrom` and
-`apertureSegments`; `rms`, `samples`, `iterations`, `converged`.
+strip, beyond `b`), at the middle of the stretch, and `levelSlopes`, how
+much each changes per px along it (null with `levelSlope=none`); `strip`;
+`aperture`, `apertureFrom` and `apertureSegments`; `rms`, `samples`,
+`iterations`, `converged`.
+
+**A face is rarely lit evenly, and the levels slope for that.** Held flat, a
+face brighter at one end of the pair than the other turns the two edges
+opposite ways: on the stack's renders, 0.3 px of gap from one end of a pair to
+the other while the middle read true. `levelSlope=none` is there to compare
+against.
 
 **`image` must be the gray image before `gaussian`, and linear.** Nothing can
 check the first: a blurred buffer has the same shape, and fitting it returns
@@ -1584,6 +1593,12 @@ same `--offset` and the same views, and prints:
 `--readings mid|ends|both` (default both) chooses where along each pair the gap
 is read; a turn is only visible in the ends.
 
+`--weights sigma|none` (default sigma): each refit reading counts in
+proportion to 1/`gapSigma`², the ends with their middle's. Sigma is a poor
+predictor of any one reading's error, but among the readings of one pose it
+is lowest where they are best; on the stack's test poses it took the turn from
+0.19° to 0.05° RMS. Truth and detections are never weighted.
+
 `--max-sigma` (default 10 mm per px) refuses a pose whose surviving readings
 barely separate the axes. Plain node; it reads each sweep's `gap-sweep.json`. Under the lamp alone, the cube's own shadow takes the contrast out of
 both facing edges, and no gap is measured at any step.
@@ -1722,7 +1737,7 @@ complaint.
 |---|---|---|
 | `edge-segment` | `fit` | `id`, `pixels`, `x0 y0 x1 y1`, `length`, `angle`, `residual`, `rms`, `cx cy` |
 | `edge-arc` | `fitArcs` | `id`, `pixels`, `cx cy r`, `x0 y0 x1 y1`, `angle0`, `angle1`, `sweep`, `arcLength`, `chord`, `sagitta`, `residual`, `rms`, `lineRms`, `mx my` |
-| `edge-pair` | `fitPairs`, `findPairs` (which adds `gain`) | `id`, `a` and `b` (each `segment`, `x0 y0 x1 y1`, `shift`), `x y`, `nx ny`, `gap`, `gapSigma`, `detectedGap`, `levels`, `strip`, `aperture`, `apertureFrom`, `apertureSegments`, `rms`, `samples`, `iterations`, `converged` |
+| `edge-pair` | `fitPairs`, `findPairs` (which adds `gain`) | `id`, `a` and `b` (each `segment`, `x0 y0 x1 y1`, `shift`), `x y`, `nx ny`, `gap`, `gapSigma`, `detectedGap`, `levels`, `levelSlopes` (fitPairs only), `strip`, `aperture`, `apertureFrom`, `apertureSegments`, `rms`, `samples`, `iterations`, `converged` |
 | `edge-corner` | `corners` | `id`, `x y`, `support`, `segments`, `sigma`, `reach`, `endpointGap`, `angle` |
 | `gt-edge` | `groundTruth` | `id`, `cause`, `objects`, `x0 y0 x1 y1`, `z0 z1`, `length`, `angle`, `dihedral`, `visible`, `clipped`, `v0 v1` |
 | `gt-vertex` | `groundTruth` | `id`, `x y z`, `degree`, `visibleDegree`, `onFrame`, `visible`, `angle`, `objects` |
