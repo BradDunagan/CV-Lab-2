@@ -209,7 +209,10 @@ per pair, it gives confident wrong answers. Still open from it:
   moved by the commanded motion, as a prior. It solves the frames that lose
   their readings (contact, to ~0.1 mm) and does not improve the ones that
   read well; one view stays at half dead reckoning's error, its blind
-  direction never seen. Holding the level is sound: at 2048 px it reads
+  direction never seen. Calibrating the solve from what was read, with no
+  truth at all, keeps the refit at ~0.2 mm: what is left is scatter, which a
+  calibration cannot remove, and no light tried makes both pairs steady
+  ("A fourteenth"). Holding the level is sound: at 2048 px it reads
   0.119, 0.122, 0.116 and 0.104 at 5, 2, 1 and 0.5 mm. And **more pixels do the whole job**: at 2048 px the 1 mm and
   0.5 mm gaps are ordinary pairs, read to −0.011 and −0.017 mm. `findPairs`
   finds the 1 mm gap (1.16 px) inside the single segment the detector leaves,

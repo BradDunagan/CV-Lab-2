@@ -1474,6 +1474,50 @@ carried, on the frames a frame alone also solved:
   solves come out at 0.05 mm, and the x sweep is a little worse (each frame's
   bias carried into the next); at 0.5 mm a move, they come out at 0.5.
 
+#### A fourteenth: calibrating from what was read, and a light that moved the problem
+
+Every reference and Jacobian so far came from the renderer's truth, which a
+real cell does not have, and which leaves a reading's steady bias in every
+solve. `npm run position -- --calibrate reference` takes each reading's
+reference from what was read at the reference pose instead: every sweep's
+step 0, three renders of one pose, averaged. `--calibrate full` takes the
+Jacobian from the readings' slopes too, and uses no truth at all. Each kind
+of reading is calibrated against itself.
+
+The question came from the light. Under `scenes/stack-3.json`, the light swung
+toward the side face, the side pair's scatter on the x sweep halved and it read
+a steady 0.2 px short instead (`notes/brads-notes/2026-10-05.md`); a steady
+bias is what calibration removes. The high light of `stack-4.json` erased the
+base cube's front crease and was not pursued.
+
+Mean RMS on the ten test poses over the eleven sets of two or more views,
+x / y / z mm and turn degrees:
+
+| light | readings | truth | reference | full |
+|---|---|---|---|---|
+| stack-2 | detected | 1.67 / 0.82 / 1.75 / 0.72 | 0.98 / 0.35 / 0.93 / 0.73 | 0.73 / 0.29 / 0.58 / 0.44 |
+| stack-2 | refit | 0.18 / 0.25 / 0.30 / 0.05 | 0.23 / 0.22 / 0.27 / 0.05 | 0.25 / 0.21 / 0.23 / 0.14 |
+| stack-3 (side) | refit | 0.17 / 0.29 / 0.36 / 0.06 | 0.33 / 0.40 / 0.48 / 0.14 | 1.45 / 0.84 / 5.38 / 0.09 |
+
+- **Calibration removes a steady bias.** The detections' error is mostly the
+  blur's push-apart, steady for a given gap, and calibrating more than halves
+  it, with no truth at all.
+- **The refit's remaining error is scatter, and calibration cannot touch it.**
+  Under stack-2's light it stays at about 0.2 mm however it is calibrated.
+  With no truth at all it is 0.25 / 0.21 / 0.23 mm and 0.14 degrees: the turn
+  suffers, because slopes measured off end readings are noisier than the
+  truth's.
+- **The side light moved the problem.** Under it the side pair is steady in
+  every run, within-view scatter 0.02 to 0.07 px, as hoped; but the front pair,
+  0.03 px under stack-2's light, scatters 0.07 to 0.14 and loses its reading
+  in a third of the frames. Calibrated, it is worse than not: the reference is
+  read off three frames, and the front pair's scatter in those three is put
+  into every solve. Fitted through the same scatter, `full`'s slopes give a
+  Jacobian that barely separates the axes.
+- So no light tried keeps both strips dark and steady, and stack-2's is still
+  the best. Calibrating from more frames than three would make the reference
+  less noisy; it cannot make scattered readings steady.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
