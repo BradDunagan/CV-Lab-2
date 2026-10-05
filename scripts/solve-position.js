@@ -82,6 +82,11 @@ CV-Lab relative position -- several gap readings solved for one displacement
                           full       both from what was read: the reference,
                                      and the slope of the readings along each
                                      sweep. No truth at all, as in a real cell
+                          joint      the same, fitted as one: each reading's
+                                     reference and every slope together, by
+                                     least squares over every calibration
+                                     frame of every sweep, with readings more
+                                     than 3 MADs off dropped before a refit
                         A reading that cannot be calibrated is dropped (default truth)
   --max-views <n>       the largest set of views to combine   (default 3)
   --max-sigma <n>       a pose is not solved from readings that would turn one
@@ -113,7 +118,7 @@ function parseArgs(argv) {
   }
   if (!['mid', 'ends', 'both'].includes(opts.readings)) throw new Error('--readings is mid, ends or both');
   if (!['none', 'sigma'].includes(opts.weights)) throw new Error('--weights is none or sigma');
-  if (!['truth', 'reference', 'full'].includes(opts.calibrate)) throw new Error('--calibrate is truth, reference or full');
+  if (!['truth', 'reference', 'full', 'joint'].includes(opts.calibrate)) throw new Error('--calibrate is truth, reference, full or joint');
   return opts;
 }
 
@@ -240,7 +245,38 @@ function main() {
       const valuesOf = (u) => rowsOf(u).filter((r) => keyOf(r, point) === key)
         .map((r) => [stepOf(u, r), pick(readingsOf(r)[point])])
         .filter(([, v]) => v !== null && v !== undefined && Number.isFinite(v));
-      if (opts.calibrate === 'reference') {
+      if (opts.calibrate === 'joint') {
+        /*
+         * reading = reference + J . d, over every frame of every sweep where
+         * this reading was made: one fit, so a frame's error pulls on every
+         * coefficient a little rather than on one slope a lot, and the sweeps
+         * agree on one reference. A frame the fit disagrees with by more than
+         * 3 MADs (scaled to a sigma, and never under 0.05 px) is dropped and
+         * the fit made again.
+         */
+        const points = unknowns.flatMap((u) => rowsOf(u).filter((r) => keyOf(r, point) === key)
+          .map((r) => [displacementOf(u, r), pick(readingsOf(r)[point])]))
+          .filter(([, v]) => v !== null && v !== undefined && Number.isFinite(v));
+        const fit = (pts) => solvePosition(pts.map(([d, v]) => ({ jacobian: [1, ...d], reference: 0, measured: v })));
+        let f = fit(points);
+        if (!f.determined) continue;
+        const resid = (pts, q) => pts.map(([d, v]) => v - q[0] - d.reduce((acc, x, a) => acc + x * q[a + 1], 0));
+        const r0 = resid(points, f.d).map(Math.abs).sort((a, b) => a - b);
+        const cut = Math.max(0.05, 3 * 1.4826 * r0[(r0.length - 1) >> 1]);
+        const kept = points.filter((_, i) => Math.abs(resid([points[i]], f.d)[0]) <= cut);
+        if (kept.length < points.length) { const g = fit(kept); if (g.determined) f = g; }
+        /*
+         * How well a straight model describes this reading over the frames it
+         * was fitted to, in px: 0.016 to 0.13 on the stack. A diagnostic only.
+         * Weighting the solve by it was tried and made every axis worse (x
+         * 0.19 -> 0.33 mm, the turn 0.06 -> 0.29 degrees): the readings it
+         * marks down are the end readings, and they carry the turn.
+         */
+        const rk = resid(kept, f.d);
+        const fitRms = Math.sqrt(rk.reduce((acc, x) => acc + x * x, 0) / Math.max(1, kept.length - f.d.length));
+        out.set(key, { ...truth, reference: f.d[0], jacobian: f.d.slice(1),
+          calibration: { frames: points.length, kept: kept.length, rms: fitRms } });
+      } else if (opts.calibrate === 'reference') {
         const at = unknowns.flatMap((u) => valuesOf(u).filter(([x]) => x === 0).map(([, v]) => v));
         if (at.length === 0) continue;
         out.set(key, { ...truth, reference: at.reduce((s, v) => s + v, 0) / at.length });
@@ -297,7 +333,9 @@ function main() {
   ];
   const sigmaOf = (pick, r) => (pick === carriedPick && r?.tracked != null ? r.trackedSigma
     : (pick === refitPick || pick === carriedPick) && r?.refit != null ? r.sigma : null);
-  const report = { unknowns, reference, readings: [...readings.values()], sets: [] };
+  const report = { unknowns, reference, readings: [...readings.values()], sets: [],
+    // What each reading was calibrated to, for the carried readings, beside the truth's.
+    calibrated: opts.calibrate === 'truth' ? null : [...calibratedFor(carriedPick).values()] };
 
   const score = (used, poses, pick) => {
     const errors = unknowns.map(() => []);
