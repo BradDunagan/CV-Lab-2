@@ -1586,6 +1586,71 @@ was given soft edges, free or anchored to start their ramp at another edge
   carrying, applied to every frame rather than the narrow ones: detect the
   ledge with the soft edge, take the still edge from a frame without one.
 
+#### A sixteenth: the still edge held, everywhere
+
+The fifteenth ended with a plan: let a soft edge DETECT a ledge, and take the
+still part's edge from a frame without one. Built:
+
+- **`fitPairs` asks whether there is a ledge** (v4, `ledge: 'detect'`). Over a
+  gap of 2 px and more it fits the pixels again with a ramp anchored at each
+  edge in turn, and records `ledge.gain` and `ledge.edge`. It does not move
+  the edges.
+- **`gap-sweep --carry` holds the still edge in every frame of a view.** The
+  source is no longer the widest frame of an approach but, of the frames that
+  read the pair as two detected edges over 3 px with no ledge in them (gain
+  under 1.2), the one whose still edge is the median of theirs. The widest
+  was tried first and failed: on the x sweep the widest frame under 1.2 still
+  had a mild ledge, read its still edge 0.09 to 0.13 px off, and every frame
+  inherited it -- the clean frames got worse, 0.12 to 0.27 px. The median
+  outvotes it. Every frame then reads the pair with `trackPair`, the strip
+  fitted where the frame is wide enough to show it and held where not, which
+  makes the twelfth's approach a special case. It now runs on sweeps across
+  an open gap and on lists of poses too.
+- **`trackPair` tells a strip from one edge.** Holding the still line in
+  every frame met a case the approach never had: at 50 degrees, low and slid,
+  the moving edge passes in front of the still one, and the true gap is
+  negative. Two edges forced onto that read +0.2 px; one overhang of 1.19 px
+  read +0.18. The same pixels are fitted as one edge beside the line, and as
+  two edges neither held: a strip when the held two fit 1.2 times better than
+  one or the free two 1.15 times; one edge when the held two fit no better
+  than one and the free fit finds no strip; otherwise no reading. The free
+  fit is there because a carried line 0.2 px off makes the held fit worse
+  and, without it, handed a real 0.6 px strip to the single edge. The single
+  edge read overhangs of −0.43, −0.82 and −1.19 px as −0.52, −0.87 and −1.27.
+  Asking for the one edge on no evidence -- when the held fit merely failed --
+  read real 1.2 to 2.7 px gaps as −0.4; it needs a ratio under 1 now.
+
+On the stack under stack-2's light, refit against tracked on the rows both
+read, RMS px:
+
+| | pair 1 | pair 2, clean | pair 2, ledge |
+|---|---|---|---|
+| x sweep | 0.018 → 0.020 | 0.117 → 0.093 | 0.351 → **0.033** |
+| test poses | 0.038 → 0.029 | 0.120 → 0.073 | 0.216 → 0.138 |
+| turns | 0.026 → 0.032 | 0.117 → 0.115 | 0.144 → 0.077 |
+| y sweep | 0.031 → 0.032 | 0.108 → 0.124 | (none) |
+
+And the position, on the ten test poses, mean over the eleven sets of two or
+more views, x / y / z mm and turn degrees:
+
+| readings | from the truth | no truth at all |
+|---|---|---|
+| detections | 1.67 / 0.82 / 1.75 / 0.72 | 0.73 / 0.29 / 0.58 / 0.44 |
+| refit | 0.18 / 0.25 / 0.30 / 0.05 | 0.25 / 0.21 / 0.23 / 0.14 |
+| **still edge held** | **0.11 / 0.06 / 0.07 / 0.04** | 0.23 / 0.17 / 0.15 / 0.11 |
+
+All four views together: 0.08 / 0.02 / 0.05 mm and 0.03 degrees.
+
+- **The ledge was the largest error left**, and holding the still edge is
+  what removes it. The ledge detector's job is only to keep ledge frames out
+  of the source.
+- **With no truth at all the gain is smaller.** The Jacobian measured from
+  the readings' own slopes is the noisier part now, not the readings.
+- **The 50-degree views often have nothing to carry from**: few of their
+  frames read a pair 3 px wide. They fall back to the refit.
+- **The y sweep's side pair got slightly worse** (0.108 → 0.124 px), the one
+  place it did; not chased.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

@@ -522,6 +522,7 @@ the 2.3 px gap from +1.2 px of error to about −0.1.
 | `aperture`, `apertureWidth` | `fit`, 1 | `held` fixes the aperture at `apertureWidth` |
 | `minSigmas` | 3 | a gap under this many `gapSigma` produces no record |
 | `levelSlope` | `fit` | each level may brighten or darken along the pair; `none` holds them flat |
+| `ledge` | `detect` | also ask whether a shadow ramp lies inside the strip; `none` does not ask |
 
 Per pair: `id`; the two edges `a` and `b`, each with the `segment` it came
 from, its line `x0 y0 x1 y1` over the stretch they share, and `shift`, how far
@@ -531,6 +532,18 @@ strip, beyond `b`), at the middle of the stretch, and `levelSlopes`, how
 much each changes per px along it (null with `levelSlope=none`); `strip`;
 `aperture`, `apertureFrom` and `apertureSegments`; `rms`, `samples`,
 `iterations`, `converged`.
+
+**`ledge` is a detector.** Where one part sits back from the other, a ledge of
+the further part's face shows inside the gap, and an area light's soft shadow
+lies across it: the brightness ramps down over a pixel or two from that edge
+instead of stepping. Two sharp edges and a flat strip misplace that edge by up
+to half a pixel. Gaps of 2 px and more are fitted again with a ramp starting
+at each edge in turn; `ledge.gain` is how much better the best of them fits
+(1.4 to 2.5 over a ledge on the stack, 1.0 to 1.1 without one) and
+`ledge.edge` which edge (`a` or `b`) it starts at. It does not move the
+edges: the pixels cannot place an edge under a penumbra to better than about
+0.2 px. `gap-sweep --carry` uses it to choose the frame it takes the still
+edge from (`design-lab-model.md` §5, "A sixteenth").
 
 **A face is rarely lit evenly, and the levels slope for that.** Held flat, a
 face brighter at one end of the pair than the other turns the two edges
@@ -657,16 +670,30 @@ fitted, and nothing has to have been detected.
 | `guess` | 1 px | where the fit starts; it also starts at 0.25, 0.5, 1 and 2 and keeps the best |
 | `pad` | 4 px | plateau taken beyond each edge |
 | `levelSlope` | `fit` | as for `fitPairs` |
+| `strip` | `held` | `held`: the strip level carried in, for a strip too narrow to show its own. `fit`: only the line is carried |
 
 The carried values are **parameters**, numbers in the command, so they are
 in this frame's log and the frame replays on its own. Nothing in the
 language computes them; `gap-sweep --carry` writes them in.
 
-One record, or none when no strip can be fitted (the edges cross): `still`
-(the line as given), `toward`, `moving` (the fitted edge over the same
-stretch), `gap` at the line's middle (positive toward `toward`), `gapSigma`,
-`levels`, `levelSlopes`, `stripLevel`, `aperture`, `rms`, `samples`,
-`iterations`, `converged`.
+**Strip, or one edge.** The same pixels are also fitted as a single edge
+beside the line, and as two edges with neither held. Where the parts' faces
+meet with no strip between them (in contact, or with the moving edge past
+the still one, an overhang) the picture is one edge, and its signed distance
+from the line is the gap: about zero, or negative. The record is a strip
+(`model: 'strip'`) when two held edges fit 1.2 times better than one (`ratio`)
+or two free edges fit 1.15 times better (`freeRatio`); a single edge
+(`model: 'edge'`) when two held edges fit no better than one and the free fit
+finds no strip either. Between, both happen, and no record is made: a real
+0.3 px gap and a 0.4 px overhang look alike. On the stack's test poses the
+single edge read overhangs of −0.43, −0.82 and −1.19 px as −0.52, −0.87 and
+−1.27.
+
+One record, or none: `still` (the line as given), `toward`, `moving` (the
+fitted edge over the same stretch), `gap` at the line's middle (positive
+toward `toward`, negative for an overhang), `gapSigma`, `model`, `ratio`,
+`freeRatio`, `levels`, `levelSlopes`, `strip` and `stripLevel` (null for one
+edge), `aperture`, `rms`, `samples`, `iterations`, `converged`.
 
 - **An error in the carried line**: over a pixel it is an error in the gap,
   one for one. Under one, the strip's darkness sets the width and the moving
@@ -1613,14 +1640,20 @@ number says how far apart two edges are; two say whether they are parallel,
 and a part turned about the vertical opens a pair at one end and closes it at
 the other.
 
-**`--carry` carries each pair down its approach.** For every view and every
-pair, the widest frame whose refit read the pair as two detected edges at
-least `--carry-min` px apart (default 3) is the one carried from. Its
-`fitPairs` record gives the still part's edge, a point on the moving side, the
-strip level and the aperture, and every narrower frame of that view runs
-again with `K<pair> = trackPair(G, …)` and those numbers. It needs a script
-that binds `G` and `P`, as `pipelines/pairs.lab` does, and a sweep down to
-contact: not `--poses` or `--offset`.
+**`--carry` holds each pair's still edge where it reads cleanly.** The still
+part does not move, so its edge is one line in every frame of a view. For
+every view and pair, the candidates are the frames whose refit read the pair
+as two detected edges at least `--carry-min` px apart (default 3) with no
+ledge in them (`fitPairs`'s `ledge.gain` under `--ledge-max`, default 1.2);
+of those, the one whose still edge is the median of theirs is carried from,
+so a frame that a mild ledge has moved is outvoted. Its record gives the
+still edge, a point on the moving side, the strip level and the aperture, and
+**every** frame of the view runs again with `K<pair> = trackPair(G, …)`: the
+strip fitted where that frame read the pair `--carry-min` px wide itself, and
+held at the carried level where it did not. It needs a script that binds `G`
+and `P`, as `pipelines/pairs.lab` does. It works for a sweep, a sweep with
+`--offset`, and `--poses`. A pair with no candidate gets nothing, and the run
+says which.
 
 ```bash
 npm run gap-sweep -- --name stack-2g-approach --scene saved:stack-2 --moving Cube2 --target Cube \
@@ -1628,14 +1661,16 @@ npm run gap-sweep -- --name stack-2g-approach --scene saved:stack-2 --moving Cub
 ```
 
 The table gains the tracked columns and `gap-grid.txt` a map per gap.
-`carry.json` says what was carried from where; `carry-commands.json` holds
+`carry.json` says what was carried from where, and which pairs had nothing to
+carry from; `carry-commands.json` holds
 the commands, as `npm run lab -- --extra` reads them, and they are also in
 each frame's session. A track is matched to a truth pair by where its line
 lies, within 3 px of the target's edge. At contact, where the truth has no
 facing pair, each track is a row of its own, and its gap is its error. On
 the stack, tracking reads 0.5 mm (0.31 to 0.61 px) to +0.02 ± 0.02 px in six
 of eight pair-views, where a frame alone read two (`design-lab-model.md` §5,
-"A twelfth").
+"A twelfth"), and on its test poses the still edge held takes the position
+solve from 0.18 / 0.25 / 0.30 mm to 0.11 / 0.06 / 0.07 ("A sixteenth").
 
 `--moving`, `--target`, `--axis` and `--gaps` name the parts and the steps;
 the moving part's position in the scene file is contact. `--skip-render`
@@ -1732,6 +1767,10 @@ same `--offset` and the same views, and prints:
 `--poses` run the Jacobian was not measured on, which is the honest test.
 `--readings mid|ends|both` (default both) chooses where along each pair the gap
 is read; a turn is only visible in the ends.
+
+Test poses and sweep poses are scored from four kinds of reading: the truth,
+the detections, the refit, and `carried`, which takes a `--carry` run's
+tracked reading first, then the refit, then the detection.
 
 `--weights sigma|none` (default sigma): each refit reading counts in
 proportion to 1/`gapSigma`², the ends with their middle's. Sigma is a poor
@@ -1859,8 +1898,8 @@ complaint.
 |---|---|---|
 | `edge-segment` | `fit` | `id`, `pixels`, `x0 y0 x1 y1`, `length`, `angle`, `residual`, `rms`, `cx cy` |
 | `edge-arc` | `fitArcs` | `id`, `pixels`, `cx cy r`, `x0 y0 x1 y1`, `angle0`, `angle1`, `sweep`, `arcLength`, `chord`, `sagitta`, `residual`, `rms`, `lineRms`, `mx my` |
-| `edge-track` | `trackPair` | `id`, `still` and `moving` (each `x0 y0 x1 y1`), `toward`, `gap`, `gapSigma`, `levels`, `levelSlopes`, `stripLevel`, `aperture`, `rms`, `samples`, `iterations`, `converged` |
-| `edge-pair` | `fitPairs`, `findPairs` (which adds `gain`) | `id`, `a` and `b` (each `segment`, `x0 y0 x1 y1`, `shift`), `x y`, `nx ny`, `gap`, `gapSigma`, `detectedGap`, `levels`, `levelSlopes` (fitPairs only), `strip`, `aperture`, `apertureFrom`, `apertureSegments`, `rms`, `samples`, `iterations`, `converged` |
+| `edge-track` | `trackPair` | `id`, `still` and `moving` (each `x0 y0 x1 y1`), `toward`, `gap`, `gapSigma`, `model` (`strip` or `edge`), `ratio`, `freeRatio`, `levels`, `levelSlopes`, `strip`, `stripLevel`, `aperture`, `rms`, `samples`, `iterations`, `converged` |
+| `edge-pair` | `fitPairs`, `findPairs` (which adds `gain`) | `id`, `a` and `b` (each `segment`, `x0 y0 x1 y1`, `shift`), `x y`, `nx ny`, `gap`, `gapSigma`, `detectedGap`, `levels`, `levelSlopes` and `ledge` (fitPairs only), `strip`, `aperture`, `apertureFrom`, `apertureSegments`, `rms`, `samples`, `iterations`, `converged` |
 | `edge-corner` | `corners` | `id`, `x y`, `support`, `segments`, `sigma`, `reach`, `endpointGap`, `angle` |
 | `gt-edge` | `groundTruth` | `id`, `cause`, `objects`, `x0 y0 x1 y1`, `z0 z1`, `length`, `angle`, `dihedral`, `visible`, `clipped`, `v0 v1` |
 | `gt-vertex` | `groundTruth` | `id`, `x y z`, `degree`, `visibleDegree`, `onFrame`, `visible`, `angle`, `objects` |
