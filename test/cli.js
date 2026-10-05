@@ -236,6 +236,28 @@ test('several images each get a fresh session', () => {
     'two different images must not load to the same buffer');
 });
 
+test('--extra runs an image\'s own commands after the script, in its log', () => {
+  const second = writeSquare(path.join(tmp, 'square3.png'), 64);
+  const extra = path.join(tmp, 'extra.json');
+  fs.writeFileSync(extra, JSON.stringify({ square: ['X = toLinear(A)'] }));
+  const dir = path.join(tmp, 'extra');
+  const { code, out: text } = run(['--script', pipeline, '--out', dir, '--extra', extra, image, second]);
+  assert.equal(code, 0, text);
+  const a = JSON.parse(fs.readFileSync(path.join(dir, 'square.session.json'), 'utf8'));
+  const b = JSON.parse(fs.readFileSync(path.join(dir, 'square3.session.json'), 'utf8'));
+  assert.equal(a.entries.at(-1).target, 'X', 'the named image ran it, last');
+  assert.equal(a.entries.at(-1).record.op, 'toLinear');
+  assert.equal(a.entries.length, b.entries.length + 1, 'the other ran the script alone');
+});
+
+test('an --extra file that is not lists of commands is refused before anything runs', () => {
+  const extra = path.join(tmp, 'bad-extra.json');
+  fs.writeFileSync(extra, JSON.stringify({ square: 'X = gaussian(A)' }));
+  const { code, out: text } = run(['--script', pipeline, '--extra', extra, image]);
+  assert.equal(code, 2, text);
+  assert.match(text, /"square" is not a list of commands/);
+});
+
 /* --- ground truth --------------------------------------------------- */
 
 /*
