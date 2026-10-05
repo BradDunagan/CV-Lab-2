@@ -303,7 +303,7 @@ function bandSamples(raster, frame, opts) {
  * be said about how well the rest are known.
  */
 function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = null, slopedLevels = false,
-  maxIterations = MAX_ITERATIONS }) {
+  heldEdges = [], maxIterations = MAX_ITERATIONS }) {
   const { t, h, v } = samples;
   const n = v.length;
   const E = frame.edges.length;
@@ -317,7 +317,11 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
   const slopeAt = [];
   for (let j = 0; j <= E; j++) slopeAt.push(slopedLevels && levelAt[j] >= 0 ? k++ : -1);
   const APERTURE = fitAperture ? k++ : -1;
-  if (n <= k) return null;
+  // A held edge keeps its two slots, with columns of zero: the solve below
+  // holds still any parameter no pixel responds to.
+  const held = (c) => c < 2 * E && heldEdges.includes(c >> 1);
+  const free = k - 2 * heldEdges.length;
+  if (n <= free) return null;
 
   // A level at t along the band: its value at the middle, plus its slope.
   const level = (q, j, tt = 0) => (levelAt[j] < 0 ? heldStrip
@@ -347,6 +351,7 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
       for (let e = 0; e < E; e++) {
         const d = h[i] - q[2 * e] - q[2 * e + 1] * t[i];
         const g = -(level(q, e + 1, t[i]) - level(q, e, t[i])) * density(d, w * nMin, w * nMax);
+        if (heldEdges.includes(e)) { row[2 * e] = 0; row[2 * e + 1] = 0; continue; }
         row[2 * e] = g; row[2 * e + 1] = g * t[i];
       }
       // Level j is weighted by the coverage gained at edge j-1 and lost at j.
@@ -448,13 +453,16 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
    * under a sigma of 0.015 and 0.027.
    */
   const d = scaleOf(state.JtJ);
-  if (d.some((x) => x === 0)) return null;
+  if (d.some((x, c) => x === 0 && !held(c))) return null;
+  // Over the free parameters; a held one is an identity row, and known exactly.
   const inverseColumn = (col) => {
-    const A = state.JtJ.map((row, c) => row.map((x, e) => x / (d[c] * d[e])));
+    if (held(col)) return new Array(k).fill(0);
+    const A = state.JtJ.map((row, c) => row.map((x, e) => (held(c) || held(e)
+      ? (c === e ? 1 : 0) : x / (d[c] * d[e]))));
     const e = new Array(k).fill(0); e[col] = 1;
-    return solve(A, e, 1e-14) ? e.map((x, c) => x / (d[c] * d[col])) : null;
+    return solve(A, e, 1e-14) ? e.map((x, c) => (held(c) ? 0 : x / (d[c] * d[col]))) : null;
   };
-  const s2 = state.sse / (n - k);
+  const s2 = state.sse / (n - free);
   let gapSigma = null;
   if (E === 2) {
     const i0 = inverseColumn(0), i2 = inverseColumn(2);
@@ -810,8 +818,84 @@ function findPairs(segments, raster, options = {}) {
   return out;
 }
 
+/* ---- carried from an earlier frame ---------------------------------- */
+
+/**
+ * One pair read again in a later frame, from what an earlier one measured.
+ *
+ * Below about a pixel the image alone does not determine a gap: width and
+ * strip level trade, and the detector reports one segment or none. But in an
+ * approach only one part moves. The other's edge is the same line in every
+ * frame, and the strip's level and the aperture were measured while the gap
+ * was wide. Carried in, they leave one edge to find -- the moving part's --
+ * beside a line that is known, and nothing needs to have been detected.
+ *
+ * `carried`:
+ *   - `line`, {x0, y0, x1, y1}: the still part's edge as fitted in the earlier
+ *     frame, over the stretch the pair shared. It is HELD. Over a pixel an
+ *     error in it is an error in the gap, one for one; under one, a strip of
+ *     known level is as wide as its darkness says, and the moving edge
+ *     follows the line instead -- 0.2 px off cost a 0.6 px gap 0.02. Either
+ *     way `rms` grows with it.
+ *   - `toward`, [x, y]: a point on the moving part's side of it.
+ *   - `stripLevel` and `aperture`, as that frame's record had them.
+ *
+ * `options.guess` is where to start, in px (default 1); the fit is also
+ * started at a quarter, a half, one and two pixels, and the best is kept.
+ *
+ * Returns the gap at the middle of the line, positive toward `toward`, with
+ * `gapSigma` and the moving edge over the same stretch; or null when no
+ * strip can be fitted -- the edges cross, which is what contact does in most
+ * views. A gap returned is NOT tested against its sigma: at contact a few
+ * views return 0.02 to 0.09 px with sigmas that would pass, and the caller is
+ * the one who knows whether the parts can be touching.
+ */
+function trackPair(raster, carried, options = {}) {
+  const opts = { ...DEFAULTS, guess: 1, ...options };
+  const l = lineOf(carried.line);
+  if (!l) return null;
+  const frame = {
+    ox: l.x0 + l.ux * (l.len / 2), oy: l.y0 + l.uy * (l.len / 2),
+    ux: l.ux, uy: l.uy, nx: -l.uy, ny: l.ux, half: l.len / 2,
+  };
+  const side = (carried.toward[0] - frame.ox) * frame.nx + (carried.toward[1] - frame.oy) * frame.ny >= 0 ? 1 : -1;
+  const edgesAt = (g) => (side > 0 ? [{ c: 0, m: 0 }, { c: g, m: 0 }] : [{ c: -g, m: 0 }, { c: 0, m: 0 }]);
+  // One set of pixels for every start: wide enough for the widest of them.
+  const samples = bandSamples(raster, { ...frame, edges: edgesAt(Math.max(opts.guess + 1.5, 3)) }, opts);
+  const still = side > 0 ? 0 : 1;
+  let best = null;
+  for (const g of [0.25, 0.5, 1, 2, opts.guess]) {
+    if (!(g > 0)) continue;
+    const fit = fitBand(samples, { ...frame, edges: edgesAt(g) }, {
+      aperture: carried.aperture, heldStrip: carried.stripLevel,
+      slopedLevels: opts.levelSlope === 'fit', heldEdges: [still],
+    });
+    if (fit && (!best || fit.rms < best.rms)) best = fit;
+  }
+  if (!best) return null;
+  const moving = best.edges[1 - still];
+  const at = (t) => {
+    const hh = moving.c + moving.m * t;
+    return [frame.ox + frame.ux * t + frame.nx * hh, frame.oy + frame.uy * t + frame.ny * hh];
+  };
+  const [x0, y0] = at(-frame.half), [x1, y1] = at(frame.half);
+  return {
+    gap: side * moving.c,
+    gapSigma: best.gapSigma,
+    moving: { x0, y0, x1, y1 },
+    levels: best.levels,
+    levelSlopes: best.levelSlopes,
+    stripLevel: carried.stripLevel,
+    aperture: carried.aperture,
+    rms: best.rms,
+    samples: best.samples,
+    iterations: best.iterations,
+    converged: best.converged,
+  };
+}
+
 module.exports = {
-  fitPairs, findPairs, hiddenIn, candidates, pairFrame, loneFrame, bandSamples, fitBand,
+  fitPairs, findPairs, trackPair, hiddenIn, candidates, pairFrame, loneFrame, bandSamples, fitBand,
   measureAperture, loneApertures, medianAperture,
   coverage, density, solve, DEFAULTS,
 };

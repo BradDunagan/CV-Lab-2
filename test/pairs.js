@@ -15,7 +15,7 @@
 
 const assert = require('node:assert/strict');
 const {
-  fitPairs, findPairs, pairFrame, loneFrame, bandSamples, fitBand, measureAperture, loneApertures,
+  fitPairs, findPairs, trackPair, pairFrame, loneFrame, bandSamples, fitBand, measureAperture, loneApertures,
   coverage, density, solve, DEFAULTS,
 } = require('../src/lab/pairs');
 
@@ -596,6 +596,67 @@ test('a segment along the pixel grid is not searched: its pixels all cross the e
 test('a segment shorter than one window is not searched', () => {
   const { lo, raster } = scene(1.0);
   assert.deepEqual(findPairs([merged(1, lo, -10, 10)], raster, HELD), []);
+});
+
+/* ---- carried from an earlier frame ---------------------------------- */
+
+/** What an earlier frame left: the still edge `l`, and the side the other is on. */
+const carriedFrom = (l, other, { off = 0, level = LEVELS[1] } = {}) => {
+  // Three px off l, on other's side of it.
+  const side = Math.sign((other.px - l.px) * l.nx + (other.py - l.py) * l.ny);
+  return {
+    line: segOn(0, l, -40, 40, off),
+    toward: [l.px + l.nx * 3 * side, l.py + l.ny * 3 * side],
+    stripLevel: level,
+    aperture: 1,
+  };
+};
+
+test('a gap under a pixel is read beside a carried line, with nothing detected', () => {
+  for (const deg of [8, 30, 135]) {
+    for (const gap of [0.3, 0.5, 0.9]) {
+      const { lo, hi, raster } = scene(gap, { deg });
+      // Either edge can be the still one.
+      const below = trackPair(raster, carriedFrom(lo, hi));
+      near(below.gap, gap, 1e-3, `${deg} deg, ${gap} px, lower edge held`);
+      near(offsetFrom(hi, below.moving), 0, 1e-3, `${deg} deg, ${gap} px, the moving edge`);
+      const above = trackPair(raster, carriedFrom(hi, lo));
+      near(above.gap, gap, 1e-3, `${deg} deg, ${gap} px, upper edge held`);
+    }
+  }
+});
+
+test('a carried line\'s error is the gap\'s over a pixel; under one, the strip\'s darkness holds the gap', () => {
+  const read = (gap, off) => {
+    const { lo, hi, raster } = scene(gap);
+    const r = trackPair(raster, carriedFrom(lo, hi, { off }));
+    return { err: r.gap - gap, moved: offsetFrom(hi, r.moving), rms: r.rms };
+  };
+  // Over a pixel the strip's edges are each seen, and the held one is wrong.
+  for (const off of [-0.1, 0.1, 0.2]) near(read(1.2, off).err, -off, 0.02, `1.2 px, line ${off} off`);
+  // Under one, a strip of known level is as wide as its darkness says, and
+  // the moving edge follows the held line instead: 0.2 px off costs 0.02.
+  for (const off of [0.1, 0.2]) {
+    const r = read(0.6, off);
+    assert.ok(Math.abs(r.err) < off / 4, `0.6 px, line ${off} off: gap error ${r.err}`);
+    near(r.moved, off, off / 4, `0.6 px, line ${off} off: the moving edge`);
+  }
+  // Either way the pixels say so.
+  assert.ok(read(0.6, 0.2).rms > 100 * read(0.6, 0).rms, 'rms does not grow with the line\'s error');
+});
+
+test('which way the carried line was written does not matter', () => {
+  const { lo, hi, raster } = scene(0.5);
+  const c = carriedFrom(lo, hi);
+  const { x0, y0, x1, y1 } = c.line;
+  const back = trackPair(raster, { ...c, line: { x0: x1, y0: y1, x1: x0, y1: y0 } });
+  assert.deepEqual(back, trackPair(raster, c));
+});
+
+test('at contact there is no strip to fit, and almost nothing is returned', () => {
+  const { lo, hi, raster } = scene(0);
+  const r = trackPair(raster, carriedFrom(lo, { ...hi, px: hi.px + hi.nx, py: hi.py + hi.ny }));
+  assert.ok(r === null || Math.abs(r.gap) < 0.05, `contact read as ${r && r.gap}`);
 });
 
 (async () => {
