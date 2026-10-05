@@ -50,6 +50,10 @@ CV-Lab relative position -- several gap readings solved for one displacement
   --readings <which>    mid | ends | both: where along each pair the gap is
                         read. "ends" is a sixth in from each end; a turn is
                         only visible in those                 (default both)
+  --weights <how>       sigma | none: whether each refit reading counts in
+                        proportion to 1/gapSigma^2, the fit's own say of how
+                        well its pixels pin the gap. Truth and detections are
+                        never weighted                        (default sigma)
   --out <file>          also write everything as JSON
   --max-views <n>       the largest set of views to combine   (default 3)
   --max-sigma <n>       a pose is not solved from readings that would turn one
@@ -58,12 +62,13 @@ CV-Lab relative position -- several gap readings solved for one displacement
 `.trim();
 
 function parseArgs(argv) {
-  const opts = { dirs: {}, test: null, readings: 'both', out: null, maxViews: 3, maxSigma: 10 };
+  const opts = { dirs: {}, test: null, readings: 'both', weights: 'sigma', out: null, maxViews: 3, maxSigma: 10 };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (['--x', '--y', '--z', '--turn'].includes(arg)) opts.dirs[arg.slice(2)] = argv[++i];
     else if (arg === '--test') opts.test = argv[++i];
     else if (arg === '--readings') opts.readings = argv[++i];
+    else if (arg === '--weights') opts.weights = argv[++i];
     else if (arg === '--out') opts.out = argv[++i];
     else if (arg === '--max-views') opts.maxViews = Number(argv[++i]);
     else if (arg === '--max-sigma') opts.maxSigma = Number(argv[++i]);
@@ -71,6 +76,7 @@ function parseArgs(argv) {
     else throw new Error(`unknown option ${arg}`);
   }
   if (!['mid', 'ends', 'both'].includes(opts.readings)) throw new Error('--readings is mid, ends or both');
+  if (!['none', 'sigma'].includes(opts.weights)) throw new Error('--weights is none or sigma');
   return opts;
 }
 
@@ -104,9 +110,10 @@ function readingsOf(r) {
     truth: r.endsTruePx?.[k] ?? null,
     detected: r.endsDetectedPx?.[k] ?? null,
     refit: r.refit?.endsPx?.[k] ?? null,
+    sigma: r.refit?.gapSigma ?? null,
   });
   return {
-    mid: { truth: r.trueGapPx, detected: r.measuredGapPx, refit: r.refit?.gapPx ?? null },
+    mid: { truth: r.trueGapPx, detected: r.measuredGapPx, refit: r.refit?.gapPx ?? null, sigma: r.refit?.gapSigma ?? null },
     'end 1': at(0),
     'end 2': at(1),
   };
@@ -201,10 +208,11 @@ function main() {
   const sets = [];
   for (let n = 1; n <= Math.min(opts.maxViews, views.length); n++) sets.push(...choose(views, n));
 
+  const refitPick = (r) => r.refit ?? r.detected;
   const MODES = [
     ['truth', (r) => r.truth],
     ['detected', (r) => r.detected],
-    ['refit', (r) => r.refit ?? r.detected],
+    ['refit', refitPick],
   ];
   const report = { unknowns, reference, readings: [...readings.values()], sets: [] };
 
@@ -213,8 +221,21 @@ function main() {
     let solved = 0;
     const worst = { size: 0, text: '' };
     for (const pose of poses) {
-      const obs = used.map((p) => ({ jacobian: p.jacobian, reference: p.reference,
-        measured: pose.readings.has(p.key) ? pick(pose.readings.get(p.key)) : null }));
+      /*
+       * Weighted by the refit's gapSigma, which the record has at the middle
+       * only; the ends are given the middle's. Not because sigma predicts the
+       * error -- reading by reading it hardly does, a rank correlation of
+       * 0.34 -- but it is lowest where a gap is wide and its edges long, and
+       * among the readings of ONE pose that is enough. On the stack's test
+       * poses it took the turn from 0.19 to 0.05 degrees RMS, averaged over
+       * every set of views; with the end readings still tilted by a flat-
+       * level fit it did nothing (design-lab-model.md §5, "An eleventh").
+       */
+      const obs = used.map((p) => {
+        const r = pose.readings.get(p.key);
+        return { jacobian: p.jacobian, reference: p.reference, measured: r ? pick(r) : null,
+          weight: opts.weights === 'sigma' && pick === refitPick && r?.refit != null && r.sigma > 0 ? 1 / (r.sigma * r.sigma) : 1 };
+      });
       const s = solvePosition(obs);
       /*
        * A pose is solved from the readings it HAS, and one that lost a few
