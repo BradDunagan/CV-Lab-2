@@ -354,6 +354,24 @@ gh pr merge 4 --rebase --delete-branch
 Before merging, `mergeStateStatus: CLEAN` and `mergeable: MERGEABLE` mean
 GitHub agrees it will go in without conflict.
 
+### How often
+
+Each PR waits on two runs of about five minutes. On 2026-10-05 that was four
+PRs in a day, two of them docs and notes only. Since then:
+
+- **One PR per piece of work, not per finding.** Several commits on one
+  branch, pushed when the work is done, or earlier when a risky code change
+  should be seen on all three platforms before more is built on it.
+- **Docs-only changes go straight to `main` with `[skip ci]`**: `docs/`,
+  `notes/`, `CLAUDE.md`, scene files. Nothing in them is built or tested
+  except by the README and repository suites, which a later code PR runs.
+- **Nobody waits on `main`'s run after a rebase-merge.** `main` is then the
+  tree the PR's run just passed; the run is checked at the next pause, not
+  watched.
+
+Code still goes through a PR, and its CI logs are still read for warnings
+before it is merged.
+
 ---
 
 ## 8. Why `--rebase`, and why the hashes change
