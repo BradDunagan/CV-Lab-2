@@ -98,6 +98,7 @@ const DEFAULTS = {
   aperture: 'fit',  // measured on this image's lone segments; or 'held'
   apertureWidth: 1, // the value held, and the one used when none can be measured
   minSigmas: 3,     // a gap under this many gapSigma is not told from none
+  levelSlope: 'fit', // fitPairs: each level may change along the pair; or 'none'
   // findPairs only:
   window: 24,       // px of a segment tested at a time for a strip inside it
   reach: 2.4,       // px to one side that the second edge is looked for
@@ -283,14 +284,26 @@ function bandSamples(raster, frame, opts) {
  * Levenberg-Marquardt. The parameters are each edge's line (c, m), then the
  * levels from below the first edge to above the last, then the aperture when
  * `fitAperture` asks for it. `heldStrip`, for a pair, takes the middle level
- * out of the parameters. The Jacobian is written out, except the aperture's
- * column, which is differenced.
+ * out of the parameters. `slopedLevels` gives every fitted level a slope along
+ * the band as well, after the levels. The Jacobian is written out, except the
+ * aperture's column, which is differenced.
+ *
+ * WHY THE LEVELS SLOPE. A face is not evenly lit: the light falls off across
+ * it, and along a pair 100 px long a face can brighten by several percent.
+ * Fitted as one flat level, that turns each edge -- and turns the two of a
+ * pair OPPOSITE ways, because a step that is brighter than the model at one
+ * end is matched by moving its edge, and the edges either side of a strip move
+ * apart for the same mismatch. On the stack's renders that was 0.12 degrees
+ * each way on every pair in every view, 0.3 px of gap from one end of a pair
+ * to the other, while the middle read true. A flat strip alone was tried and
+ * did nothing; it is the faces' slopes that matter.
  *
  * Returns null when the model does not describe the band: the edges cross
  * inside it, or some parameter has no effect on any pixel, so that nothing can
  * be said about how well the rest are known.
  */
-function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = null, maxIterations = MAX_ITERATIONS }) {
+function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = null, slopedLevels = false,
+  maxIterations = MAX_ITERATIONS }) {
   const { t, h, v } = samples;
   const n = v.length;
   const E = frame.edges.length;
@@ -301,19 +314,23 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
   const levelAt = [];
   let k = 2 * E;
   for (let j = 0; j <= E; j++) levelAt.push(heldStrip !== null && j === 1 ? -1 : k++);
+  const slopeAt = [];
+  for (let j = 0; j <= E; j++) slopeAt.push(slopedLevels && levelAt[j] >= 0 ? k++ : -1);
   const APERTURE = fitAperture ? k++ : -1;
   if (n <= k) return null;
 
-  const level = (q, j) => (levelAt[j] < 0 ? heldStrip : q[levelAt[j]]);
+  // A level at t along the band: its value at the middle, plus its slope.
+  const level = (q, j, tt = 0) => (levelAt[j] < 0 ? heldStrip
+    : q[levelAt[j]] + (slopeAt[j] < 0 ? 0 : q[slopeAt[j]] * tt));
   const widthOf = (q) => (fitAperture ? q[APERTURE] : aperture);
 
   /** One pixel's value under q, and the coverages that made it. */
   const cover = new Array(E);
   const predict = (q, i, w) => {
-    let value = level(q, 0);
+    let value = level(q, 0, t[i]);
     for (let e = 0; e < E; e++) {
       cover[e] = coverage(h[i] - q[2 * e] - q[2 * e + 1] * t[i], w * nMin, w * nMax);
-      value += (level(q, e + 1) - level(q, e)) * cover[e];
+      value += (level(q, e + 1, t[i]) - level(q, e, t[i])) * cover[e];
     }
     return value;
   };
@@ -329,13 +346,14 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
       if (!JtJ) continue;
       for (let e = 0; e < E; e++) {
         const d = h[i] - q[2 * e] - q[2 * e + 1] * t[i];
-        const g = -(level(q, e + 1) - level(q, e)) * density(d, w * nMin, w * nMax);
+        const g = -(level(q, e + 1, t[i]) - level(q, e, t[i])) * density(d, w * nMin, w * nMax);
         row[2 * e] = g; row[2 * e + 1] = g * t[i];
       }
       // Level j is weighted by the coverage gained at edge j-1 and lost at j.
       for (let j = 0; j <= E; j++) {
         if (levelAt[j] < 0) continue;
         row[levelAt[j]] = (j === 0 ? 1 : cover[j - 1]) - (j === E ? 0 : cover[j]);
+        if (slopeAt[j] >= 0) row[slopeAt[j]] = row[levelAt[j]] * t[i];
       }
       if (fitAperture) row[APERTURE] = (predict(q, i, w + 1e-4) - predict(q, i, w - 1e-4)) / 2e-4;
       for (let c = 0; c < k; c++) {
@@ -449,6 +467,7 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
   return {
     edges: frame.edges.map((_, e) => ({ c: p[2 * e], m: p[2 * e + 1] })),
     levels: levelAt.map((_, j) => level(p, j)),
+    levelSlopes: slopeAt.some((at) => at >= 0) ? slopeAt.map((at) => (at < 0 ? 0 : p[at])) : null,
     aperture: widthOf(p),
     gapSigma,
     rms: Math.sqrt(state.sse / n),
@@ -554,6 +573,9 @@ function apertureFrom(measured, opts) {
  * normal from a toward b: two edges pushed apart by blur come back as a
  * positive shift on a and a negative one on b.
  *
+ * `levels` are at the middle of that stretch; `levelSlopes`, in the same
+ * order, how much each changes per px along it -- null with levelSlope 'none'.
+ *
  * `aperture` is the same in every record of one call, with where it came
  * from: `segments` (measured, over `apertureSegments` of them), `held`, or
  * `default` when it was to be measured and no segment could say.
@@ -569,6 +591,7 @@ function fitPairs(segments, raster, options = {}) {
     const fit = fitBand(bandSamples(raster, frame, opts), frame, {
       aperture: aperture.width,
       heldStrip: opts.strip === 'held' ? opts.stripLevel : null,
+      slopedLevels: opts.levelSlope === 'fit',
     });
     if (!fit) continue;
     const gap = fit.edges[1].c - fit.edges[0].c;
@@ -594,6 +617,7 @@ function fitPairs(segments, raster, options = {}) {
       gapSigma: fit.gapSigma,
       detectedGap: frame.edges[1].c - frame.edges[0].c,
       levels: fit.levels,
+      levelSlopes: fit.levelSlopes,
       strip: opts.strip,
       aperture: aperture.width,
       apertureFrom: aperture.from,

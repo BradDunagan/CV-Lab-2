@@ -185,6 +185,51 @@ test('edges that converge are each fitted as their own line', () => {
   }
 });
 
+/**
+ * The standard scene with every level brightening along the edges, by `grad`
+ * of itself per px: the light falling off across a face. Each pixel takes the
+ * levels at its centre, which is exact for the plateaus and off by a part in
+ * a few thousand in the pixels a step crosses.
+ */
+function shaded(gap, grad, { deg = 8 } = {}) {
+  const { lo, hi } = scene(gap, { deg });
+  const flat = LEVELS.map((v) => strip(160, 120, lo, hi, LEVELS.map((u) => (u === v ? 1 : 0))));
+  const data = new Float32Array(160 * 120);
+  for (let y = 0; y < 120; y++) {
+    for (let x = 0; x < 160; x++) {
+      const t = (x - lo.px) * lo.ux + (y - lo.py) * lo.uy;
+      for (let k = 0; k < 3; k++) data[y * 160 + x] += flat[k].data[y * 160 + x] * LEVELS[k] * (1 + grad * t);
+    }
+  }
+  return { lo, hi, raster: { width: 160, height: 120, channels: 1, data } };
+}
+
+test('levels that change along the edges do not turn them: the fit slopes the levels too', () => {
+  // Faces 10% brighter at one end of the pair than at the other.
+  const { lo, hi, raster } = shaded(3, 0.0012);
+  const segs = [segOn(1, lo, -40, 40, -0.5), segOn(2, hi, -40, 40, 0.5)];
+  const [p] = fitPairs(segs, raster);
+  for (const t of [-30, 0, 30]) {
+    near(offsetFrom(lo, p.a, t), 0, 0.01, `a at t=${t}`);
+    near(offsetFrom(hi, p.b, t), 0, 0.01, `b at t=${t}`);
+  }
+  p.levelSlopes.forEach((g, k) => near(g, LEVELS[k] * 0.0012, 2e-5, `slope of level ${k}`));
+  // Held flat, the same pixels turn the two edges opposite ways: what the
+  // stack's renders did, by 0.3 px from one end of a pair to the other.
+  const [q] = fitPairs(segs, raster, { levelSlope: 'none' });
+  const tilt = (r) => (offsetFrom(hi, r.b, 30) - offsetFrom(lo, r.a, 30))
+    - (offsetFrom(hi, r.b, -30) - offsetFrom(lo, r.a, -30));
+  assert.ok(Math.abs(tilt(q)) > 10 * Math.abs(tilt(p)), `flat ${tilt(q)}, sloped ${tilt(p)}`);
+  assert.equal(q.levelSlopes, null);
+});
+
+test('on evenly lit faces the slopes come back zero and the edges where they were', () => {
+  const { lo, hi, raster } = scene(2.3);
+  const [p] = fitPairs([segOn(1, lo, -50, 50, -0.6), segOn(2, hi, -40, 40, 0.6)], raster);
+  p.levelSlopes.forEach((g, k) => near(g, 0, 1e-7, `slope of level ${k}`));
+  near(p.gap, 2.3, 1e-4, 'gap');
+});
+
 test('the record does not depend on which way a segment was written, or their order', () => {
   const { lo, hi, raster } = scene(2.3, { noise: 0.02 });
   const a = segOn(1, lo, -50, 50, -0.6), b = segOn(2, hi, -40, 40, 0.6);

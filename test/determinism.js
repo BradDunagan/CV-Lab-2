@@ -145,7 +145,7 @@ const EXPECTED_CURVES = {
  * The `edge-pair` list from the fixture built in its own test below. Produced
  * on arm64 macOS under node 22; the matrix is what says it holds elsewhere.
  */
-const EXPECTED_PAIRS = '0183e9c8a756b80fea22845827115b7860b37c709409f5949fcd56083d4ab8ef';
+const EXPECTED_PAIRS = '45aec07f26e77c928ab3ca6cbb36378a547e07b0e97001c4bbb8462159ee153e';
 
 /* And the `edge-pair` list findPairs returns from its own fixture, likewise. */
 const EXPECTED_HIDDEN = 'd1328c616bfe9daa760442ca79b1f1a0d662ce3aba5a3edfa6cb52659ed458d8';

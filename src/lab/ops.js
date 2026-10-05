@@ -515,7 +515,9 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       // v2: the aperture is the MEDIAN of the lone segments', not their lower
       // quartile. Over sixteen frames from one renderer the quartile ranged
       // 1.06 to 1.31 and the median 1.31 to 1.39; see pairs.js.
-      version: 2,
+      // v3: each level may change along the pair (`levelSlope`), which stops
+      // a face's shading turning the two edges opposite ways.
+      version: 3,
       summary: 'Place two close parallel segments again, jointly, against the unblurred image.',
       /*
        * Features in, features out, with the image alongside -- the shape
@@ -567,6 +569,13 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         // A gap the fit cannot tell from none is one edge found twice, or
         // two parts in contact. This cannot say which, and reports neither.
         { name: 'minSigmas', type: 'number', default: 3, min: 0 },
+        /*
+         * A face is brighter at one end of a pair than the other, and one
+         * flat level per face turns the two edges opposite ways: 0.3 px of
+         * gap end to end on the stack's renders. `fit` gives each level a
+         * slope along the pair; `none` is the fit as it was.
+         */
+        { name: 'levelSlope', type: 'enum', values: ['fit', 'none'], default: 'fit' },
       ],
       output: { kind: 'features' },
       kernel: ({ inputs, params }) => pairKernel('fitPairs', fitPairs, inputs, params),
