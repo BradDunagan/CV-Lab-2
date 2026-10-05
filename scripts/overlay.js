@@ -362,6 +362,14 @@ for (const [, features] of slots) {
     for (const e of [f.a, f.b]) line(canvas, P(e.x0), P(e.y0), P(e.x1), P(e.y1), COLOURS.pair);
   }
 }
+// And tracked pairs, the same way: the line carried in and the edge fitted
+// beside it, where often nothing was detected at all.
+for (const [, features] of slots) {
+  for (const f of features) {
+    if (f.type !== 'edge-track') continue;
+    for (const e of [f.still, f.moving]) line(canvas, P(e.x0), P(e.y0), P(e.x1), P(e.y1), COLOURS.pair);
+  }
+}
 
 /*
  * Only the vertices a detector is answerable for. A smooth object's silhouette
