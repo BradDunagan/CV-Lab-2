@@ -1787,7 +1787,13 @@ takes the reference from what was read, in the same mode, with the part at
 the reference pose (every sweep's step 0, averaged), so a reading's steady
 bias cancels; `full` also takes the Jacobian from the readings' slopes along
 the sweeps, and uses no ground truth at all, as a real cell would have to. A
-reading that cannot be calibrated is dropped. It removes a steady bias, such
+reading that cannot be calibrated is dropped. `joint` uses no truth either,
+and fits each reading's reference and all its slopes together, by least
+squares over every frame of every sweep, dropping frames more than 3 MADs off
+before fitting again: a frame's error then pulls on every coefficient a
+little instead of on one sweep's slope a lot. It is the one to use without
+ground truth; each calibrated reading's fit scatter is in the JSON
+(`calibrated[].calibration.rms`). It removes a steady bias, such
 as the detections' (1.67/0.82/1.75 mm to 0.73/0.29/0.58 on the stack's test
 poses), and cannot remove scatter: the refit stays at about 0.2 mm. Scatter in
 the frames calibrated from is carried into every solve (`design-lab-model.md`
