@@ -146,6 +146,62 @@ test('a pair about other segments, or one that stops short of the measuring poin
   assert.equal(gapRow(input(null), { gapMm: 8 }, PARTS).refit, null);
 });
 
+/** An edge-track record: trackPair's, the still line carried, the moving one fitted. */
+const trackRecord = (still, moving, toward, extra = {}) => ({
+  type: 'edge-track', id: 1,
+  still: { x0: still[0], y0: still[1], x1: still[2], y1: still[3] },
+  moving: { x0: moving[0], y0: moving[1], x1: moving[2], y1: moving[3] },
+  toward, gapSigma: 0.01, rms: 0.002, stripLevel: 0.12, ...extra,
+});
+
+test('a tracked pair is read at the same point as the rest, and needs no detection', () => {
+  // The table's line carried 0.2 px low, the cube's edge fitted 0.1 px low.
+  const tracks = [trackRecord([60, 110.2, 240, 110.2], [60, 100.1, 240, 100.1], [150, 90])];
+  const row = gapRow({ truth: TRUTH, segments: [], explained: [], matches: [miss(1), miss(2)], tracks },
+    { gapMm: 8 }, PARTS);
+  assert.equal(row.pairFound, false, 'nothing was detected');
+  assert.ok(Math.abs(row.tracked.gapPx - 10.1) < 1e-9, `tracked gap ${row.tracked.gapPx}`);
+  assert.ok(Math.abs(row.tracked.errorPx - 0.1) < 1e-9, `tracked error ${row.tracked.errorPx}`);
+  assert.ok(Math.abs(row.tracked.targetOffsetPx + 0.2) < 1e-9, `table ${row.tracked.targetOffsetPx}`);
+  assert.equal(row.tracked.endsPx.length, 2);
+  assert.equal(row.tracked.gapSigma, 0.01);
+});
+
+test('a track is matched to a pair by where its still line lies, not by order', () => {
+  const input = (tracks) => ({ truth: TRUTH, segments: [], explained: [], matches: [miss(1), miss(2)], tracks });
+  // Its still line on the cube's edge, or 5 px off the table's, or stopping
+  // short of the measuring point: none of them speaks for this pair.
+  for (const still of [[60, 100, 240, 100], [60, 115, 240, 115], [60, 110, 130, 110]]) {
+    const t = [trackRecord(still, [60, 99, 240, 99], [150, 90])];
+    assert.equal(gapRow(input(t), { gapMm: 8 }, PARTS).tracked, null, `still line ${still}`);
+  }
+  // Among two, the one on the table's edge.
+  const two = [trackRecord([60, 102, 240, 102], [60, 99, 240, 99], [150, 90]),
+    trackRecord([60, 110, 240, 110], [60, 100, 240, 100], [150, 90], { gapSigma: 0.03 })];
+  assert.equal(gapRow(input(two), { gapMm: 8 }, PARTS).tracked.gapSigma, 0.03);
+});
+
+test('where the truth has no facing pair a track is still a row, and at contact its gap is its error', () => {
+  // Only the table's edge in the truth: nothing faces it.
+  const truth = [gt(2, ['Table'], 50, 110, 250, 110)];
+  const tracks = [trackRecord([60, 110, 240, 110], [60, 109.92, 240, 109.92], [150, 90], { gap: 0.08 })];
+  const input = { truth, segments: [], explained: [], matches: [miss(2)], tracks };
+  const [row] = gapRows(input, { gapMm: 0 }, PARTS);
+  assert.equal(row.reason, 'no facing pair in the ground truth');
+  assert.equal(row.trueGapPx, 0);
+  assert.equal(row.tracked.gapPx, 0.08);
+  assert.equal(row.tracked.errorPx, 0.08, 'at contact the true gap is zero');
+  assert.ok(Math.abs(row.pairAngle) < 1e-9, `angle ${row.pairAngle}`);
+  // Away from contact nothing says what the gap should be.
+  const [away] = gapRows(input, { gapMm: 1 }, PARTS);
+  assert.equal(away.trueGapPx, null);
+  assert.equal(away.tracked.errorPx, null);
+  // And with no tracks, the one row it always was.
+  const [none] = gapRows({ ...input, tracks: null }, { gapMm: 0 }, PARTS);
+  assert.equal(none.pair, null);
+  assert.equal(none.tracked, null);
+});
+
 test('a pair found inside ONE detection is read where the detections give no gap at all', () => {
   // Only the table's edge is detected, as at 1 mm. findPairs found a second
   // edge 1.2 px above it, on the cube's side.
