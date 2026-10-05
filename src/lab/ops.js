@@ -177,7 +177,7 @@ function trackKernel(inputs, params) {
     toward: [params.towardX, params.towardY],
     stripLevel: params.stripLevel,
     aperture: params.aperture,
-  }, { guess: params.guess, pad: params.pad, levelSlope: params.levelSlope });
+  }, { guess: params.guess, pad: params.pad, levelSlope: params.levelSlope, strip: params.strip });
   return { kind: 'features', features: record ? [record] : [], width: info.width, height: info.height };
 }
 
@@ -544,7 +544,8 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       // 1.06 to 1.31 and the median 1.31 to 1.39; see pairs.js.
       // v3: each level may change along the pair (`levelSlope`), which stops
       // a face's shading turning the two edges opposite ways.
-      version: 3,
+      // v4: `ledge`, whether a shadow ramp lies inside the strip.
+      version: 4,
       summary: 'Place two close parallel segments again, jointly, against the unblurred image.',
       /*
        * Features in, features out, with the image alongside -- the shape
@@ -603,6 +604,13 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
          * slope along the pair; `none` is the fit as it was.
          */
         { name: 'levelSlope', type: 'enum', values: ['fit', 'none'], default: 'fit' },
+        /*
+         * Whether the strip holds a ledge in soft shadow: a ramp from one
+         * edge into the strip, which the two-edge fit cannot describe and
+         * misplaces that edge for, by up to half a pixel. `detect` adds
+         * `ledge: {gain, edge}` to each record; it does not move the edges.
+         */
+        { name: 'ledge', type: 'enum', values: ['detect', 'none'], default: 'detect' },
       ],
       output: { kind: 'features' },
       kernel: ({ inputs, params }) => pairKernel('fitPairs', fitPairs, inputs, params),
@@ -698,6 +706,10 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'guess', type: 'number', default: 1, min: 0 },
         { name: 'pad', type: 'number', default: 4, min: 1, max: 32 },
         { name: 'levelSlope', type: 'enum', values: ['fit', 'none'], default: 'fit' },
+        // `held`: the strip level carried in, for a strip too narrow to show
+        // its own. `fit`: only the line is carried -- a wide strip, read
+        // beside an edge a ledge would otherwise hide.
+        { name: 'strip', type: 'enum', values: ['held', 'fit'], default: 'held' },
       ],
       output: { kind: 'features' },
       kernel: ({ inputs, params }) => trackKernel(inputs, params),
