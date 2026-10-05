@@ -125,6 +125,16 @@ test('a refit pair is read beside the detections, at the same point, and split t
   assert.equal(row.refit.stripLevel, 0.12);
 });
 
+test('a pair\'s ledge reaches the row, and a pair without one says null', () => {
+  const segments = [seg(10, 100, 99, 200, 99), seg(11, 50, 111, 250, 111)];
+  const input = (pairs) => ({ truth: TRUTH, segments, explained: segments, matches: [hit(10, 1), hit(11, 2)], pairs });
+  const ledge = { gain: 1.8, edge: 'b' };
+  const withLedge = [pairRecord(1, [10, 102, 100, 198, 100], [11, 102, 110, 198, 110], { ledge })];
+  assert.deepEqual(gapRow(input(withLedge), { gapMm: 8 }, PARTS).refit.ledge, ledge);
+  const without = [pairRecord(1, [10, 102, 100, 198, 100], [11, 102, 110, 198, 110])];
+  assert.equal(gapRow(input(without), { gapMm: 8 }, PARTS).refit.ledge, null);
+});
+
 test('which of the pair\'s edges is the moving part\'s is decided by segment id, not by a and b', () => {
   const segments = [seg(10, 100, 99, 200, 99), seg(11, 50, 111, 250, 111)];
   const swapped = [pairRecord(1, [11, 102, 110, 198, 110], [10, 102, 100.1, 198, 100.1])];
