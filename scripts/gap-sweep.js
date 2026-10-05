@@ -56,6 +56,11 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
   --target <name>    the part it closes on                (default Table)
   --axis <x,y,z>     the direction that OPENS the gap     (default 0,1,0)
   --gaps <mm,...>    the steps, in millimetres            (default 50,20,10,5,2,1,0.5,0)
+  --poses <x,y,z[,turn];...>
+                     instead of a sweep, a list of poses: each a displacement
+                     from contact in millimetres and, optionally, a turn about
+                     the vertical in degrees. One shot per pose per view, named
+                     pose-1.png and on. For poses off the axes, and turned ones
   --offset <x,y,z>   millimetres added to every step, on top of the sweep along
                      --axis. For sweeping a direction that does not open the
                      gap: lift the part 2 mm with --offset 0,2,0 and slide it
@@ -107,7 +112,7 @@ function parseArgs(argv) {
     name: null, scene: 'saved:gap-1', moving: 'Cube', target: 'Table', axis: [0, 1, 0],
     gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], size: 512, samples: 96, skipRender: false, overwrite: false,
     script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
-    yaw: null, elevation: null, offset: null,
+    yaw: null, elevation: null, offset: null, poses: null,
     dryRun: false,
   };
   const list = (s, what) => {
@@ -130,6 +135,15 @@ function parseArgs(argv) {
         break;
       }
       case '--gaps': opts.gaps = list(argv[++i], '--gaps'); break;
+      case '--poses': {
+        opts.poses = String(argv[++i]).split(';').filter((p) => p.trim()).map((p) => {
+          const v = list(p, '--poses');
+          if (v.length !== 3 && v.length !== 4) throw new Error(`--poses: "${p}" needs x,y,z or x,y,z,turn`);
+          return { mm: v.slice(0, 3), turn: v[3] ?? 0 };
+        });
+        if (opts.poses.length === 0) throw new Error('--poses needs at least one pose');
+        break;
+      }
       case '--offset': {
         opts.offset = list(argv[++i], '--offset');
         if (opts.offset.length !== 3) throw new Error('--offset needs three numbers, in millimetres');
@@ -154,8 +168,9 @@ function parseArgs(argv) {
       default: throw new Error(`unknown option ${arg}`);
     }
   }
-  // Checked once every option is in, since it depends on two of them.
-  if (!opts.offset && opts.gaps.some((v) => v < 0)) {
+  // Checked once every option is in, since they depend on each other.
+  if (opts.poses && opts.offset) throw new Error('--poses are displacements from contact; --offset does not apply');
+  if (!opts.poses && !opts.offset && opts.gaps.some((v) => v < 0)) {
     throw new Error('--gaps cannot be negative without --offset: that is the part inside the other');
   }
   return opts;
@@ -185,6 +200,32 @@ function gapShots(opts) {
   if (!data.camera) throw new Error(`${opts.scene} has no saved camera to hold fixed`);
   const contact = moving.transform.position;
   const views = orbitViews(data.camera, opts) ?? [null];
+  if (opts.poses) {
+    /*
+     * A pose is a displacement from contact and a turn about the vertical,
+     * placed as it is -- not a step along anything. gapMm is 0 for all of
+     * them: nothing is being swept, and the pose is in its own fields.
+     */
+    const turned = (moving.transform.rotation ?? [0, 0, 0]);
+    return views.flatMap((view) => opts.poses.map((p, k) => ({
+      name: `${view ? `y${angleName(view.yaw)}-e${angleName(view.elevation)}-` : ''}pose-${k + 1}.png`,
+      gapMm: 0,
+      pose: k + 1,
+      poseMm: p.mm,
+      turnDeg: p.turn,
+      ...(view ? { view: { yaw: view.yaw, elevation: view.elevation } } : {}),
+      camera: view ? view.camera : data.camera.position,
+      target: data.camera.target,
+      intensity: 1,
+      separationMm: Math.hypot(...p.mm),
+      transforms: {
+        [opts.moving]: {
+          position: contact.map((c, j) => c + p.mm[j] / 1000),
+          rotation: [turned[0], turned[1] + p.turn, turned[2]],
+        },
+      },
+    })));
+  }
   return views.flatMap((view) => opts.gaps.map((mm) => ({
     name: shotName(mm, view),
     gapMm: mm,
@@ -347,6 +388,7 @@ function main() {
     ? path.join('results', opts.name)
     : path.join('results', opts.name, scriptName);
   const shots = gapShots(opts);
+  const posed = !!opts.poses;
 
   if (opts.dryRun) {
     for (const s of shots) {
@@ -404,7 +446,11 @@ function main() {
   // stacked on a cube -- gets two rows a shot, and each is its own measurement.
   const perShot = shots.flatMap((s) => gapRows(
     slots(path.join(ROOT, res, s.name.replace(/\.png$/, '.features.json'))), s, parts,
-  ).map((r) => ({ ...(s.view ?? {}), ...r })));
+  ).map((r) => ({
+    ...(s.view ?? {}),
+    ...(s.pose ? { pose: s.pose, poseMm: s.poseMm, turnDeg: s.turnDeg } : {}),
+    ...r,
+  })));
   // Renumbered a view at a time, so that pair 1 is one pair down the sweep
   // even through the shots that lost the other.
   const viewOf = (r) => `${r.yaw ?? ''},${r.elevation ?? ''}`;
@@ -465,6 +511,7 @@ function main() {
     camera: gridded ? null : shots[0].camera, look: shots[0].target, pxPerMm: scale,
     ...(gridded ? { views: { yaw: opts.yaw, elevation: opts.elevation } } : {}),
     ...(opts.offset ? { offsetMm: opts.offset } : {}),
+    ...(posed ? { poses: opts.poses } : {}),
     analysedAt: new Date().toISOString(), script, inputs, rows,
   };
   fs.writeFileSync(recordFile, JSON.stringify(record, null, 2));
@@ -481,9 +528,11 @@ function main() {
       fmt(r.refit?.targetOffsetPx, 3), fmt(r.refit?.gapSigma, 3), fmt(r.refit?.stripLevel, 3), r.refit?.from ?? '']
     : []);
   const perKey = gridded || paired || !!opts.offset;
-  const viewHead = [...(gridded ? ['yaw', 'elevation'] : []), ...(paired ? ['pair'] : []),
+  const poseHead = posed ? ['pose', 'poseX', 'poseY', 'poseZ', 'turnDeg'] : [];
+  const poseCells = (r) => (posed ? [r.pose, fmt(r.poseMm?.[0], 2), fmt(r.poseMm?.[1], 2), fmt(r.poseMm?.[2], 2), fmt(r.turnDeg, 2)] : []);
+  const viewHead = [...poseHead, ...(gridded ? ['yaw', 'elevation'] : []), ...(paired ? ['pair'] : []),
     ...(perKey ? ['pxPerMm', 'overlapPx'] : [])];
-  const viewCells = (r) => [...(gridded ? [r.yaw, r.elevation] : []), ...(paired ? [r.pair ?? ''] : []),
+  const viewCells = (r) => [...poseCells(r), ...(gridded ? [r.yaw, r.elevation] : []), ...(paired ? [r.pair ?? ''] : []),
     ...(perKey ? [fmt(r.pxPerMm, 3), fmt(r.overlapPx, 1)] : [])];
   const head = [...viewHead, 'gapMm', 'trueGapPx', 'measuredGapPx', 'errorPx', 'errorMm',
     `${opts.moving}OffsetPx`, `${opts.target}OffsetPx`, ...refitHead, 'pairFound', 'spansBoth',
@@ -516,7 +565,7 @@ function main() {
         : opts.offset ? `${fmt(scales.get(viewKey(rows[0])), 3)} px per mm along the sweep` : `${fmt(scale, 3)} px per mm of gap`)
     + (opts.offset ? `, offset ${opts.offset.join(', ')} mm, swept along ${opts.axis.map((v) => fmt(v, 2)).join(', ')}` : ''));
   console.log(csv.join('\n'));
-  if (gridded) {
+  if (gridded && !posed) {
     const maps = gridMaps(rows, opts);
     fs.writeFileSync(path.join(ROOT, res, 'gap-grid.txt'), `${maps}\n`);
     console.log(`\n${maps}`);
