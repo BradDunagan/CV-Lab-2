@@ -383,6 +383,8 @@ function rowBase({ truth, segments, matches }, shot, { moving, target }, opts) {
     causes: {},
     movingOffsetPx: null,
     targetOffsetPx: null,
+    endsTruePx: null,
+    endsDetectedPx: null,
     refit: null,
     reason: null,
   };
@@ -403,6 +405,8 @@ function rowFor(row, pair, { segments, explained, matches, pairs }, { moving, ta
   }
   row.truthPair = [pair.a.id, pair.b.id];
   row.causes = causesInGap(explained, pair, opts);
+  const ends = endPoints(pair.facing);
+  row.endsTruePx = ends.map((p) => crossing(line(pair.a), p, pair.facing.normal));
 
   const da = detectionAt(pair.a.id, pair.facing.at, matches, segments);
   const db = detectionAt(pair.b.id, pair.facing.at, matches, segments);
@@ -425,6 +429,7 @@ function rowFor(row, pair, { segments, explained, matches, pairs }, { moving, ta
 
   row.pairFound = true;
   row.detectedPair = [da.seg.id, db.seg.id];
+  row.endsDetectedPx = readAtPoints(da.line, db.line, pair.facing, ends, opts.reach);
   row.measuredGapPx = read.gap;
   row.errorPx = read.gap - row.trueGapPx;
   row.movingOffsetPx = read.movingOffset;
@@ -467,6 +472,7 @@ function refitReading(pairs, pair, da, db, opts) {
       pair: record.id,
       from,
       gapPx: r.gap,
+      endsPx: readAtPoints(la, lb, T, endPoints(T), opts.reach),
       errorPx: r.gap - T.gap,
       movingOffsetPx: r.movingOffset,
       targetOffsetPx: r.targetOffset,
@@ -511,6 +517,37 @@ function refitReading(pairs, pair, da, db, opts) {
     if (r) return r;
   }
   return null;
+}
+
+/**
+ * Where the gap is also read, besides the middle: a sixth of the shared
+ * stretch in from each end. One number per pair says how far apart two edges
+ * are; two say whether they are parallel. A part turned about the vertical
+ * opens a pair's gap at one end and closes it at the other, and a reading at
+ * the middle alone cannot see that.
+ */
+function endPoints(T) {
+  const along = [-T.normal[1], T.normal[0]];
+  const half = (T.hi - T.lo) / 2, inset = (T.hi - T.lo) / 6;
+  return [-(half - inset), half - inset].map((s) => add(T.at, along, s));
+}
+
+/**
+ * The gap between two lines at each of `points` on the target's, along T's
+ * normal, as `measureAt` reads it at the middle. Null at a point the lines
+ * stop more than `reach` short of.
+ */
+function readAtPoints(movingLine, targetLine, T, points, reach) {
+  const reaches = (l, p) => {
+    const along = dot(sub(p, l.p0), l.u);
+    return Math.max(0, -along, along - l.len) <= reach;
+  };
+  return points.map((p) => {
+    if (!reaches(movingLine, p) || !reaches(targetLine, p)) return null;
+    const at = onLine(targetLine, p);
+    const normal = dot(targetLine.n, T.normal) >= 0 ? targetLine.n : [-targetLine.n[0], -targetLine.n[1]];
+    return crossing(movingLine, at, normal);
+  });
 }
 
 /**
