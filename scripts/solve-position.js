@@ -73,6 +73,16 @@ CV-Lab relative position -- several gap readings solved for one displacement
                         errors of these sizes drawn at random (seeded); each
                         sequence is run this many times      (default 20)
   --out <file>          also write everything as JSON
+  --calibrate <from>    where each reading's reference and Jacobian come from:
+                          truth      both from the renderer's truth
+                          reference  the reference from what was READ, in the
+                                     same mode, at the reference pose (every
+                                     sweep's step 0, averaged); the Jacobian
+                                     from the truth
+                          full       both from what was read: the reference,
+                                     and the slope of the readings along each
+                                     sweep. No truth at all, as in a real cell
+                        A reading that cannot be calibrated is dropped (default truth)
   --max-views <n>       the largest set of views to combine   (default 3)
   --max-sigma <n>       a pose is not solved from readings that would turn one
                         pixel of error into more than this on any unknown
@@ -81,11 +91,12 @@ CV-Lab relative position -- several gap readings solved for one displacement
 
 function parseArgs(argv) {
   const opts = { dirs: {}, test: null, readings: 'both', weights: 'sigma', out: null, maxViews: 3, maxSigma: 10,
-    sequences: [], readingSigma: 0.1, motionSigma: 0.1, turnSigma: 0.1, startSigma: 1, trials: 20 };
+    calibrate: 'truth', sequences: [], readingSigma: 0.1, motionSigma: 0.1, turnSigma: 0.1, startSigma: 1, trials: 20 };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (['--x', '--y', '--z', '--turn'].includes(arg)) opts.dirs[arg.slice(2)] = argv[++i];
     else if (arg === '--test') opts.test = argv[++i];
+    else if (arg === '--calibrate') opts.calibrate = argv[++i];
     else if (arg === '--sequence') opts.sequences.push(argv[++i]);
     else if (arg === '--reading-sigma') opts.readingSigma = Number(argv[++i]);
     else if (arg === '--motion-sigma') opts.motionSigma = Number(argv[++i]);
@@ -102,6 +113,7 @@ function parseArgs(argv) {
   }
   if (!['mid', 'ends', 'both'].includes(opts.readings)) throw new Error('--readings is mid, ends or both');
   if (!['none', 'sigma'].includes(opts.weights)) throw new Error('--weights is none or sigma');
+  if (!['truth', 'reference', 'full'].includes(opts.calibrate)) throw new Error('--calibrate is truth, reference or full');
   return opts;
 }
 
@@ -210,6 +222,43 @@ function main() {
     console.log(`  ${p.key.padEnd(42)} ${p.jacobian.map((j) => fmt(j).padStart(8)).join('')}   ${fmt(p.reference)} px`);
   }
 
+  /*
+   * The same, per mode of reading, from what was READ instead of the truth.
+   *
+   * A reading's bias that holds still -- the side pair reading 0.1 px short
+   * in every pose of a view -- moves every solve by the same amount when the
+   * reference is the truth's. Taken from the readings themselves, with the
+   * part at a pose that is known (a robot can put it there), the same bias is
+   * in the reference and in the reading, and cancels. `full` goes on to the
+   * Jacobian, which leaves no truth anywhere: what a real cell would have.
+   */
+  const calibrated = (pick) => {
+    if (opts.calibrate === 'truth') return readings;
+    const out = new Map();
+    for (const [key, truth] of readings) {
+      const point = key.split(' / ')[2];
+      const valuesOf = (u) => rowsOf(u).filter((r) => keyOf(r, point) === key)
+        .map((r) => [stepOf(u, r), pick(readingsOf(r)[point])])
+        .filter(([, v]) => v !== null && v !== undefined && Number.isFinite(v));
+      if (opts.calibrate === 'reference') {
+        const at = unknowns.flatMap((u) => valuesOf(u).filter(([x]) => x === 0).map(([, v]) => v));
+        if (at.length === 0) continue;
+        out.set(key, { ...truth, reference: at.reduce((s, v) => s + v, 0) / at.length });
+      } else {
+        const lines = unknowns.map((u) => fitLine(valuesOf(u)));
+        if (lines.some((l) => l === null)) continue;
+        out.set(key, { ...truth, jacobian: lines.map((l) => l.slope),
+          reference: lines.reduce((s, l) => s + l.at0, 0) / lines.length });
+      }
+    }
+    return out;
+  };
+  const byPick = new Map();
+  const calibratedFor = (pick) => { if (!byPick.has(pick)) byPick.set(pick, calibrated(pick)); return byPick.get(pick); };
+  if (opts.calibrate !== 'truth') {
+    console.log(`\nCalibrated from what was read (--calibrate ${opts.calibrate}): each mode of reading against its own.`);
+  }
+
   /* ---- the poses ----------------------------------------------------- */
 
   const posesFrom = (rows, displacementFor) => {
@@ -294,14 +343,15 @@ function main() {
     }
     console.log(`  per px of reading error:  ${unknowns.map((u, k) => `${u} ${fmt(design.sigma[k], 2)} ${units(u)}`).join('   ')}`);
     const entry = { views: set, determined: true, sigma: design.sigma, sweeps: {}, test: {} };
+    const usedBy = (pick) => [...calibratedFor(pick).values()].filter((p) => set.includes(p.view));
     for (const [mode, pick] of MODES) {
-      entry.sweeps[mode] = score(used, sweepPoses, pick);
+      entry.sweeps[mode] = score(usedBy(pick), sweepPoses, pick);
       console.log(line(mode, entry.sweeps[mode]) + (mode === 'truth' ? '   <- is linear good enough?' : ''));
     }
     if (testPoses.length > 0) {
       console.log('  test poses, which the Jacobian was not measured on:');
       for (const [mode, pick] of MODES) {
-        entry.test[mode] = score(used, testPoses, pick);
+        entry.test[mode] = score(usedBy(pick), testPoses, pick);
         console.log(line(mode, entry.test[mode]));
       }
     }
@@ -424,6 +474,9 @@ function main() {
   /** RMS per unknown over the frames `keep` says, from runSequence's byFrame. */
   const rmsOver = (r, keep) => unknowns.map((_, a) => rms(r.byFrame.flatMap((list, k) => (keep(k) ? list.map((e) => e[a]) : []))));
 
+  // The value alone of each sequence mode's reading, one function per mode,
+  // so that its calibration is made once.
+  const valueOnly = new Map(SEQUENCE_MODES.map(([mode, pick]) => [mode, (r) => pick(r)[0]]));
   report.sequences = [];
   for (const q of sequences) {
     console.log(`\nSEQUENCE ${q.dir}: ${q.frames.length} frames, each alone and with the last carried in`
@@ -434,13 +487,13 @@ function main() {
     { const { byFrame, ...c } = runSequence([], q.frames, null, 'commanded'); entry.commanded = c; }
     console.log(`  commanded moves alone, no camera: ${unknowns.map((u, k) => `${u} ${fmt(entry.commanded.rms[k], 2)}`).join('  ')}`);
     for (const set of sets) {
-      const used = [...readings.values()].filter((p) => set.includes(p.view));
       console.log(`  ${set.join('  +  ')}`);
       const result = { views: set };
       const cell = (r) => `${fmt(r.solved, 0).padStart(2)}/${r.of}  ${unknowns.map((u, k) => `${u} ${fmt(r.rms[k], 2)}`).join('  ')}`;
       for (const [mode, pick] of SEQUENCE_MODES) {
-        const alone = runSequence(used, q.frames, pick, 'alone');
-        const carried = runSequence(used, q.frames, pick, 'carried');
+        const own = [...calibratedFor(valueOnly.get(mode)).values()].filter((p) => set.includes(p.view));
+        const alone = runSequence(own, q.frames, pick, 'alone');
+        const carried = runSequence(own, q.frames, pick, 'carried');
         // Like for like: the frames a frame alone could solve, and apart from
         // them the ones only carrying reached.
         const both = (k) => alone.byFrame[k].length > 0;
