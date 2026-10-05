@@ -58,8 +58,9 @@ scripts/overlay.js   draws ground truth and detections over an image — every
 scripts/gap-sweep.js steps one part toward another, renders each step, runs
                      the lab over them and tabulates the gap -- from one
                      view, or a grid of them (needs a GPU)
-scripts/solve-position.js  three such sweeps, one an axis, solved for where
-                     the part is: per set of views, in millimetres
+scripts/solve-position.js  a sweep per axis (and per turn), solved for where
+                     the part is: per set of views, in millimetres and
+                     degrees, scored on test poses
 pt-lab/              the path tracer + scene editor library, TypeScript, moved in
                      from its own repository — see pt-lab/README.md
 src/generate/        the generator: page (bundled separately) + main-process
@@ -83,7 +84,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — nineteen suites, ~548 tests
+npm test                # everything — nineteen suites, ~551 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -220,8 +221,10 @@ runs from 1.22 square-on and level to 0.11 at 70° round and 75° up
   pairs does not determine a position: two readings, three unknowns. Two views
   do. From `scenes/stack-2.json`, two views give the top cube's position to
   about 0.1 mm on each axis (`design-lab-model.md` §5, "A ninth");
-- **only poses along an axis have been solved**, one render each. A pose off
-  the axes, and a rotation of the top cube, have not;
+- **poses off the axes and turned cost about twice as much**: 0.1 to 0.3 mm
+  and 0.1 to 0.25° from two views, on ten test poses with one render each.
+  A turn is only seen at the ends of a pair, so each is now read at its middle
+  and a sixth in from each end (`design-lab-model.md` §5, "A tenth");
 - **a crease can have no contrast.** On the stack's side pair the two faces
   that meet at the base cube's edge are lit alike, and the image's edge is the
   shadow 0.2 to 2.5 px inside it. Nothing in the pipeline can tell

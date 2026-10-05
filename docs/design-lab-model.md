@@ -1262,6 +1262,47 @@ A pose solved from readings that barely separate the axes comes back with
 numbers anyway: one, having lost a reading, was put 1.3 m from where the part
 was. Its own sigma said so, and `--max-sigma` is what refuses it.
 
+#### A tenth: poses off the axes, and turned
+
+Every pose of the ninth moved along one axis. The test of a solve is a pose it
+was not built from. `gap-sweep --poses` renders a list of them, each a
+displacement and a turn about the vertical; ten were chosen with all three
+displacements non-zero, five of them turned ±1° to ±3°, from the same four
+views.
+
+**A turn is invisible at the middle of a pair.** It opens the gap at one end
+and closes it at the other, and a reading at the middle moves by 0.03 to
+0.11 px per degree, nearly nothing. So each pair is now read at its middle and
+a sixth in from each end, and the Jacobian of the end readings has the turn in
+it: −0.3 to −0.8 px per degree at one end, +0.3 to +0.8 at the other. With the
+middles alone and the turn as a fourth unknown, every pose was refused: the
+readings could not separate it.
+
+RMS error on the ten test poses, x / y / z in mm and turn in degrees:
+
+| views | from the truth | detections | refit |
+|---|---|---|---|
+| any one | not determined in x, y, z | | |
+| 35°/20° + 60°/20° | 0.08 / 0.03 / 0.06 / 0.02 | 1.53 / 0.37 / 1.49 / 0.61 | **0.27 / 0.10 / 0.14 / 0.13** |
+| 60°/20° + 60°/50° | 0.01 / 0.02 / 0.03 / 0.02 | 1.55 / 0.66 / 1.49 / 0.71 | 0.16 / 0.26 / 0.25 / 0.16 (9 of 10) |
+| 35°/20° + 60°/50° | 0.01 / 0.02 / 0.03 / 0.01 | 1.44 / 0.70 / 1.71 / 0.74 | 0.18 / 0.33 / 0.61 / 0.18 (9 of 10) |
+| three: 35°/20°, 60°/20°, 60°/50° | 0.01 / 0.01 / 0.03 / 0.02 | 1.81 / 0.58 / 1.64 / 0.65 | 0.13 / 0.20 / 0.24 / 0.14 |
+| all four | 0.01 / 0.01 / 0.03 / 0.01 | 1.89 / 0.72 / 1.82 / 0.67 | 0.19 / 0.23 / 0.28 / 0.24 |
+
+- **The linear model holds off the axes and through a 3° turn**: solved from
+  the true readings, 0.01 to 0.08 mm.
+- **Off-axis poses cost about twice what on-axis ones did**: 0.1 to 0.3 mm,
+  against 0.1 to 0.15 on the sweeps' own poses with the same views. The worst
+  pose is usually the one turned 3°.
+- **The turn comes out to 0.1 to 0.25°**, where the detections give 0.6 to 0.7.
+- **One view still does not determine a position.** With the end readings its
+  six readings outnumber four unknowns, and it determines the turn to about a
+  degree per pixel, but x, y and z come out at 500 to 2000 mm per pixel: the
+  readings of one view hardly separate them.
+- **More views are still not better than the right two.** The pair at the same
+  elevation is best on the test poses, which it was not on the sweeps. With
+  ten poses the order of the best few combinations is not settled.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
