@@ -85,7 +85,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — nineteen suites, ~563 tests
+npm test                # everything — nineteen suites, ~567 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -96,6 +96,7 @@ npm run gap-sweep -- --name gap-1   # a part closing on another, down to contact
                                     #  --offset: across a gap already open;
                                     #  --carry: each pair tracked down its approach)
 npm run position -- --x <dir> --y <dir> --z <dir>   # where the part is, from several
+                                    # (--sequence <dir>: frame by frame, the pose carried)
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run check:pt-lab    # type-check pt-lab/ — the build strips types unchecked
@@ -203,10 +204,13 @@ per pair, it gives confident wrong answers. Still open from it:
   0.61 px) reads to +0.02 ± 0.02 px in six of eight pair-views, where one
   frame alone read two ("A twelfth"). `gap-sweep --carry` does it: the
   carried values are written into each narrower frame's `trackPair` command,
-  so they are in its log. What to carry from a pair that never read wide, and
-  carrying between frames anything but a gap (a pose, for one), are open.
-  Holding the level is sound: at 2048 px the level reads 0.119, 0.122, 0.116 and 0.104 at 5, 2, 1
-  and 0.5 mm. And **more pixels do the whole job**: at 2048 px the 1 mm and
+  so they are in its log. What to carry from a pair that never read wide is
+  open. Carrying the pose is measured ("A thirteenth"): the last frame's solution,
+  moved by the commanded motion, as a prior. It solves the frames that lose
+  their readings (contact, to ~0.1 mm) and does not improve the ones that
+  read well; one view stays at half dead reckoning's error, its blind
+  direction never seen. Holding the level is sound: at 2048 px it reads
+  0.119, 0.122, 0.116 and 0.104 at 5, 2, 1 and 0.5 mm. And **more pixels do the whole job**: at 2048 px the 1 mm and
   0.5 mm gaps are ordinary pairs, read to −0.011 and −0.017 mm. `findPairs`
   finds the 1 mm gap (1.16 px) inside the single segment the detector leaves,
   and reads it 0.25–0.28 px short with the level fitted, 0.14–0.16 with it

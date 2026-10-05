@@ -1426,6 +1426,54 @@ where the fit starts: the experiment started from the previous frame's gap,
 the driver from the carried frame's. Contact, where the truth has no facing
 pair, is reported as rows of tracks alone.
 
+#### A thirteenth: the previous frame's pose, carried into the solve
+
+The twelfth carried what a wider frame knew about a GAP. The same can be done
+for the POSE. In an approach the robot moves the part by a commanded amount
+between frames, so the last frame's solution, moved by that amount, is a
+prior on this frame's. `solvePosition` takes one as a mean and a covariance
+(position.js). Its information joins the readings', which must then be
+weighted absolutely: a reading's error is taken as 0.1 px, scaled by its
+gapSigma against the median. The covariance grows by the move's error each
+frame. `npm run position -- --sequence <dir>` solves a sweep that way, frame
+by frame, and also alone.
+
+**The first measurement was wrong, and flattering.** It fed the solve the
+TRUE commanded poses. A single view's two readings leave one direction
+unseen, and there the solution simply kept the prior, which was the truth:
+single views came out at 0.01 to 0.05 mm, and so did everything else. A robot
+does not know where the part is, only where it told it to go. So the
+commanded poses are the true ones with errors drawn at random: 1 mm on the
+first pose, 0.1 mm on each move after it, over 20 seeded trials. A line for
+the commanded moves alone, no camera, says what the camera has to beat:
+0.7 / 1.1 / 0.9 mm (x / y / z).
+
+Mean RMS over the eleven sets of two or more views, mm, x / y / z; "same" is
+carried, on the frames a frame alone also solved:
+
+| sequence | readings | alone | carried, same frames | carried, frames only it solved |
+|---|---|---|---|---|
+| approach to contact, 5 frames | refit | 0.17 / 0.16 / 0.16 (2.7 of 5 solved) | 0.11 / 0.06 / 0.06 | 0.14 / 0.13 / 0.16 |
+| | tracked (`--carry`) | 0.09 / 0.05 / 0.04 (3.7 of 5) | 0.09 / 0.05 / 0.04 | 0.08 / 0.08 / 0.10 |
+| x sweep, 7 frames | refit | 0.19 / 0.21 / 0.17 | 0.19 / 0.24 / 0.19 | 0.15 / 0.17 / 0.08 |
+| y sweep, 6 frames | refit | 0.11 / 0.06 / 0.04 | 0.12 / 0.06 / 0.05 | (all solved alone) |
+
+- **Carrying the pose solves the frames that lose their readings**: contact,
+  and the 0.5 mm frame where the refit has nothing, to about 0.1 mm.
+- **It does not improve frames that read well**, and can cost a few
+  hundredths. Their errors are biases that repeat from frame to frame (the
+  side pair's, mostly), and fusing frames does not average a bias.
+- **With the noisy refit readings at narrow gaps it halves the error**. Tracking
+  the gaps (the twelfth) had already done that, from the other end.
+- **One view stays one view.** Carried, a single view's error is 0.4 to 0.5 mm,
+  half of dead reckoning's, and that is all. The direction its readings cannot
+  see is the same in every frame, so it never improves on the starting error.
+  A camera that moves between frames would change that; one that stays put
+  cannot.
+- **It depends on the robot.** At 0.02 mm a move, the frames only carrying
+  solves come out at 0.05 mm, and the x sweep is a little worse (each frame's
+  bias carried into the next); at 0.5 mm a move, they come out at 0.5.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

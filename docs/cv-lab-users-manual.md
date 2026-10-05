@@ -1742,6 +1742,40 @@ is lowest where they are best; on the stack's test poses it took the turn from
 `--max-sigma` (default 10 mm per px) refuses a pose whose surviving readings
 barely separate the axes. Plain node; it reads each sweep's `gap-sweep.json`.
 
+**`--sequence <dir>` solves a gap sweep frame by frame**, in the order it was
+swept, twice: each frame alone, and each with the previous frame's pose
+carried in. The carried pose is the last solution moved by the motion
+commanded since, which a robot knows, with the last solution's covariance
+grown by the move's. It enters the solve as a prior, weighed against the
+readings, so a frame whose readings do not determine a pose on their own is
+still solved. Repeatable.
+
+```bash
+npm run position -- --x results/stack-2g-x/pairs --y results/stack-2g-y/pairs \
+    --z results/stack-2g-z/pairs --max-views 4 --sequence results/stack-2g-approach/pairs
+```
+
+The commanded poses are the true ones **with errors drawn at random**:
+`--start-sigma` for the first (default 1 mm, or degrees for a turn) and
+`--motion-sigma` per move (default 0.1 mm; `--turn-sigma` 0.1°). The run is
+repeated `--trials` times (default 20), seeded. Fed the true poses instead,
+the carried solve inherits the truth in every direction its readings cannot
+see, and one view looks perfect. A first version of this did exactly that.
+
+A prior in millimetres can only be weighed against readings in pixels on an
+absolute scale, so here a reading's error is `--reading-sigma` (default
+0.1 px, about what the refit scatters), scaled by its gapSigma against the
+median.
+
+For each set of views and three kinds of reading (truth; refit; and
+`carried`, which takes a `--carry` run's tracked reading first), it prints:
+each frame alone (frames solved, RMS), and carried, on **the same frames**
+and, apart, on the frames only carrying solved. A line at the top gives the
+commanded moves alone, with no camera, which is what the camera has to beat.
+See `design-lab-model.md` §5, "A thirteenth", for what it found: carrying
+the pose solves frames that lose their readings (contact), and does not
+improve frames that read well.
+
 ---
 
 ## 8. Reading the output
