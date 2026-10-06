@@ -463,6 +463,9 @@ function pooledCandidates(dir, opts) {
  * placed: the same view, matched to a pair here by the angle it runs at.
  * Given any, this run's own frames are candidates only if `ownToo`.
  */
+/** trackPair's starting width from a frame's own reading, which may be an overhang's negative one. */
+const guessFrom = (read) => (read > 0 ? read : 0.5);
+
 function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, ownRun = '') {
   const viewOf = (x) => `${x.view?.yaw ?? x.yaw ?? ''},${x.view?.elevation ?? x.elevation ?? ''}`;
   const n = (v) => v.toFixed(6);
@@ -525,7 +528,8 @@ function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, 
         (commands[s.name.replace(/\.png$/, '')] ??= []).push(`K${pair} = trackPair(G, x0=${n(carried.line.x0)}, y0=${n(carried.line.y0)}, `
           + `x1=${n(carried.line.x1)}, y1=${n(carried.line.y1)}, towardX=${n(carried.toward[0])}, `
           + `towardY=${n(carried.toward[1])}, stripLevel=${n(carried.stripLevel)}, aperture=${n(carried.aperture)}, `
-          + `guess=${n(read ?? row.refit.gapPx)}, strip=${wide ? 'fit' : 'held'}`
+          // A start, not a reading: an overhang's negative refit starts at half a pixel.
+          + `guess=${n(guessFrom(read ?? row.refit.gapPx))}, strip=${wide ? 'fit' : 'held'}`
           + `${carried.profile !== 'box' ? `, profile=${carried.profile}` : ''})`);
       }
     }
