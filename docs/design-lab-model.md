@@ -2129,6 +2129,63 @@ lone segments' median; the default stays the box. What a blurred camera needs
 next is the ledge read under blur, and a way to measure the aperture on the
 edges that matter. (`notes/brads-notes/2026-10-06-aperture/`.)
 
+#### A twenty-ninth: past seven degrees, the edges cross
+
+Turned past about five degrees, the stack's pairs stop being parallel in the
+higher views, and past seven their edges cross inside the stretch they share
+(the twenty-third): the gap is open at one end and closed at the other. Two
+things refused them. `fitPairs` pairs only segments within `maxAngle` (5
+degrees) of parallel, so at 8 degrees even the 20-degree views' wide pairs
+were not refitted. And `fitBand` refused any band whose edges cross, so
+`trackPair`, which holds the still edge and fits only the moving one,
+returned nothing for every crossed pair -- in the 50-degree views already at
+5 degrees.
+
+**The moving part is in front.** Past the crossing its face covers the still
+edge and there is no strip: a pixel's strip share is max(0, beyond the still
+edge - beyond the moving edge), not the difference. Where the edges do not
+cross that is the model as it was, exactly; where they do, it describes the
+crossed end instead of being refused. `fitBand` takes the occluding edge
+(`occluder`) and clamps the other's coverage to it, Jacobian included;
+`trackPair` names the moving edge. It also starts its fits turned either way
+(0.075 and 0.15 px per px) as well as parallel: a strongly turned edge
+otherwise settled on a near-parallel strip 0.56 px wide for a true 1.25,
+which fitted no better than one edge. And a two-edge fit whose moving edge
+is past the still one along the whole band is the one-edge model in
+disguise -- no pixel sees its strip -- so it is not counted as a strip
+reading, and an overhang still reads as an overhang.
+
+On `stack-2g-large`'s turned poses (5 to 8 degrees, 39 pair-views), tracked
+readings go from 17 to 38, nearly all within 0.1 px, ends past the crossing
+included (-4.48 px read -4.50). From four views, no truth (hinged), all
+twelve large poses solve; the 8-degree pose is 0.39 / 0.07 / 0.10 mm and
+0.21 degrees, where the twenty-third had 1.2 mm.
+
+**And ordinary poses were crossing too.** A 50-degree view's pair crosses at
+a turn of a degree or two near its ends. Re-analysed, the stack-2g turn
+sweep has 40 tracked readings where it had 31, the test poses 75 where they
+had 65, and the test poses solve better -- with no truth, four views:
+
+| | ten sets | four views |
+|---|---|---|
+| before | 0.064 / 0.037 / 0.060 / 0.026 | 0.039 / 0.023 / 0.034 / 0.020 |
+| occluding track | 0.049 / 0.034 / 0.052 / 0.026 | 0.026 / 0.019 / 0.023 / 0.019 |
+
+That render was the lucky one. The same ten poses rendered twice more (the
+eighteenth's repeats), re-analysed, give 0.039 / 0.020 / 0.021 / 0.022 and
+0.059 / 0.023 / 0.023 / 0.016 from four views: over three renders, x 0.026
+to 0.059 mm, y 0.019 to 0.023, z 0.021 to 0.023, the turn 0.016 to 0.022
+degrees, where the pooled edge and the hinge (the eighteenth and
+nineteenth) had 0.04-0.05 / 0.02 / 0.035 and 0.02-0.03. So
+z and the turn improved, and x is about where it was: what is left in x is
+render noise, not crossing pairs.
+
+Still open: one 8-degree side pair at 35/50 reads nothing (both hypotheses
+wrong); a -6 degree pose's front pair at 60/20 reads 0.84 px wide, its band
+holding something brighter than the still face -- the turned cube's corner,
+by the levels; `fitPairs` still pairs nothing past `maxAngle`, which the
+carried readings make matter less.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
