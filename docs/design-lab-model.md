@@ -1796,6 +1796,38 @@ lens model that is off shifts, where a gap is a difference that cancels
 both. Weighted for what they are, they would not move a solve the edge pairs
 already make to 0.05 mm.
 
+#### A twentieth: the 50-degree views, and a refusal that refused nothing
+
+The sixteenth left two things about the 50-degree views. Both are answered.
+
+- **Views with nothing to carry from** have something now: the pool of the
+  eighteenth gives every view-pair a source, 1 to 5 candidates at 50 degrees.
+- **The y sweep's side pair, worse when held** (0.108 → 0.124 px RMS against
+  the truth), is the held edge's constant offset, 0.10 to 0.21 px a view.
+  With each view's mean error taken out -- which is what a calibration does
+  -- the held reading is the better one on every sweep: side pair on the y
+  sweep 0.032 → 0.009 px, on x 0.134 → 0.071, front pair on y 0.031 →
+  0.014. Measured against the truth an offset looks like error; it is not one
+  a calibrated solve sees.
+
+What the 50-degree views did show was the two of them alone, 35/50 + 60/50,
+solving pose 5 (2.5, 2.5, 0.8 mm) 2.5 to 5 mm off in two renders of three.
+At that pose the side pair at 35/50 is never found, and the front pair at
+60/50, an overhang of −0.14 px, is read in one render of three. What is left
+is two pairs: two directions and, through their ends, the turn. The third
+direction rests on the small difference between a pair's ends.
+
+`--max-sigma` exists to refuse exactly that -- a pose solved from readings
+that turn a pixel of error into more than 10 mm -- and refused nothing. It
+compared the WEIGHTED solve's sigma, and with weights of 1/gapSigma^2
+(gapSigma ~0.015 px) that sigma is scaled down by the weights until no pose
+ever exceeds it. It now judges the readings the pose has, unweighted, which
+is the unit the option is in. The two failing solves are refused, and the
+mean over the eleven sets, hinged, no truth, goes from 0.114 / 0.112 / 0.091
+mm and 0.033 degrees to **0.077 / 0.050 / 0.055 and 0.033**; four views are
+unchanged. A tighter limit (3, then 2) refuses 16, then 46, of the 330, and
+the means hardly move. The sequences already scaled theirs correctly.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

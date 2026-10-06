@@ -381,9 +381,16 @@ function main() {
        * A pose is solved from the readings it HAS, and one that lost a few
        * can be left with readings that barely separate the unknowns. The
        * solve still returns numbers -- one pose came back 1.3 m from the part
-       * -- and its sigma is what refuses it.
+       * -- and its sigma is what refuses it. The sigma of the readings it has,
+       * UNWEIGHTED: millimetres per pixel of reading error, which is what
+       * --max-sigma is in. The weighted solve's own sigma is scaled by the
+       * weights, 1/gapSigma^2 with gapSigma ~0.015 px, and refused nothing:
+       * the stack's two 50-degree views solved a pose 5 mm off from two
+       * pairs (design-lab-model.md §5, "A twentieth").
        */
-      if (!s.determined || Math.max(...s.sigma) > opts.maxSigma) continue;
+      const geometry = solvePosition(obs.filter((o) => Number.isFinite(o.measured))
+        .map((o) => ({ jacobian: o.jacobian, reference: 0, measured: 0 })));
+      if (!s.determined || !geometry.determined || Math.max(...geometry.sigma) > opts.maxSigma) continue;
       solved++;
       const e = s.d.map((v, k) => v - pose.d[k]);
       e.forEach((v, k) => errors[k].push(v));
