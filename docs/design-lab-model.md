@@ -2175,6 +2175,55 @@ solve better -- y and z 0.033 / 0.050 mm against 0.019-0.023 / 0.021-0.023
 over three native renders. It is the right control for distortion, which is
 all it is used for here. (`notes/brads-notes/2026-10-06-distort/`.)
 
+#### A twenty-seventh: a calibration that knows the height
+
+The twenty-second's loops read x 0.06 to 0.10 mm off at about 1 mm up, in
+every run, and put it down to a calibration measured at a 4 mm lift; the
+loop's policy stops correcting sideways below 2 mm (`--lateral-floor 2`).
+To test that, the x, z and turn sweeps were rendered again at 1.5 mm, and
+eight test poses 0.6 to 2.5 mm up. `position --lift <dir>` adds such sweeps
+to a joint or hinged calibration, which then fits each reading's slopes in
+x, z and the turn as changing with the lift (a y*x, y*z, y*turn term each),
+and the hinge's one-sided slopes too (y*min(x,0), y*min(z,0)): the ledge's
+penumbra depends on the height. The model is bilinear, and `solveLifted`
+solves it by Gauss-Newton on the hinged solve.
+
+| low test poses, four views, no truth | x / y / z mm, turn deg |
+|---|---|
+| calibrated at 4 mm | 0.114 / 0.059 / 0.049 / 0.049 |
+| lift terms on the slopes | 0.109 / 0.070 / 0.082 / 0.030 |
+| and on the hinges | 0.109 / 0.050 / 0.056 / 0.031 |
+| the same, the renderer's true gaps as readings: 4 mm / lifted | 0.023 / 0.025 / 0.041 / 0.024 -> 0.024 / 0.011 / 0.022 / 0.016 |
+
+**The model was not the problem.** With true gaps as the readings the lift
+terms halve what a 4 mm calibration gets wrong near contact, but that was
+0.02 to 0.04 mm. With the readings themselves the error is five times that
+whichever calibration: the side pair over the ledge, slid back, reads 0.2
+to 0.44 px short at 0.8 mm up, and the overhanging side pair in the
+50-degree views 0.13 to 0.22 px too negative. That is below the 1.5 mm the
+lift was calibrated at, so the lift terms extrapolate there, and it is a
+reading's error, not a slope's. Ordinary test poses are unchanged by the
+lift terms (0.025 / 0.018 / 0.018 / 0.021).
+
+**In the loop**, with sideways correction allowed all the way down
+(`--lateral-floor 0`), from the twenty-second's two starts, the estimate at
+about 1 mm up and where the part ended:
+
+| calibration | start | x error at ~1 mm | final pose |
+|---|---|---|---|
+| at 4 mm | A | (went from 2.5 mm to contact) | 0.04 / 0.01 / 0.04 / 0.01 |
+| at 4 mm | B | -0.05 | 0.05 / 0.00 / 0.02 / 0.00 |
+| with lift terms | A | -0.09 | 0.09 / 0.01 / 0.05 / 0.01 |
+| with lift terms | B | -0.06 | 0.06 / 0.05 / 0.10 / 0.03 |
+
+The 0.06-0.10 mm at 1 mm of the twenty-second is mostly gone without any
+lift terms: the occluding track (the twenty-ninth) took it to 0.05. The
+lift terms do not help in the loop, and are not used by default; the option
+stays for a scene whose slopes really do change with the height. The final
+poses are the robot's last moves as much as the camera's. Stopping sideways
+correction below 2 mm still saves the last 0.05 mm, at no cost, so the
+floor stays where it was. (`notes/brads-notes/2026-10-06-lift/`.)
+
 #### A twenty-eighth: tipping
 
 Never rendered until now: `gap-sweep --poses` takes `x,y,z,turn,tipX,tipZ`,
