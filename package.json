@@ -30,6 +30,7 @@
     "overlay": "node scripts/overlay.js",
     "gap-sweep": "node scripts/gap-sweep.js",
     "position": "node scripts/solve-position.js",
+    "servo": "node scripts/servo.js",
     "generate": "electron scripts/generate-cli.js",
     "start": "npm run build:renderer && electron .",
     "dev": "npm run rebuild:electron && npm run build:renderer && electron .",
