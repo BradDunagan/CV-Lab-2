@@ -1938,9 +1938,12 @@ truth, x / y / z mm and turn degrees:
   residuals does not separate it cleanly: good four-view solves run 0.02
   to 0.06 px RMS, the bad large ones 0.47 to 0.60 -- and so does one
   ordinary test pose, (2, 4.5, 0) at −3 degrees, 0.51 px for an error of
-  0.17 mm. `--max-residual` is there, off. What would separate them is a
-  solve that drops the reading it disagrees with, not one that refuses the
-  pose.
+  0.17 mm. `--max-residual` is there, off. A solve that drops the reading
+  it disagrees with most -- three robust sigmas, up to three rounds -- was
+  tried next and does not help: test poses the same or worse (four views,
+  x 0.039 -> 0.055 mm on the first render), the large poses unchanged.
+  What it drops is mostly end readings, which carry the turn -- the
+  seventeenth's weighting failed the same way. Not kept.
 - **Then through the image.** Turned 7 or 8 degrees, the top cube's edge
   crosses the base's in the 50-degree views: one end of a pair reads −2 to
   −4 px and the other +6 to +10. That is not a gap along its length, and
@@ -1953,6 +1956,73 @@ truth, x / y / z mm and turn degrees:
   them.
 - **Tipping** -- turning about a horizontal axis -- was not rendered:
   gap-sweep's poses turn about the vertical only.
+
+#### A twenty-fourth: images more like a camera's
+
+The renders are noiseless, sharp to the pixel and sRGB-encoded exactly as
+the lab decodes them. **`npm run degrade`** copies a rendered run -- shots,
+truth and AOV passes -- with its images made more like a camera's, in
+linear light: radial distortion (bilinear resampling), Gaussian blur, shot
+and read noise, and a response curve the lab does not undo. gap-sweep then
+analyses the copy with `--skip-render`. Every sweep and the first test
+render were degraded alike, analysed with the pooled edge, and solved with
+no truth (hinged), x / y / z mm and turn degrees:
+
+| image | aperture measured | ten sets | four views |
+|---|---|---|---|
+| as rendered | 1.30-1.38 px | 0.061 / 0.034 / 0.052 / 0.026 | 0.039 / 0.023 / 0.034 / 0.020 |
+| γ 2.2 written, sRGB read | | 0.062 / 0.038 / 0.056 / 0.027 | 0.039 / 0.024 / 0.037 / 0.021 |
+| noise: 2,000 e⁻ full scale, read 0.002 | | 0.097 / 0.047 / 0.057 / 0.029 | 0.065 / 0.029 / 0.035 / 0.022 |
+| distortion k1 −0.02 | 1.87-2.11 | 0.152 / 0.097 / 0.155 / 0.058 | 0.089 / 0.058 / 0.084 / 0.054 |
+| distortion k1 −0.08 | 1.89-2.17 | 0.146 / 0.103 / 0.133 / 0.057 | 0.095 / 0.078 / 0.072 / 0.053 |
+| blur σ 0.8 px | 2.82-3.01 | 0.189 / 0.083 / 0.098 / 0.099 | 0.170 / 0.072 / 0.065 / 0.074 |
+| all four (k1 −0.08) | | 0.262 / 0.155 / 0.208 / 0.124 | 0.203 / 0.132 / 0.180 / 0.110 |
+
+- **A response curve left in costs nothing.** The fit's levels are its own,
+  and a calibration from the readings absorbs what is left. The open
+  question of §11 about undoing a real camera's curve on load matters less
+  for this measurement than it seemed.
+- **Noise costs little**: signal-to-noise of 15 to 30 on the faces moves x
+  from 0.039 to 0.065 and nothing else.
+- **Blur is what costs, and "distortion" here is blur.** k1 −0.02 costs as
+  much as −0.08 -- four times less distortion, the same error -- because
+  what both did to the fit was the bilinear resampling's blur: the aperture
+  the lab measures goes from 1.35 px to 2. A real lens's distortion is
+  removed by calibrating it and was not measured cleanly here. Blur of 0.8
+  px, ordinary for real optics, is the largest single cost: the measured
+  aperture is 3.0 px (0.8 px of Gaussian on the 1.35 px box is a 3.08 px
+  box of the same variance), and the side pair's error along the x sweep
+  grows from +0.11 to +0.42 px at the widest slid-back gap. The fit models a
+  pixel as a box, and a blurred ledge's ramp is wider still.
+- So the next thing a real camera needs is not here: **a fit whose aperture
+  is a Gaussian, or a measured PSF, rather than a box.** Undecided whether
+  it is the shape or only the ledge being wider.
+
+Combined, the worst case is about 0.2 mm and 0.12 degrees from four views,
+no truth.
+
+**A bad light, and telling it from the calibration.** stack-4's high light
+(the 10-05 notes: the front pair reads the shadow under the top cube) was
+rendered in full -- y, z, turn and test, beside its x sweep -- to ask
+whether a calibration from the readings absorbs a shadow reading as it
+absorbs the held edge's offset. It does not. Test poses, ten sets, mm and
+degrees:
+
+| | truth | joint | hinged |
+|---|---|---|---|
+| stack-2's light | 0.13 / 0.04 / 0.06 / 0.04 (pooled) | 0.08 / 0.03 / 0.05 / 0.03 | 0.06 / 0.03 / 0.05 / 0.03 |
+| stack-4's light | 2.3 / 2.6 / 1.9 / 0.40 | 3.3 / 0.91 / 1.0 / 0.27 | 2.0 / 1.2 / 1.3 / 0.33 |
+
+But the calibration knows. Each reading's RMS about its own fitted model,
+over its own calibration frames, is at most 0.055 px under stack-2's light,
+and at most 0.12 with blur, noise and resampling all applied; under
+stack-4's the worst are 0.34 to 0.57 px, the median 0.07 to 0.09. Dropping
+the readings over 0.1 or 0.15 px gets the turn back to 0.1 degree and
+leaves position 0.3 to 2.7 mm off: what is left fits a straight model and
+still is not the gap. So `position` now **warns**, naming the readings, when
+a joint or hinged calibration has any over 0.2 px -- under stack-4's light
+five, under stack-2's none, under every degraded image none. Detecting a
+bad light needs no truth. Choosing a good one is still open.
 
 #### findPairs' gain threshold, on more than two renders
 
