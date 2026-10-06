@@ -104,6 +104,9 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
                      own frames have nothing to carry from, and for a run of
                      one pose, as a closed loop renders. Pairs are matched by
                      the angle they run at, within 10 degrees
+  --max-angle <deg>  how far from parallel a truth pair's two edges may be and
+                     still be scored as a pair             (default 5). A part
+                     turned past that has no row, whatever its track read
   --carry-min <px>   how wide a gap must be to be carried from, or to fit its
                      own strip level                      (default 3)
   --ledge-max <x>    a frame whose fitPairs ledge gain reaches this is not
@@ -183,6 +186,7 @@ function parseArgs(argv) {
       case '--skip-render': opts.skipRender = true; break;
       case '--carry': opts.carry = true; break;
       case '--carry-from': opts.carryFrom.push(argv[++i]); break;
+      case '--max-angle': opts.maxAngle = list(argv[++i], '--max-angle')[0]; break;
       case '--carry-min': opts.carryMin = list(argv[++i], '--carry-min')[0]; break;
       case '--ledge-max': opts.ledgeMax = list(argv[++i], '--ledge-max')[0]; break;
       case '--overwrite': opts.overwrite = true; break;
@@ -599,7 +603,7 @@ function main() {
   const analyse = () => {
     // One row per facing pair per shot: a fixture with two pairs -- a cube
     // stacked on a cube -- gets two rows a shot, and each is its own measurement.
-    const perShot = shots.flatMap((s) => gapRows(featuresOf(s), s, parts).map((r) => ({
+    const perShot = shots.flatMap((s) => gapRows(featuresOf(s), s, parts, opts.maxAngle ? { maxAngle: opts.maxAngle } : {}).map((r) => ({
       shot: s.name,
       ...(s.view ?? {}),
       ...(s.pose ? { pose: s.pose, poseMm: s.poseMm, turnDeg: s.turnDeg } : {}),

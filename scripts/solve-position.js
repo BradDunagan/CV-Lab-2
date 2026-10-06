@@ -101,10 +101,14 @@ CV-Lab relative position -- several gap readings solved for one displacement
   --max-sigma <n>       a pose is not solved from readings that would turn one
                         pixel of error into more than this on any unknown
                                                               (default 10)
+  --max-residual <px>   nor when its readings disagree with its solution by
+                        more than this, RMS. Off by default: good solves run
+                        0.02-0.06, but one ordinary test pose runs 0.51
+                        and bad ones 0.47-0.60       (default: no limit)
 `.trim();
 
 function parseArgs(argv) {
-  const opts = { dirs: {}, test: null, readings: 'both', weights: 'sigma', out: null, maxViews: 3, maxSigma: 10,
+  const opts = { dirs: {}, test: null, readings: 'both', weights: 'sigma', out: null, maxViews: 3, maxSigma: 10, maxResidual: Infinity,
     calibrate: 'truth', saveCalibration: null, sequences: [], readingSigma: 0.1, motionSigma: 0.1, turnSigma: 0.1, startSigma: 1, trials: 20 };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -123,6 +127,7 @@ function parseArgs(argv) {
     else if (arg === '--save-calibration') opts.saveCalibration = argv[++i];
     else if (arg === '--max-views') opts.maxViews = Number(argv[++i]);
     else if (arg === '--max-sigma') opts.maxSigma = Number(argv[++i]);
+    else if (arg === '--max-residual') opts.maxResidual = Number(argv[++i]);
     else if (arg === '--help' || arg === '-h') opts.help = true;
     else throw new Error(`unknown option ${arg}`);
   }
@@ -358,6 +363,7 @@ function main() {
     const errors = unknowns.map(() => []);
     const byPose = [];
     let solved = 0;
+    const residuals = [];
     const worst = { size: 0, text: '' };
     for (const pose of poses) {
       /*
@@ -391,6 +397,15 @@ function main() {
       const geometry = solvePosition(obs.filter((o) => Number.isFinite(o.measured))
         .map((o) => ({ jacobian: o.jacobian, reference: 0, measured: 0 })));
       if (!s.determined || !geometry.determined || Math.max(...geometry.sigma) > opts.maxSigma) continue;
+      /*
+       * And refused when its own readings disagree with it: the RMS of what
+       * each reading says against what the solution predicts, unweighted,
+       * in px. Geometry can pass and the readings still be wrong -- three
+       * pairs of a part turned past the pairing limit solved 98 mm off
+       * (design-lab-model.md §5, "A twenty-third").
+       */
+      residuals.push(s.residualRms);
+      if (s.residualRms > opts.maxResidual) continue;
       solved++;
       const e = s.d.map((v, k) => v - pose.d[k]);
       e.forEach((v, k) => errors[k].push(v));
@@ -398,7 +413,7 @@ function main() {
       const size = Math.hypot(...e);
       if (size > worst.size) { worst.size = size; worst.text = `${pose.label}, off by ${e.map((v) => fmt(v, 2)).join(', ')}`; }
     }
-    return { solved, of: poses.length, rms: errors.map(rms), worst: worst.text, byPose };
+    return { solved, of: poses.length, rms: errors.map(rms), worst: worst.text, byPose, residuals };
   };
   const line = (mode, r) => `  ${mode.padEnd(9)} ${String(r.solved).padStart(2)}/${r.of} solved   rms:  `
     + unknowns.map((u, k) => `${u} ${fmt(r.rms[k], 2)}`).join('   ') + (r.solved ? `   worst: ${r.worst}` : '');
