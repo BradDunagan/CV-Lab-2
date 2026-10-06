@@ -743,6 +743,42 @@ test('at contact there is no strip to fit, and almost nothing is returned', () =
   assert.ok(r === null || r.gap === null || Math.abs(r.gap) < 0.05, `contact read as ${r && r.gap}`);
 });
 
+/*
+ * A part turned until its edge crosses the still one in the picture. The
+ * moving part is in front: beyond its edge a pixel sees its face, whatever
+ * the other edge does; below the still edge and not behind the moving face,
+ * the still face; between them, where they are apart, the strip.
+ */
+function crossing(w, h, still, moving, [stillLevel, stripLevel, movingLevel]) {
+  const data = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const sq = [[x - 0.5, y - 0.5], [x + 0.5, y - 0.5], [x + 0.5, y + 0.5], [x - 0.5, y + 0.5]];
+      const aMoving = area(clip(sq, moving.nx, moving.ny, moving.c));
+      const aStill = area(clip(clip(sq, -still.nx, -still.ny, -still.c), -moving.nx, -moving.ny, -moving.c));
+      data[y * w + x] = movingLevel * aMoving + stillLevel * aStill + stripLevel * (1 - aMoving - aStill);
+    }
+  }
+  return { width: w, height: h, channels: 1, data };
+}
+
+test('a moving edge that crosses the still one is read along its whole length', () => {
+  for (const [deg, turn, gap] of [[8, 4, 1.5], [30, -5, 2], [135, 6, 1.2]]) {
+    const still = lineAt(80, 60, deg);
+    const mid = [80 + still.nx * gap, 60 + still.ny * gap];
+    const moving = lineAt(mid[0], mid[1], deg + turn);
+    // The two cross inside the 80 px they share: where gap + t tan(turn) = 0.
+    const cross = -gap / Math.tan((turn * Math.PI) / 180);
+    assert.ok(Math.abs(cross) < 35, `the fixture should cross inside the band: ${cross}`);
+    const raster = crossing(160, 120, still, moving, LEVELS);
+    const r = trackPair(raster, carriedFrom(still, moving), { guess: gap });
+    assert.ok(r && r.gap !== null, `${deg} deg turned ${turn}: no reading`);
+    near(r.gap, gap, 0.01, `${deg} deg turned ${turn}: gap at the middle`);
+    for (const t of [-35, 35]) near(offsetFrom(still, r.moving, t), gap + t * Math.tan((turn * Math.PI) / 180), 0.02,
+      `${deg} deg turned ${turn}: the moving edge at ${t} px`);
+  }
+});
+
 /* ---- the smooth profile --------------------------------------------- */
 
 /** The raster blurred by a Gaussian of `sigma` px, sampled on the grid, as a lens and a sensor do it. */
