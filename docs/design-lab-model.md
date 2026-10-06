@@ -1909,6 +1909,77 @@ y / z mm and turn degrees:
 - **The hinged calibration's gain is real in the loop:** the same start and
   robot under the joint one ends 0.11 off in x, against 0.04.
 
+#### A twenty-third: further from the reference
+
+The calibration is linear about one pose, measured over ±4 mm of x and z,
+−2 to +4 of lift and ±3 degrees of turn. Twelve poses outside that were
+rendered (`stack-2g-large`) and solved from all four views, hinged, no
+truth, x / y / z mm and turn degrees:
+
+| pose | as read, pairs within 5° | pairs within 12° |
+|---|---|---|
+| ±5 mm in x, ±5 in z, 10 up, (6, 9, −5) | all within 0.10 / 0.05 / 0.07 / 0.02 | the same |
+| turned 5° | −0.10 / 0.00 / 0.01 / −0.09 | −0.16 / 0.01 / 0.02 / −0.08 |
+| turned −5° | −0.01 / −0.02 / −0.08 / 0.19 | −0.03 / −0.05 / −0.12 / 0.18 |
+| (3, 8, −3), 4° | 0.00 / −0.08 / 0.08 / −0.18 | 0.06 / −0.04 / 0.12 / −0.04 |
+| (−4, 7, 4), −6° | not solved | 0.24 / −0.25 / −0.24 / 0.39 |
+| (−3, 5, 2), 7° | **−98 / −49 / −96 / −2.2** | 0.25 / 0.07 / 0.23 / −0.33 |
+| turned 8° | 3.3 / 1.7 / 3.6 / −0.31 | 1.2 / 0.44 / 0.58 / −0.34 |
+
+- **Translation is not a limit.** Six millimetres sideways and ten up, past
+  every calibration frame, solve as well as the test poses do: perspective
+  bends the readings less than they scatter.
+- **Turning is, and first through the harness.** gap-sweep makes a row only
+  for a truth pair whose edges are parallel within `maxAngle`, 5 degrees; a
+  pair turned past that has no row, and its track's reading never reaches
+  the solve. `gap-sweep --max-angle 12` keeps them, and the 7-degree pose
+  goes from 98 mm off to 0.25. The 98 was solved from three pairs whose
+  geometry passed the twentieth's check. A check of the readings'
+  residuals does not separate it cleanly: good four-view solves run 0.02
+  to 0.06 px RMS, the bad large ones 0.47 to 0.60 -- and so does one
+  ordinary test pose, (2, 4.5, 0) at −3 degrees, 0.51 px for an error of
+  0.17 mm. `--max-residual` is there, off. What would separate them is a
+  solve that drops the reading it disagrees with, not one that refuses the
+  pose.
+- **Then through the image.** Turned 7 or 8 degrees, the top cube's edge
+  crosses the base's in the 50-degree views: one end of a pair reads −2 to
+  −4 px and the other +6 to +10. That is not a gap along its length, and
+  `trackPair`, which fits a strip, gives nothing. Two of eight readings are
+  left at 8 degrees.
+- **The 1 mm x error of the loop** (the twenty-second) is the same thing in
+  the other direction: how a gap answers to x depends on the lift, and the
+  model has no term for it. It costs nothing at 6 mm sideways and 10 up, and
+  0.06-0.10 mm at 1 mm up, where the gaps are narrow and every view leans on
+  them.
+- **Tipping** -- turning about a horizontal axis -- was not rendered:
+  gap-sweep's poses turn about the vertical only.
+
+#### findPairs' gain threshold, on more than two renders
+
+`findPairs` calls a segment two edges when two steps fit its pixels
+`minGain` (1.3) times better than one: a number set on two renders of one
+scene. Run with the gate open (`minGain=1.0`) over sixteen runs -- every
+stack-2 sweep and test render, stack-3's, stack-4's x sweep, and the gap
+scene at 512 and 2048 px, 1,085 candidates -- a find counts as real when
+two visible truth edges lie under its two lines (within 0.6 px and 5
+degrees):
+
+| gain | real | not |
+|---|---|---|
+| 1.00-1.15 | 18 | 1,000 |
+| 1.15-1.30 | 2 | 10 |
+| 1.30-1.50 | 11 | 19 |
+| 1.50 and up | 19 | 6 |
+
+At 1.3 it keeps 30 of the 50 real pairs and 25 others; 1.2 would add one
+real and nine others, 1.5 lose eleven real and nineteen others. **Every one
+of the 25 is a real cube silhouette with a second image edge 1.2 to 2.4 px
+beside it that no mesh edge accounts for** -- a shadow line, which is in the
+image and not in the geometry. So 1.3 holds on sixteen runs, three lights
+and two sizes; what it cannot do is tell a gap from a shadow beside an edge,
+and nothing that sees only pixels can. In the renderer `explain` can.
+(`notes/brads-notes/2026-10-05-findpairs/`.)
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

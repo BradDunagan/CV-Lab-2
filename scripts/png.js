@@ -69,7 +69,53 @@ function encodePNG(width, height, rgba) {
   ]);
 }
 
-module.exports = { encodePNG };
+/**
+ * The other way: an 8-bit, non-interlaced PNG of any colour type, as raw
+ * samples. For the scripts that change a render in plain node
+ * (scripts/degrade.js); the lab itself decodes through Chromium.
+ *
+ * @param {Buffer|Uint8Array} bytes a complete PNG file
+ * @returns {{width: number, height: number, channels: number, data: Buffer}}
+ *   `data` is height*width*channels bytes, as stored: 1 gray, 2 gray+alpha,
+ *   3 RGB, 4 RGBA
+ */
+function decodePNG(bytes) {
+  const b = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let p = 8, width, height, channels;
+  const idat = [];
+  while (p < b.length) {
+    const len = b.readUInt32BE(p), type = b.toString('latin1', p + 4, p + 8), d = b.subarray(p + 8, p + 8 + len);
+    if (type === 'IHDR') {
+      width = d.readUInt32BE(0); height = d.readUInt32BE(4);
+      channels = { 0: 1, 4: 2, 2: 3, 6: 4 }[d[9]];
+      if (d[8] !== 8 || !channels || d[12] !== 0) throw new Error('decodePNG: only 8-bit, non-palette, non-interlaced');
+    } else if (type === 'IDAT') idat.push(d);
+    else if (type === 'IEND') break;
+    p += 12 + len;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = width * channels, out = Buffer.alloc(height * stride);
+  for (let y = 0; y < height; y++) {
+    const f = raw[y * (stride + 1)], line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const a = x >= channels ? out[y * stride + x - channels] : 0;
+      const up = y > 0 ? out[(y - 1) * stride + x] : 0;
+      const c = x >= channels && y > 0 ? out[(y - 1) * stride + x - channels] : 0;
+      let v = line[x];
+      if (f === 1) v += a;
+      else if (f === 2) v += up;
+      else if (f === 3) v += (a + up) >> 1;
+      else if (f === 4) {
+        const pa = Math.abs(up - c), pb = Math.abs(a - c), pc = Math.abs(a + up - 2 * c);
+        v += pa <= pb && pa <= pc ? a : pb <= pc ? up : c;
+      }
+      out[y * stride + x] = v & 255;
+    }
+  }
+  return { width, height, channels, data: out };
+}
+
+module.exports = { encodePNG, decodePNG };
 
 /* ------------------------------------------------------------------ */
 /* reading what a PNG says about its own colour encoding               */
