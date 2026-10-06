@@ -382,7 +382,7 @@ function bandSamples(raster, frame, opts) {
  * be said about how well the rest are known.
  */
 function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = null, slopedLevels = false,
-  heldEdges = [], maxIterations = MAX_ITERATIONS, profile = 'box' }) {
+  heldEdges = [], maxIterations = MAX_ITERATIONS, profile = 'box', occluder = null }) {
   const { t, h, v } = samples;
   const n = v.length;
   const E = frame.edges.length;
@@ -427,14 +427,36 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
     : q[2 * anchorOf[e]] + frame.edges[e].side * reachOf(q, e, w));
   const mOf = (q, e) => (anchorOf[e] < 0 ? q[2 * e + 1] : q[2 * anchorOf[e] + 1]);
 
+  /*
+   * OCCLUSION. Two edges of a pair, `occluder` naming the one whose part is
+   * in front: where that edge has crossed the other, its face covers the
+   * other's edge and there is no strip. A pixel's strip share is then
+   * max(0, beyond the still edge - beyond the moving one) rather than the
+   * difference, so the other edge's coverage is clamped to the occluder's.
+   * Where the edges do not cross the clamp never acts and the model is the
+   * one above. Where they do, the band is a strip at one end and one edge at
+   * the other -- a part turned so far that its pair's edges cross in the
+   * picture -- and the fit reads both ends, rather than refusing the band
+   * (design-lab-model.md §5, "A twenty-ninth"). Two edges, no soft ones.
+   */
+  const occluding = occluder !== null && E === 2 && softAt.every((at) => at < 0);
+  const other = occluding ? 1 - occluder : -1;
+  // Whether the other edge's coverage was clamped to the occluder's, per pixel.
+  let clamped = false;
+  const clampCover = () => {
+    clamped = occluder === 1 ? cover[1] > cover[0] : cover[0] < cover[1];
+    if (clamped) cover[other] = cover[occluder];
+  };
+
   /** One pixel's value under q, and the coverages that made it. */
   const cover = new Array(E);
   const predict = (q, i, w) => {
     let value = level(q, 0, t[i]);
     for (let e = 0; e < E; e++) {
       cover[e] = smoothCoverage(h[i] - cOf(q, e, w) - mOf(q, e) * t[i], lowOf(w), reachOf(q, e, w), blurOf(w));
-      value += (level(q, e + 1, t[i]) - level(q, e, t[i])) * cover[e];
     }
+    if (occluding) clampCover();
+    for (let e = 0; e < E; e++) value += (level(q, e + 1, t[i]) - level(q, e, t[i])) * cover[e];
     return value;
   };
 
@@ -449,9 +471,11 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
       if (!JtJ) continue;
       for (let e = 0; e < E; e++) { row[2 * e] = 0; row[2 * e + 1] = 0; }
       for (let e = 0; e < E; e++) {
-        const d = h[i] - cOf(q, e, w) - mOf(q, e) * t[i];
+        // A clamped edge's term follows the occluder's line, and so does its derivative.
+        const at = occluding && clamped && e === other ? occluder : e;
+        const d = h[i] - cOf(q, at, w) - mOf(q, at) * t[i];
         const step = level(q, e + 1, t[i]) - level(q, e, t[i]);
-        const b = reachOf(q, e, w);
+        const b = reachOf(q, at, w);
         const lo = lowOf(w), s = blurOf(w);
         const g = -step * smoothDensity(d, lo, b, s);
         if (softAt[e] >= 0) {
@@ -460,8 +484,8 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
           row[softAt[e]] = step * (smoothCoverage(d - shift * 1e-4, lo, b + 1e-4, s)
             - smoothCoverage(d + shift * 1e-4, lo, b - 1e-4, s)) / 2e-4;
         }
-        if (heldEdges.includes(e)) continue;
-        const own = anchorOf[e] >= 0 ? anchorOf[e] : e;
+        if (heldEdges.includes(at)) continue;
+        const own = anchorOf[at] >= 0 ? anchorOf[at] : at;
         row[2 * own] += g; row[2 * own + 1] += g * t[i];
       }
       // Level j is weighted by the coverage gained at edge j-1 and lost at j.
@@ -555,8 +579,9 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
     }
   }
 
-  // Edges in the order they were given, at both ends of the band.
-  for (let e = 1; e < E; e++) {
+  // Edges in the order they were given, at both ends of the band -- unless
+  // one occludes the other, when crossing is what the model is for.
+  for (let e = 1; e < E && !occluding; e++) {
     const gap = p[2 * e] - p[2 * e - 2], tilt = Math.abs(p[2 * e + 1] - p[2 * e - 1]) * frame.half;
     if (!(gap - tilt > 0)) return null;
   }
@@ -1049,7 +1074,7 @@ function trackPair(raster, carried, options = {}) {
     if (!(g > 0)) continue;
     const fit = fitBand(samples, { ...frame, edges: edgesAt(g) }, {
       aperture: carried.aperture, heldStrip: fitStrip ? null : carried.stripLevel,
-      slopedLevels: opts.levelSlope === 'fit', heldEdges: [still], profile: opts.profile,
+      slopedLevels: opts.levelSlope === 'fit', heldEdges: [still], profile: opts.profile, occluder: 1 - still,
     });
     if (fit && (!best || fit.rms < best.rms)) best = fit;
   }
@@ -1089,7 +1114,7 @@ function trackPair(raster, carried, options = {}) {
     if (!(g > 0)) continue;
     const f = fitBand(samples, { ...frame, edges: edgesAt(g) }, {
       aperture: carried.aperture, heldStrip: fitStrip ? null : carried.stripLevel,
-      slopedLevels: opts.levelSlope === 'fit', profile: opts.profile,
+      slopedLevels: opts.levelSlope === 'fit', profile: opts.profile, occluder: 1 - still,
     });
     if (f && (!free || f.rms < free.rms)) free = f;
   }
