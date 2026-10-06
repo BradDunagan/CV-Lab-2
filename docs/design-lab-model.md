@@ -1860,6 +1860,55 @@ good to 0.1 px separates them; `npm run servo` takes the hypothesis its
 prior predicts when the other is at least three predicted sigmas further
 off, and otherwise neither. The overlay draws both hypotheses' edges.
 
+#### A twenty-second: the estimate drives the motion
+
+Every number so far was a pose the part was PUT at. **`npm run servo`** runs
+the other way round, as a robot would: render the part where it really is
+(gap-sweep, one pose, four views, the pooled still edges), solve its pose
+against a saved calibration (`position --save-calibration`; joint or hinged,
+no truth) with the last estimate moved by the last commanded move as a
+prior, command a correction, and go again, down to contact. The simulated
+robot misses each move by a fixed scale error per axis (sd 2%) and 0.02 mm
+of noise per move; it starts believing a pose 1 mm off the real one; it is
+never told the truth, which the script keeps only to score.
+
+The policy: align x, z and the turn at the hover height (4 mm), descend at
+most `--descend` a step once the estimated alignment is within 0.15, and go
+to contact from under `--final`. Two starts, each with its own robot (seeds
+1 and 2, so the policies on one start see the same robot); final error, x /
+y / z mm and turn degrees:
+
+| start | calibration, policy | renders | at contact |
+|---|---|---|---|
+| (1.5, 6, −1.2), 1.5° | joint; correct everywhere | 4 | 0.11 / 0.00 / 0.03 / −0.01 |
+| | hinged; correct everywhere | 3 | 0.04 / 0.00 / 0.04 / 0.00 |
+| | hinged; no lateral moves under 2 mm | 3 | 0.03 / −0.02 / 0.04 / −0.01 |
+| | the same, 1 mm steps, contact from 0.6 | 5 | 0.03 / 0.06 / 0.03 / 0.02 |
+| (−2, 7, 1.8), −2.5° | hinged; correct everywhere | 4 | 0.07 / 0.04 / 0.05 / 0.00 |
+| | hinged; no lateral moves under 2 mm | 4 | −0.01 / 0.03 / 0.05 / 0.02 |
+| | the same, 1 mm steps, contact from 0.6 | 5 | 0.00 / 0.02 / 0.10 / 0.00 |
+
+- **It works, from the first try:** 3 to 5 renders from 2 to 3 mm and 2.5
+  degrees off, to contact within about 0.05 mm on each axis.
+- **Every estimate made 2 mm up or more is within 0.03 mm and 0.02 degrees
+  of the truth**, frame after frame. What the part ends at is the robot's:
+  the moves after the last estimate, 0.02 mm of noise each and the scale
+  error on the last descent. The 0.10 in z is one noise draw of 0.072 mm,
+  3.6 sigma, the same in no other run (the 112 draws have sd 0.019).
+- **About 1 mm up, x reads 0.06 to 0.10 mm off in every run** -- the same
+  sign, the same size, under both calibrations. It is not noise; it is the
+  calibration, measured with the cube lifted 4 mm, used at 1: how a gap
+  answers to x changes with the lift, and the model is linear about one
+  pose. A robot that corrects sideways on that estimate ends 0.07 to 0.11
+  off. One that stops correcting sideways under 2 mm ends where the higher
+  estimates put it. That is `--lateral-floor 2`, and it is a policy that
+  follows from what the measurement is good at, not a fix.
+- **The two-hypothesis readings of the twenty-first are used.** At about 1
+  mm, six readings a frame came back ambiguous, and the prior resolved all
+  six in both runs that went that low.
+- **The hinged calibration's gain is real in the loop:** the same start and
+  robot under the joint one ends 0.11 off in x, against 0.04.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
