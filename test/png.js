@@ -9,7 +9,7 @@
  */
 
 const assert = require('node:assert/strict');
-const { encodePNG, readPngColour } = require('../scripts/png');
+const { encodePNG, decodePNG, readPngColour } = require('../scripts/png');
 
 let failures = 0;
 function test(name, fn) {
@@ -173,6 +173,46 @@ test('it stops at IDAT rather than scanning the whole file', () => {
   readPngColour(big);
   const ms = Number(process.hrtime.bigint() - started) / 1e6;
   assert.ok(ms < 2, `took ${ms.toFixed(2)} ms — is it walking the pixel data?`);
+});
+
+/* --- decoding ---------------------------------------------------------- */
+
+test('what the encoder writes, the decoder reads back exactly', () => {
+  const rgba = Buffer.alloc(7 * 5 * 4);
+  for (let i = 0; i < rgba.length; i++) rgba[i] = (i * 37 + 11) & 255;
+  const d = decodePNG(encodePNG(7, 5, rgba));
+  assert.deepEqual([d.width, d.height, d.channels], [7, 5, 4]);
+  assert.ok(d.data.equals(rgba));
+});
+
+test('every filter type is undone, as the specification defines it', () => {
+  // The encoder writes filter 0 only; a renderer's file uses all five. Each
+  // row here is filtered with type y % 5, by the definitions in the spec.
+  const w = 6, h = 10, ch = 3, stride = w * ch;
+  const px = Buffer.alloc(h * stride);
+  for (let i = 0; i < px.length; i++) px[i] = (i * 73 + (i >> 3) * 29) & 255;
+  const at = (y, x) => (y < 0 || x < 0 ? 0 : px[y * stride + x]);
+  const paeth = (a, b, c) => {
+    const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+    return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+  };
+  const raw = Buffer.alloc(h * (stride + 1));
+  for (let y = 0; y < h; y++) {
+    const f = y % 5;
+    raw[y * (stride + 1)] = f;
+    for (let x = 0; x < stride; x++) {
+      const v = at(y, x), a = at(y, x - ch), b = at(y - 1, x), c = at(y - 1, x - ch);
+      const pred = [0, a, b, (a + b) >> 1, paeth(a, b, c)][f];
+      raw[y * (stride + 1) + 1 + x] = (v - pred) & 255;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const file = Buffer.concat([BASE.subarray(0, 8), chunk('IHDR', ihdr),
+    chunk('IDAT', require('node:zlib').deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+  const d = decodePNG(file);
+  assert.equal(d.channels, 3);
+  assert.ok(d.data.equals(px));
 });
 
 console.log(failures === 0 ? '\nAll png tests passed.' : `\n${failures} failing.`);

@@ -62,6 +62,11 @@ scripts/gap-sweep.js steps one part toward another, renders each step, runs
 scripts/solve-position.js  a sweep per axis (and per turn), solved for where
                      the part is: per set of views, in millimetres and
                      degrees, scored on test poses
+scripts/servo.js     a closed loop: estimate, command a correction, render
+                     where a simulated robot really put the part, down to
+                     contact (needs a GPU)
+scripts/degrade.js   a rendered run made to look like a camera's: noise,
+                     blur, lens distortion, a response curve left in
 pt-lab/              the path tracer + scene editor library, TypeScript, moved in
                      from its own repository — see pt-lab/README.md
 src/generate/        the generator: page (bundled separately) + main-process
@@ -85,7 +90,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — nineteen suites, ~573 tests
+npm test                # everything — nineteen suites, ~578 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -94,9 +99,13 @@ npm run overlay -- <img> results/   # ...and the same thing as a picture
 npm run gap-sweep -- --name gap-1   # a part closing on another, down to contact
                                     # (--yaw, --elevation: from a grid of views;
                                     #  --offset: across a gap already open;
-                                    #  --carry: each pair tracked down its approach)
+                                    #  --carry: each pair tracked down its approach;
+                                    #  --carry-from <dir>: the still edge from other runs)
 npm run position -- --x <dir> --y <dir> --z <dir>   # where the part is, from several
-                                    # (--sequence <dir>: frame by frame, the pose carried)
+                                    # (--sequence <dir>: frame by frame, the pose carried;
+                                    #  --calibrate hinged: no truth, the ledge one-sided)
+npm run servo -- --name a --calibration <file> --start x,y,z,turn   # estimate drives motion
+npm run degrade -- generated/<run> generated/<run>-noisy --gain 2000   # a camera's image
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run check:pt-lab    # type-check pt-lab/ — the build strips types unchecked

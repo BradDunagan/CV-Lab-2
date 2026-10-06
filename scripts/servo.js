@@ -43,6 +43,9 @@ CV-Lab servo -- estimate, correct, render, repeat, down to contact
                         Cube, 35,60, 20,50, pipelines/pairs.lab)
   --carry-from <dir>    passed to gap-sweep, repeatable: the runs the still
                         edges are held from
+  --max-angle <deg>     passed to gap-sweep: how far from parallel a pair
+                        may be and still give a reading. A part turned 5
+                        degrees is past gap-sweep's own default  (default 12)
   --hover <mm>          the height (y) the part is aligned at before it
                         descends                                 (default 4)
   --descend <mm>        the most y comes down in one step        (default 1.5)
@@ -74,7 +77,7 @@ function parseArgs(argv) {
     return v;
   };
   const opts = { name: null, calibration: null, start: null, startSigma: 1, scene: 'saved:stack-2', moving: 'Cube2',
-    target: 'Cube', yaw: '35,60', elevation: '20,50', script: 'pipelines/pairs.lab', carryFrom: [], hover: 4,
+    target: 'Cube', yaw: '35,60', elevation: '20,50', script: 'pipelines/pairs.lab', carryFrom: [], maxAngle: 12, hover: 4,
     descend: 1.5, align: 0.15, final: 1, lateralFloor: 0, maxSteps: 12, scaleError: 0.02, moveNoise: 0.02, readingSigma: 0.1,
     motionSigma: 0.1, seed: 1, dryRun: false, dryNoise: 0.05 };
   for (let i = 0; i < argv.length; i++) {
@@ -92,6 +95,7 @@ function parseArgs(argv) {
       case '--elevation': opts.elevation = argv[++i]; break;
       case '--script': opts.script = argv[++i]; break;
       case '--carry-from': opts.carryFrom.push(argv[++i]); break;
+      case '--max-angle': opts.maxAngle = num(); break;
       case '--hover': opts.hover = num(); break;
       case '--descend': opts.descend = num(); break;
       case '--align': opts.align = num(); break;
@@ -189,7 +193,7 @@ function readingsOf(rows, angles) {
 function gapSweep(opts, stepName, pose) {
   const args = [path.join(ROOT, 'scripts/gap-sweep.js'), '--name', stepName, '--scene', opts.scene,
     '--moving', opts.moving, '--target', opts.target, '--poses', pose.map((v) => +v.toFixed(4)).join(','),
-    '--yaw', opts.yaw, '--elevation', opts.elevation, '--script', opts.script, '--carry',
+    '--yaw', opts.yaw, '--elevation', opts.elevation, '--script', opts.script, '--carry', '--max-angle', String(opts.maxAngle),
     ...opts.carryFrom.flatMap((d) => ['--carry-from', d])];
   const gen = path.join(ROOT, 'generated', stepName);
   if (fs.existsSync(path.join(gen, 'shots.json'))) args.push('--skip-render');

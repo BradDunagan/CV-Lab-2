@@ -1,0 +1,12 @@
+// pairs.lab's detector and findPairs with the gain gate open (1.0), so that
+// every candidate's gain is recorded, real or not. T is prepended by --truth.
+G  = gray(A)
+B  = gaussian(G, sigma=1.4)
+Gx = sobel(B, axis=x)
+Gy = sobel(B, axis=y)
+M  = sobel(B, axis=mag)
+N  = nms(M, Gx, Gy)
+S  = segments(N, Gx, Gy)
+R  = merge(S)
+F  = fit(R)
+H  = findPairs(F, G, minGain=1.0)
