@@ -726,10 +726,21 @@ test('which way the carried line was written does not matter', () => {
   assert.deepEqual({ ...back, still: null }, { ...trackPair(raster, c), still: null });
 });
 
+test('where a strip and one edge fit alike, no gap is given, and both readings are', () => {
+  // A 0.1 px strip under a little noise: the two pictures fit within 6%.
+  const { lo, hi, raster } = scene(0.1, { noise: 0.01, aperture: 1.35 });
+  const r = trackPair(raster, { ...carriedFrom(lo, hi), aperture: 1.35 });
+  assert.equal(r.model, 'ambiguous');
+  assert.equal(r.gap, null);
+  assert.deepEqual(r.hypotheses.map((h) => h.model), ['strip', 'edge']);
+  near(r.hypotheses[0].gap, 0.1, 0.01, 'the strip\'s reading');
+  assert.ok(r.hypotheses[1].gap < 0, `the one edge reads an overhang: ${r.hypotheses[1].gap}`);
+});
+
 test('at contact there is no strip to fit, and almost nothing is returned', () => {
   const { lo, hi, raster } = scene(0);
   const r = trackPair(raster, carriedFrom(lo, { ...hi, px: hi.px + hi.nx, py: hi.py + hi.ny }));
-  assert.ok(r === null || Math.abs(r.gap) < 0.05, `contact read as ${r && r.gap}`);
+  assert.ok(r === null || r.gap === null || Math.abs(r.gap) < 0.05, `contact read as ${r && r.gap}`);
 });
 
 (async () => {

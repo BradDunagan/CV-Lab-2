@@ -9,6 +9,7 @@ for r in "$@"; do
     x) A=(--axis 1,0,0 --offset 0,4,0 --gaps -4,-2,-1,0,1,2,4) ;;
     y) A=(--axis 0,1,0 --offset 0,4,0 --gaps -2,-1,0,1,2,4) ;;
     z) A=(--axis 0,0,1 --offset 0,4,0 --gaps -4,-2,-1,0,1,2,4) ;;
+    approach) A=(--axis 0,1,0 --gaps 5,2,1,0.5,0) ;;
     turn) A=(--poses "0,4,0,-3;0,4,0,-1.5;0,4,0,0;0,4,0,1.5;0,4,0,3") ;;
     test*) A=(--poses "$TEST") ;;
   esac

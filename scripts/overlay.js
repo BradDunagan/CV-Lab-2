@@ -363,11 +363,13 @@ for (const [, features] of slots) {
   }
 }
 // And tracked pairs, the same way: the line carried in and the edge fitted
-// beside it, where often nothing was detected at all.
+// beside it, where often nothing was detected at all. An ambiguous track has
+// no edge of its own; both of its hypotheses' are drawn.
 for (const [, features] of slots) {
   for (const f of features) {
     if (f.type !== 'edge-track') continue;
-    for (const e of [f.still, f.moving]) line(canvas, P(e.x0), P(e.y0), P(e.x1), P(e.y1), COLOURS.pair);
+    const moving = f.moving ? [f.moving] : (f.hypotheses ?? []).map((h) => h.moving);
+    for (const e of [f.still, ...moving].filter(Boolean)) line(canvas, P(e.x0), P(e.y0), P(e.x1), P(e.y1), COLOURS.pair);
   }
 }
 

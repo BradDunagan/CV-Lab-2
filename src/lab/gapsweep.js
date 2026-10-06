@@ -375,8 +375,10 @@ function gapRows(input, shot, parts, options = {}) {
         ...base,
         trueGapPx: contact ? 0 : null,
         pairAngle: deg === null ? null : ((deg % 180) + 180) % 180,
-        tracked: { gapPx: t.gap, endsPx: null, errorPx: contact ? t.gap : null, movingOffsetPx: null,
-          targetOffsetPx: null, gapSigma: t.gapSigma, rms: t.rms, stripLevel: t.stripLevel },
+        tracked: { gapPx: t.gap, endsPx: null, errorPx: contact && t.gap !== null ? t.gap : null, movingOffsetPx: null,
+          targetOffsetPx: null, gapSigma: t.gapSigma, rms: t.rms, stripLevel: t.stripLevel,
+          ...(t.model === 'ambiguous' ? { ambiguous: true, hypotheses: t.hypotheses.map((h) => ({ model: h.model,
+            gapPx: h.gap, endsPx: null, errorPx: contact ? h.gap : null, gapSigma: h.gapSigma })) } : {}) },
         pair: k + 1,
         reason,
       };
@@ -570,7 +572,9 @@ function trackedReading(tracks, pair, opts) {
   let best = null;
   for (const record of tracks) {
     if (record.type !== 'edge-track') continue;
-    const still = line(record.still), moving = line(record.moving);
+    const still = line(record.still);
+    // An ambiguous record has no moving line of its own, only its hypotheses'.
+    const moving = line(record.moving ?? record.hypotheses?.[0]?.moving);
     if (!still || !moving || angleBetween(still, tb) > opts.maxAngle) continue;
     const off = Math.abs(dot(sub(T.at, still.p0), still.n));
     const along = dot(sub(T.at, still.p0), still.u);
@@ -578,6 +582,20 @@ function trackedReading(tracks, pair, opts) {
     if (!best || off < best.off) best = { off, record, still, moving };
   }
   if (!best) return null;
+  if (best.record.model === 'ambiguous') {
+    /*
+     * No gap: a strip and one edge fit about as well. Both are read as a gap
+     * would be, and kept apart; whatever reads gapPx sees no reading.
+     */
+    const hypotheses = best.record.hypotheses.map((h) => {
+      const m = line(h.moving);
+      const r = m && measureAt(m, best.still, T);
+      return r ? { model: h.model, gapPx: r.gap, endsPx: readAtPoints(m, best.still, T, endPoints(T), opts.reach),
+        errorPx: r.gap - T.gap, gapSigma: h.gapSigma } : null;
+    }).filter(Boolean);
+    return { gapPx: null, endsPx: null, errorPx: null, movingOffsetPx: null, targetOffsetPx: null, gapSigma: null,
+      rms: null, strip: null, stripLevel: best.record.stripLevel, ambiguous: true, hypotheses };
+  }
   const r = measureAt(best.moving, best.still, T);
   if (!r) return null;
   return {

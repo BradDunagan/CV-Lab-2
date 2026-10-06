@@ -1828,6 +1828,38 @@ mm and 0.033 degrees to **0.077 / 0.050 / 0.055 and 0.033**; four views are
 unchanged. A tighter limit (3, then 2) refuses 16, then 46, of the 330, and
 the means hardly move. The sequences already scaled theirs correctly.
 
+#### A twenty-first: under a third of a pixel, two readings and a prior
+
+With the pooled edge held, the approach (`stack-2g-approach`, 5 mm down to
+contact) reads every view's pairs down to about 0.4 px: 0.41 as 0.40, 0.33
+as 0.36. Below that `trackPair` gave nothing, on purpose: between a strip
+and one edge the fit ratio is 1.0 to 1.2, a real 0.3 px gap and a 0.4 px
+overhang look alike, and a reading that may be half a pixel off either way
+is not one. Six readings of the approach fell there: 0.17 to 0.34 px at
+the 50-degree views, and contact in two of them.
+
+One frame cannot settle it. A sequence can: the pose carried from the last
+frame predicts each gap, and the two readings are far apart. So in that
+zone `trackPair` now returns `model: 'ambiguous'`, no gap, and both
+readings as `hypotheses`, each with its gap and moving line; gap-sweep's row
+carries them under `tracked.hypotheses` with `gapPx` null, so anything that
+reads a gap still sees none. On the approach:
+
+| view, pair | true | strip | one edge |
+|---|---|---|---|
+| 35/50, 1 at 0.5 mm | 0.31 | 0.30 | −0.46 |
+| 35/50, 2 at 0.5 mm | 0.20 | 0.23 | −0.39 |
+| 60/50, 1 at 1 mm | 0.34 | 0.36 | −0.41 |
+| 60/50, 1 at 0.5 mm | 0.17 | 0.20 | −0.30 |
+| 35/50, 2 at contact | 0 | 0.06 | −0.11 |
+| 60/50, 1 at contact | 0 | 0.03 | −0.04 |
+
+The strip is the truth every time, to 0.06 px, and the other reading is 0.5
+to 0.8 px away until contact, where both are within 0.11 of zero. A prior
+good to 0.1 px separates them; `npm run servo` takes the hypothesis its
+prior predicts when the other is at least three predicted sigmas further
+off, and otherwise neither. The overlay draws both hypotheses' edges.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
