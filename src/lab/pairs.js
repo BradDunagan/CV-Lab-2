@@ -1062,21 +1062,40 @@ function trackPair(raster, carried, options = {}) {
     ux: l.ux, uy: l.uy, nx: -l.uy, ny: l.ux, half: l.len / 2,
   };
   const side = (carried.toward[0] - frame.ox) * frame.nx + (carried.toward[1] - frame.oy) * frame.ny >= 0 ? 1 : -1;
-  const edgesAt = (g) => (side > 0 ? [{ c: 0, m: 0 }, { c: g, m: 0 }] : [{ c: -g, m: 0 }, { c: 0, m: 0 }]);
+  const edgesAt = (g, m = 0) => (side > 0 ? [{ c: 0, m: 0 }, { c: g, m }] : [{ c: -g, m }, { c: 0, m: 0 }]);
+  /*
+   * Where the fits start: parallel to the line at several widths, and at
+   * the guessed width turned either way. A part turned far enough for its
+   * edge to cross the still one sits in a different minimum from the
+   * parallel starts': from them, a strip 0.56 px wide fitted a true 1.25
+   * whose ends were -2.0 and +4.5, no better than one edge.
+   */
+  const starts = [...[0.25, 0.5, 1, 2, opts.guess].filter((g) => g > 0).map((g) => [g, 0]),
+    ...(opts.guess > 0 ? [-0.15, -0.075, 0.075, 0.15].map((m) => [opts.guess, m]) : [])];
   // One set of pixels for every start, and for the single edge below: wide
   // enough for the widest strip on the moving side. The band's own `pad`
   // reaches an overhang of a few pixels on the other; reaching further pulled
   // in the still part's next edge, and the two-edge fit failed on it.
   const samples = bandSamples(raster, { ...frame, edges: edgesAt(Math.max(opts.guess + 1.5, 3)) }, opts);
   const still = side > 0 ? 0 : 1;
+  /*
+   * A two-edge fit whose moving edge is past the still one along the whole
+   * band has a strip nowhere: under occlusion that IS the one-edge model,
+   * with a still edge and a strip level that touch no pixel. It is not a
+   * reading of a strip, and is left to the one-edge fit below.
+   */
+  const open = (f) => {
+    const [ms, ss] = [f.edges[1 - still], f.edges[still]];
+    const gap = side * (ms.c - ss.c), tilt = Math.abs(ms.m - ss.m) * frame.half;
+    return gap + tilt > 0;
+  };
   let best = null;
-  for (const g of [0.25, 0.5, 1, 2, opts.guess]) {
-    if (!(g > 0)) continue;
-    const fit = fitBand(samples, { ...frame, edges: edgesAt(g) }, {
+  for (const [g, m] of starts) {
+    const fit = fitBand(samples, { ...frame, edges: edgesAt(g, m) }, {
       aperture: carried.aperture, heldStrip: fitStrip ? null : carried.stripLevel,
       slopedLevels: opts.levelSlope === 'fit', heldEdges: [still], profile: opts.profile, occluder: 1 - still,
     });
-    if (fit && (!best || fit.rms < best.rms)) best = fit;
+    if (fit && open(fit) && (!best || fit.rms < best.rms)) best = fit;
   }
   /*
    * The same pixels as ONE edge beside the line, free. Where the two parts'
@@ -1110,13 +1129,12 @@ function trackPair(raster, carried, options = {}) {
    * finds nothing the one edge does not (1.00 on the stack, every time).
    */
   let free = null;
-  for (const g of [0.25, 0.5, 1, 2, opts.guess]) {
-    if (!(g > 0)) continue;
-    const f = fitBand(samples, { ...frame, edges: edgesAt(g) }, {
+  for (const [g, m] of starts) {
+    const f = fitBand(samples, { ...frame, edges: edgesAt(g, m) }, {
       aperture: carried.aperture, heldStrip: fitStrip ? null : carried.stripLevel,
       slopedLevels: opts.levelSlope === 'fit', profile: opts.profile, occluder: 1 - still,
     });
-    if (f && (!free || f.rms < free.rms)) free = f;
+    if (f && open(f) && (!free || f.rms < free.rms)) free = f;
   }
   const ratio = best && lone && best.rms > 0 ? lone.rms / best.rms : null;
   const freeRatio = free && lone && free.rms > 0 ? lone.rms / free.rms : null;
