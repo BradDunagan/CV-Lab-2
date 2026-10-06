@@ -1755,6 +1755,47 @@ everything, **no truth is as good as truth.**
   from render to render and from pose to pose: the side pair's narrow-gap
   ledge (the seventeenth).
 
+#### A nineteenth: the ledge is one-sided, so calibrate it as one
+
+Under the pooled calibration the side pair's slope with x is steep in every
+view, not only at 50 degrees: 3% at 20, 5-6% at 50. Split into its edges
+along the x sweep, the held still edge is a constant (0.10 to 0.21 px a view,
+which the calibration absorbs) and the error is the MOVING edge's: −0.03 to
++0.07 px at flush and overhanging, then +0.04 to +0.14, +0.12 to +0.32 and
++0.19 to +0.36 px at 1, 2 and 4 mm slid back. It is the fifteenth again, beside the other
+edge: slid back past flush, the base's top face shows inside the gap, in the
+top cube's soft shadow, and the ramp moves the top cube's fitted edge. It is
+not the narrow-gap case the seventeenth guessed; it is every slid-back frame.
+
+An error on one side of flush only, fitted with one line through both, is a
+steep line, wrong at both ends. **`--calibrate hinged`** is the joint fit
+with two more columns per reading -- min(x, 0) and min(z, 0) -- so each
+reading gets a second slope that applies only below zero, measured the same
+way, with no truth. `solveHinged` (src/lab/position.js) solves the piecewise-
+linear model exactly on a side and re-solves until no axis changes side.
+
+With the hinge, the side pair's slope above zero matches the truth's to 0.5%
+at 20 degrees and 1.5% at 50 (it was 3-6% steep), the hinge is −0.03 to
+−0.065 px per mm on every side-pair reading, and the front pair at 60/50
+gets a z hinge of +0.07 to +0.10, its own milder ledge. Everything else is
+under 0.02. Test poses, three renders, no truth, x / y / z mm and turn
+degrees:
+
+| calibration | ten sets | four views | four views, x bias / scatter |
+|---|---|---|---|
+| joint | 0.095 / 0.035 / 0.057 / 0.033 | 0.081 / 0.023 / 0.042 / 0.029 | 0.077 / 0.030 |
+| **hinged** | **0.074 / 0.035 / 0.052 / 0.032** | **0.051 / 0.023 / 0.035 / 0.027** | 0.045 / 0.032 |
+
+x's repeated error falls from 0.077 to 0.045 mm, near its noise (0.032).
+
+**Corners were the other idea for x, and are not worth adding.** Over the
+1,402 corners the test renders matched to the truth, the median distance is
+0.31 px, quartiles 0.12 and 0.73: ten times an edge-pair reading's error. A
+corner is also an absolute image position, which a camera that moves or a
+lens model that is off shifts, where a gap is a difference that cancels
+both. Weighted for what they are, they would not move a solve the edge pairs
+already make to 0.05 mm.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

@@ -11,7 +11,7 @@
  */
 
 const assert = require('node:assert/strict');
-const { solvePosition } = require('../src/lab/position');
+const { solvePosition, solveHinged } = require('../src/lab/position');
 
 let failures = 0;
 function test(name, fn) {
@@ -177,6 +177,38 @@ test('no readings at all is an answer too', () => {
   const r = solvePosition([]);
   assert.equal(r.determined, false);
   assert.match(r.reason, /no readings/);
+});
+
+/*
+ * Hinged readings: a second slope below zero on x and z. Made from the hinged
+ * model on every combination of sides, the displacement must come back
+ * exactly -- whichever side the first, unhinged solve lands on.
+ */
+const hinged = (jacobian, hinge, reference, d) => ({
+  jacobian, hinge, reference,
+  measured: reference + jacobian.reduce((s, j, a) => s + j * d[a] + hinge[a] * Math.min(d[a], 0), 0),
+});
+const HINGED = [
+  [[0, 1.2, 0.4], [0, 0, 0.05]], [[0.35, 1.0, 0], [-0.06, 0, 0]],
+  [[0, 0.7, 0.9], [0, 0, 0.08]], [[0.8, 0.6, 0], [-0.05, 0, 0]],
+  [[0.5, 0.3, -0.6], [0.02, 0, -0.03]],
+];
+
+test('hinged readings give back the displacement on every side of zero', () => {
+  for (const x of [-2.5, -0.01, 0.01, 2]) {
+    for (const z of [-1.5, 0.3]) {
+      const d = [x, 0.7, z];
+      const r = solveHinged(HINGED.map(([j, h], k) => hinged(j, h, 4 + k, d)));
+      assert.ok(r.determined, r.reason);
+      r.d.forEach((v, a) => near(v, d[a], 1e-9, `axis ${a} at x ${x}, z ${z}`));
+    }
+  }
+});
+
+test('with no hinges, solveHinged is solvePosition', () => {
+  const obs = HINGED.map(([j], k) => reading(j, k, D));
+  assert.deepEqual(solveHinged(obs), solvePosition(obs));
+  assert.deepEqual(solveHinged(obs.map((o) => ({ ...o, hinge: [0, 0, 0] }))).d, solvePosition(obs).d);
 });
 
 if (failures > 0) {
