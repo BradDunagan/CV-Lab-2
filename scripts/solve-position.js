@@ -358,6 +358,26 @@ function main() {
   const report = { unknowns, reference, readings: [...readings.values()], sets: [],
     // What each reading was calibrated to, for the carried readings, beside the truth's.
     calibrated: opts.calibrate === 'truth' ? null : [...calibratedFor(carriedPick).values()] };
+  /*
+   * Whether the light is one this can be calibrated under, from the
+   * calibration alone. A reading a straight model does not describe over its
+   * own calibration frames is following something other than the gap: under
+   * stack-4's high light, where a pair reads the top cube's shadow, the
+   * worst readings' RMS about the fit is 0.34 to 0.57 px; under stack-2's it
+   * is at most 0.055, and blur, noise and resampling took it to 0.12. The
+   * solve under that light is 0.6 to 7 mm off and dropping those readings
+   * does not rescue it (design-lab-model.md §5, "A twenty-fourth"), so this
+   * says so rather than trying.
+   */
+  if (opts.calibrate === 'joint' || opts.calibrate === 'hinged') {
+    const BAD_LIGHT_PX = 0.2;
+    const bad = [...calibratedFor(carriedPick).values()].filter((p) => p.calibration?.rms > BAD_LIGHT_PX);
+    if (bad.length > 0) {
+      console.log(`\n  WARNING: ${bad.length} reading(s) are not straight in the pose over their own calibration frames`
+        + ` (RMS over ${BAD_LIGHT_PX} px). The light is likely making a pair read a shadow; no calibration fixes that:`);
+      for (const p of bad) console.log(`    ${p.key.padEnd(40)} ${fmt(p.calibration.rms)} px`);
+    }
+  }
 
   const score = (used, poses, pick) => {
     const errors = unknowns.map(() => []);
