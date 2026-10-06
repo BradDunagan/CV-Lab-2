@@ -169,23 +169,37 @@ function solveHinged(observations, { prior = null, iterations = 10 } = {}) {
  * bilinear q is grad q(d0) . d - q(d0); that is solved as solveHinged solves
  * it, and repeated until the estimate stops moving. The covariance is the
  * last tangent's. Observations with no lift give solveHinged's answer.
+ *
+ * `liftHinge[a]` adds liftHinge[a] * d[liftAxis] * min(d[a], 0): the hinge's
+ * one-sided slope changing with the lift too. The ledge it describes is in
+ * the moving part's soft shadow, and how much of it shows, and how dark,
+ * depends on the height (the twenty-seventh).
  */
 function solveLifted(observations, { prior = null, liftAxis = 1, iterations = 20 } = {}) {
-  if (!observations.some((o) => o.lift?.some((l) => l !== 0))) return solveHinged(observations, { prior });
+  const any = (v) => v?.some((l) => l !== 0);
+  if (!observations.some((o) => any(o.lift) || any(o.liftHinge))) return solveHinged(observations, { prior });
   let d0 = prior ? prior.d.slice() : null;
   let s = null;
   for (let it = 0; it < iterations; it++) {
     const tangent = observations.map((o) => {
-      if (!o.lift || !d0) return o;
+      if ((!o.lift && !o.liftHinge) || !d0) return o;
       const y = d0[liftAxis];
       let q = 0;
       const grad = o.jacobian.map(() => 0);
       for (let a = 0; a < o.jacobian.length; a++) {
-        const l = o.lift[a] ?? 0;
-        if (l === 0) continue;
-        q += l * y * d0[a];
-        grad[a] += l * y;
-        grad[liftAxis] += l * d0[a];
+        const l = o.lift?.[a] ?? 0;
+        if (l !== 0) {
+          q += l * y * d0[a];
+          grad[a] += l * y;
+          grad[liftAxis] += l * d0[a];
+        }
+        // The hinge's own lift term: liftHinge[a] * y * min(d[a], 0).
+        const lh = o.liftHinge?.[a] ?? 0;
+        if (lh !== 0 && d0[a] < 0) {
+          q += lh * y * d0[a];
+          grad[a] += lh * y;
+          grad[liftAxis] += lh * d0[a];
+        }
       }
       return { ...o, jacobian: o.jacobian.map((j, a) => j + grad[a]), reference: o.reference - q };
     });
@@ -201,7 +215,8 @@ function solveLifted(observations, { prior = null, liftAxis = 1, iterations = 20
   for (const o of obs) {
     let m = o.reference;
     for (let a = 0; a < o.jacobian.length; a++) {
-      m += o.jacobian[a] * d0[a] + (o.hinge?.[a] ?? 0) * Math.min(d0[a], 0) + (o.lift?.[a] ?? 0) * d0[liftAxis] * d0[a];
+      m += o.jacobian[a] * d0[a] + (o.hinge?.[a] ?? 0) * Math.min(d0[a], 0) + (o.lift?.[a] ?? 0) * d0[liftAxis] * d0[a]
+        + (o.liftHinge?.[a] ?? 0) * d0[liftAxis] * Math.min(d0[a], 0);
     }
     sse += (o.measured - m) ** 2;
   }

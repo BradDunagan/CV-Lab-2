@@ -253,7 +253,8 @@ function main() {
    * k/|r| of its weight. Five rounds from the plain solve.
    */
   const modelAt = (o, d) => o.reference + o.jacobian.reduce((acc, j, a) => acc + j * d[a]
-    + (o.hinge?.[a] ?? 0) * Math.min(d[a], 0) + (o.lift?.[a] ?? 0) * d[LIFT] * d[a], 0);
+    + (o.hinge?.[a] ?? 0) * Math.min(d[a], 0) + (o.lift?.[a] ?? 0) * d[LIFT] * d[a]
+    + (o.liftHinge?.[a] ?? 0) * d[LIFT] * Math.min(d[a], 0), 0);
   const robustly = (obs, prior = null) => {
     let s = solveLifted(obs, { prior, liftAxis: LIFT });
     if (!(opts.robust > 0)) return s;
@@ -332,8 +333,10 @@ function main() {
         const hinged = opts.calibrate === 'hinged' ? unknowns.map((u) => u === 'x' || u === 'z') : unknowns.map(() => false);
         // Lifted: one more column per other axis, its displacement times the lift's.
         const liftOn = unknowns.map((u, a) => lifted && a !== LIFT);
+        // And the hinges' own lift terms, when both.
         const columns = (d) => [1, ...d, ...d.filter((_, a) => hinged[a]).map((x) => Math.min(x, 0)),
-          ...d.filter((_, a) => liftOn[a]).map((x) => x * d[LIFT])];
+          ...d.filter((_, a) => liftOn[a]).map((x) => x * d[LIFT]),
+          ...d.filter((_, a) => lifted && hinged[a]).map((x) => Math.min(x, 0) * d[LIFT])];
         const fit = (pts) => solvePosition(pts.map(([d, v]) => ({ jacobian: columns(d), reference: 0, measured: v })));
         let f = fit(points);
         /*
@@ -361,8 +364,10 @@ function main() {
         let h = 1 + unknowns.length;
         const hinge = hinged.map((on) => (on ? f.d[h++] : 0));
         const lift = liftOn.map((on) => (on ? f.d[h++] : 0));
+        const liftHinge = hinged.map((on) => (lifted && on ? f.d[h++] : 0));
         out.set(key, { ...truth, reference: f.d[0], jacobian: f.d.slice(1, 1 + unknowns.length),
           ...(hinged.some(Boolean) ? { hinge } : {}), ...(lifted ? { lift } : {}),
+          ...(lifted && hinged.some(Boolean) ? { liftHinge } : {}),
           calibration: { frames: points.length, kept: kept.length, rms: fitRms } });
       } else if (opts.calibrate === 'reference') {
         const at = unknowns.flatMap((u) => valuesOf(u).filter(([x]) => x === 0).map(([, v]) => v));
@@ -477,7 +482,7 @@ function main() {
       const obs = used.map((p) => {
         const r = pose.readings.get(p.key);
         const sigma = sigmaOf(pick, r);
-        return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, reference: p.reference, measured: r ? pick(r) : null,
+        return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, liftHinge: p.liftHinge, reference: p.reference, measured: r ? pick(r) : null,
           weight: opts.weights === 'sigma' && sigma > 0 ? 1 / (sigma * sigma) : 1 };
       });
       const s = robustly(obs);
@@ -626,7 +631,7 @@ function main() {
         const obs = used.map((p) => {
           const r = frame.readings.get(p.key);
           const [value, sigma] = r ? pick(r) : [null, null];
-          return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, reference: p.reference, measured: value, weight: weightOf(sigma) };
+          return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, liftHinge: p.liftHinge, reference: p.reference, measured: value, weight: weightOf(sigma) };
         });
         /*
          * Carried: the last solution moved by the commanded move, its
@@ -707,7 +712,8 @@ function main() {
       sweeps: Object.fromEntries(unknowns.map((u) => [u, opts.dirs[u]])),
       medianSigma: sigmas.length ? sigmas[(sigmas.length - 1) >> 1] : null,
       ...(lifted ? { lift: opts.lift } : {}),
-      calibrated: [...calibratedFor(carriedPick).values()].map(({ key, view, jacobian, hinge, lift, reference: at }) => ({ key, view, jacobian, ...(hinge ? { hinge } : {}), ...(lift ? { lift } : {}), reference: at })),
+      calibrated: [...calibratedFor(carriedPick).values()].map(({ key, view, jacobian, hinge, lift, liftHinge, reference: at }) => ({
+        key, view, jacobian, ...(hinge ? { hinge } : {}), ...(lift ? { lift } : {}), ...(liftHinge ? { liftHinge } : {}), reference: at })),
     };
     fs.writeFileSync(path.resolve(ROOT, opts.saveCalibration), `${JSON.stringify(saved, null, 2)}\n`);
     console.log(`\n${opts.saveCalibration}`);

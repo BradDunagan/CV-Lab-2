@@ -130,7 +130,8 @@ const viewOf = (r) => `yaw ${r.yaw}, elev ${r.elevation}`;
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[(s.length - 1) >> 1] : null; };
 /** A calibrated reading's model of the displacement d: slopes, hinges, and the lift's terms (y is d[1]). */
 const modelOf = (p) => (d) => p.reference + p.jacobian.reduce((acc, j, a) => acc + j * d[a]
-  + (p.hinge?.[a] ?? 0) * Math.min(d[a], 0) + (p.lift?.[a] ?? 0) * d[1] * d[a], 0);
+  + (p.hinge?.[a] ?? 0) * Math.min(d[a], 0) + (p.lift?.[a] ?? 0) * d[1] * d[a]
+  + (p.liftHinge?.[a] ?? 0) * d[1] * Math.min(d[a], 0), 0);
 
 /**
  * Each view's pairs by the angle they run at in the image, from the sweeps
@@ -244,7 +245,7 @@ function main() {
       : readingsOf(gapSweep(opts, stepName, truth), angles);
     const obs = used.map((p) => {
       const v = reads.get(p.key);
-      return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, reference: p.reference, measured: v ? v[0] : null, weight: weightOf(v?.[1]) };
+      return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, liftHinge: p.liftHinge, reference: p.reference, measured: v ? v[0] : null, weight: weightOf(v?.[1]) };
     });
     const n = () => obs.filter((o) => Number.isFinite(o.measured)).length;
     // The prior: the last estimate moved by the move commanded since, or the
