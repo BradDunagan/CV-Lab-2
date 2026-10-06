@@ -127,4 +127,33 @@ function solvePosition(observations, { prior = null } = {}) {
   return { determined: true, d, sigma, covariance, residualRms: n ? Math.sqrt(sse / n) : null, observations: n, reason: null };
 }
 
-module.exports = { solvePosition };
+/**
+ * The same, for readings that bend at zero: `hinge[a]` adds hinge[a] *
+ * min(d[a], 0) to an observation's model, a slope that applies on one side
+ * only. A ledge does that -- slid back past flush, the still part's face
+ * shows beside the moving edge, in the moving part's soft shadow, and moves
+ * that edge; slid the other way there is no ledge (design-lab-model.md §5,
+ * "A nineteenth").
+ *
+ * Piecewise linear, so it is solved exactly on a side: first ignoring the
+ * hinges (or on the prior's side), then on the side each axis came out on,
+ * until no axis changes side. Observations with no hinge give solvePosition's
+ * answer unchanged.
+ */
+function solveHinged(observations, { prior = null, iterations = 10 } = {}) {
+  if (!observations.some((o) => o.hinge?.some((h) => h !== 0))) return solvePosition(observations, { prior });
+  let side = prior ? prior.d.map((v) => v < 0) : null;
+  let s = null;
+  for (let it = 0; it < iterations; it++) {
+    const lin = observations.map((o) => (!o.hinge || !side ? o
+      : { ...o, jacobian: o.jacobian.map((j, a) => j + (side[a] ? o.hinge[a] ?? 0 : 0)) }));
+    s = solvePosition(lin, { prior });
+    if (!s.determined) return s;
+    const next = s.d.map((v) => v < 0);
+    if (side && next.every((v, a) => v === side[a])) return s;
+    side = next;
+  }
+  return s;
+}
+
+module.exports = { solvePosition, solveHinged };

@@ -30,7 +30,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { solvePosition } = require('../src/lab/position');
+const { solvePosition, solveHinged } = require('../src/lab/position');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -73,6 +73,11 @@ CV-Lab relative position -- several gap readings solved for one displacement
                         errors of these sizes drawn at random (seeded); each
                         sequence is run this many times      (default 20)
   --out <file>          also write everything as JSON
+  --save-calibration <file>
+                        write the carried readings' calibration -- each
+                        reading's reference and Jacobian, as --calibrate made
+                        them -- for a closed loop to solve frames against
+                        (npm run servo)
   --calibrate <from>    where each reading's reference and Jacobian come from:
                           truth      both from the renderer's truth
                           reference  the reference from what was READ, in the
@@ -87,6 +92,10 @@ CV-Lab relative position -- several gap readings solved for one displacement
                                      least squares over every calibration
                                      frame of every sweep, with readings more
                                      than 3 MADs off dropped before a refit
+                          hinged     joint, and a second slope in x and in z
+                                     that applies only below zero: a ledge
+                                     beside the moving edge appears on one
+                                     side of flush only
                         A reading that cannot be calibrated is dropped (default truth)
   --max-views <n>       the largest set of views to combine   (default 3)
   --max-sigma <n>       a pose is not solved from readings that would turn one
@@ -96,7 +105,7 @@ CV-Lab relative position -- several gap readings solved for one displacement
 
 function parseArgs(argv) {
   const opts = { dirs: {}, test: null, readings: 'both', weights: 'sigma', out: null, maxViews: 3, maxSigma: 10,
-    calibrate: 'truth', sequences: [], readingSigma: 0.1, motionSigma: 0.1, turnSigma: 0.1, startSigma: 1, trials: 20 };
+    calibrate: 'truth', saveCalibration: null, sequences: [], readingSigma: 0.1, motionSigma: 0.1, turnSigma: 0.1, startSigma: 1, trials: 20 };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (['--x', '--y', '--z', '--turn'].includes(arg)) opts.dirs[arg.slice(2)] = argv[++i];
@@ -111,6 +120,7 @@ function parseArgs(argv) {
     else if (arg === '--readings') opts.readings = argv[++i];
     else if (arg === '--weights') opts.weights = argv[++i];
     else if (arg === '--out') opts.out = argv[++i];
+    else if (arg === '--save-calibration') opts.saveCalibration = argv[++i];
     else if (arg === '--max-views') opts.maxViews = Number(argv[++i]);
     else if (arg === '--max-sigma') opts.maxSigma = Number(argv[++i]);
     else if (arg === '--help' || arg === '-h') opts.help = true;
@@ -118,7 +128,7 @@ function parseArgs(argv) {
   }
   if (!['mid', 'ends', 'both'].includes(opts.readings)) throw new Error('--readings is mid, ends or both');
   if (!['none', 'sigma'].includes(opts.weights)) throw new Error('--weights is none or sigma');
-  if (!['truth', 'reference', 'full', 'joint'].includes(opts.calibrate)) throw new Error('--calibrate is truth, reference, full or joint');
+  if (!['truth', 'reference', 'full', 'joint', 'hinged'].includes(opts.calibrate)) throw new Error('--calibrate is truth, reference, full, joint or hinged');
   return opts;
 }
 
@@ -245,7 +255,7 @@ function main() {
       const valuesOf = (u) => rowsOf(u).filter((r) => keyOf(r, point) === key)
         .map((r) => [stepOf(u, r), pick(readingsOf(r)[point])])
         .filter(([, v]) => v !== null && v !== undefined && Number.isFinite(v));
-      if (opts.calibrate === 'joint') {
+      if (opts.calibrate === 'joint' || opts.calibrate === 'hinged') {
         /*
          * reading = reference + J . d, over every frame of every sweep where
          * this reading was made: one fit, so a frame's error pulls on every
@@ -257,10 +267,14 @@ function main() {
         const points = unknowns.flatMap((u) => rowsOf(u).filter((r) => keyOf(r, point) === key)
           .map((r) => [displacementOf(u, r), pick(readingsOf(r)[point])]))
           .filter(([, v]) => v !== null && v !== undefined && Number.isFinite(v));
-        const fit = (pts) => solvePosition(pts.map(([d, v]) => ({ jacobian: [1, ...d], reference: 0, measured: v })));
+        // Hinged: one more column per lateral axis, the displacement where
+        // it is below zero and nothing where it is not.
+        const hinged = opts.calibrate === 'hinged' ? unknowns.map((u) => u === 'x' || u === 'z') : unknowns.map(() => false);
+        const columns = (d) => [1, ...d, ...d.filter((_, a) => hinged[a]).map((x) => Math.min(x, 0))];
+        const fit = (pts) => solvePosition(pts.map(([d, v]) => ({ jacobian: columns(d), reference: 0, measured: v })));
         let f = fit(points);
         if (!f.determined) continue;
-        const resid = (pts, q) => pts.map(([d, v]) => v - q[0] - d.reduce((acc, x, a) => acc + x * q[a + 1], 0));
+        const resid = (pts, q) => pts.map(([d, v]) => v - columns(d).reduce((acc, x, a) => acc + x * q[a], 0));
         const r0 = resid(points, f.d).map(Math.abs).sort((a, b) => a - b);
         const cut = Math.max(0.05, 3 * 1.4826 * r0[(r0.length - 1) >> 1]);
         const kept = points.filter((_, i) => Math.abs(resid([points[i]], f.d)[0]) <= cut);
@@ -274,7 +288,10 @@ function main() {
          */
         const rk = resid(kept, f.d);
         const fitRms = Math.sqrt(rk.reduce((acc, x) => acc + x * x, 0) / Math.max(1, kept.length - f.d.length));
-        out.set(key, { ...truth, reference: f.d[0], jacobian: f.d.slice(1),
+        let h = 1 + unknowns.length;
+        const hinge = hinged.map((on) => (on ? f.d[h++] : 0));
+        out.set(key, { ...truth, reference: f.d[0], jacobian: f.d.slice(1, 1 + unknowns.length),
+          ...(hinged.some(Boolean) ? { hinge } : {}),
           calibration: { frames: points.length, kept: kept.length, rms: fitRms } });
       } else if (opts.calibrate === 'reference') {
         const at = unknowns.flatMap((u) => valuesOf(u).filter(([x]) => x === 0).map(([, v]) => v));
@@ -356,10 +373,10 @@ function main() {
       const obs = used.map((p) => {
         const r = pose.readings.get(p.key);
         const sigma = sigmaOf(pick, r);
-        return { jacobian: p.jacobian, reference: p.reference, measured: r ? pick(r) : null,
+        return { jacobian: p.jacobian, hinge: p.hinge, reference: p.reference, measured: r ? pick(r) : null,
           weight: opts.weights === 'sigma' && sigma > 0 ? 1 / (sigma * sigma) : 1 };
       });
-      const s = solvePosition(obs);
+      const s = solveHinged(obs);
       /*
        * A pose is solved from the readings it HAS, and one that lost a few
        * can be left with readings that barely separate the unknowns. The
@@ -489,7 +506,7 @@ function main() {
         const obs = used.map((p) => {
           const r = frame.readings.get(p.key);
           const [value, sigma] = r ? pick(r) : [null, null];
-          return { jacobian: p.jacobian, reference: p.reference, measured: value, weight: weightOf(sigma) };
+          return { jacobian: p.jacobian, hinge: p.hinge, reference: p.reference, measured: value, weight: weightOf(sigma) };
         });
         /*
          * Carried: the last solution moved by the commanded move, its
@@ -504,7 +521,7 @@ function main() {
               covariance: state.covariance.map((row, a) => row.map((x, b) => x + (a === b ? motion[a] : 0))) }
             : { d: believed.slice(), covariance: diagonal(k === 0 ? start : start.map((v, a) => v + k * motion[a])) };
         }
-        const s = solvePosition(obs, { prior });
+        const s = solveHinged(obs, { prior });
         if (!s.determined || (mode === 'alone' && Math.max(...s.sigma) > opts.maxSigma * opts.readingSigma)) {
           state = null;
           return;
@@ -554,6 +571,25 @@ function main() {
       entry.sets.push(result);
     }
     report.sequences.push(entry);
+  }
+
+  if (opts.saveCalibration) {
+    /*
+     * What a closed loop needs to solve a frame it has not seen: per reading,
+     * the reference and Jacobian of the carried mode, and the median gapSigma
+     * of the calibration frames, so that a frame's readings can be weighed
+     * absolutely against a carried pose as --sequence does.
+     */
+    const sigmas = unknowns.flatMap((u) => rowsOf(u)).flatMap((r) => [r.tracked?.gapSigma, r.refit?.gapSigma])
+      .filter((v) => v > 0).sort((a, b) => a - b);
+    const saved = {
+      unknowns, reference, calibrate: opts.calibrate, readings: opts.readings,
+      sweeps: Object.fromEntries(unknowns.map((u) => [u, opts.dirs[u]])),
+      medianSigma: sigmas.length ? sigmas[(sigmas.length - 1) >> 1] : null,
+      calibrated: [...calibratedFor(carriedPick).values()].map(({ key, view, jacobian, hinge, reference: at }) => ({ key, view, jacobian, ...(hinge ? { hinge } : {}), reference: at })),
+    };
+    fs.writeFileSync(path.resolve(ROOT, opts.saveCalibration), `${JSON.stringify(saved, null, 2)}\n`);
+    console.log(`\n${opts.saveCalibration}`);
   }
 
   if (opts.out) {
