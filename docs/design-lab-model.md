@@ -2129,6 +2129,52 @@ lone segments' median; the default stays the box. What a blurred camera needs
 next is the ledge read under blur, and a way to measure the aperture on the
 edges that matter. (`notes/brads-notes/2026-10-06-aperture/`.)
 
+#### A twenty-sixth: lens distortion, without the resampling blur
+
+The twenty-fourth's distortion was bilinear resampling of a 512 px render,
+and the resampling's blur (aperture 1.35 -> 2.0 px) was all it measured.
+Now every stack-2 sweep and test pose was rendered at 1024 px, distorted at
+that size with Catmull-Rom interpolation (which adds no spread to second
+order), and averaged 2 x 2 down to 512 (`npm run degrade -- --downsample 2
+--interp cubic`). The control is the same renders shrunk with no
+distortion. Measured aperture: 1.11-1.14 px for the control, 1.19-1.22 at
+k1 -0.02 and 1.21-1.32 at -0.08, against 2.0 for bilinear. Test poses, no
+truth, four views (ten sets):
+
+| k1 | hinged | joint |
+|---|---|---|
+| 0 (control) | 0.067 / 0.033 / 0.050 / 0.024 (0.088 / 0.049 / 0.072 / 0.031) | 0.089 / 0.024 / 0.033 / 0.031 |
+| -0.02 | 0.065 / 0.030 / 0.048 / 0.030 (0.090 / 0.050 / 0.071 / 0.033) | 0.088 / 0.022 / 0.034 / 0.034 |
+| -0.08 | 0.078 / 0.031 / 0.047 / 0.028 (0.102 / 0.050 / 0.064 / 0.031) | 0.090 / 0.024 / 0.035 / 0.031 |
+| -0.3 | 0.122 / 0.103 / 0.194 / 0.163 (0.117 / 0.090 / 0.167 / 0.154) | 0.147 / 0.056 / 0.115 / 0.103 |
+
+- **Up to k1 -0.08 the calibration absorbs it.** The stack's pairs sit 0.14
+  to 0.23 of the half-width from the centre; at -0.08 that moves them 0.06
+  to 0.25 px and scales their gaps by about 1% -- 0.05 px on a 5 px gap,
+  nearly the same in every pose of a view, which is what a calibration from
+  the readings takes out. Their RMS about their own calibration does not
+  move (median 0.014-0.016 px).
+- **At -0.3 it does not**: two to six times the error, the turn worst. The
+  scale now changes along a pair, and the turn is read off its ends.
+- So the lab needs no undistort step for a mild lens and parts near the
+  middle of the picture. A strong lens, or parts near the edge of it, want
+  the lens calibrated and the image (or the edges) undistorted before
+  anything is read; that is the standard camera calibration and was not
+  built here.
+
+The hinged calibration also dropped whole readings here -- 4 of 24 in the
+control, 6 at -0.08 -- where a reading's frames could not pin its
+one-sided slope, every frame on one side of flush having lost the pair. It
+now falls back to the joint fit for that reading instead of dropping it,
+which is the ten-set column above (it was 0.100 / 0.066 / 0.112 for the
+control). Stack-2's own runs are unchanged by it.
+
+Not explained: the control, sharper than a native 512 px render (aperture
+1.12 against 1.35) and less noisy (four times the samples a pixel), does not
+solve better -- y and z 0.033 / 0.050 mm against 0.019-0.023 / 0.021-0.023
+over three native renders. It is the right control for distortion, which is
+all it is used for here. (`notes/brads-notes/2026-10-06-distort/`.)
+
 #### A twenty-ninth: past seven degrees, the edges cross
 
 Turned past about five degrees, the stack's pairs stop being parallel in the

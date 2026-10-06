@@ -336,6 +336,13 @@ function main() {
           ...d.filter((_, a) => liftOn[a]).map((x) => x * d[LIFT])];
         const fit = (pts) => solvePosition(pts.map(([d, v]) => ({ jacobian: columns(d), reference: 0, measured: v })));
         let f = fit(points);
+        /*
+         * A reading whose frames do not pin a one-sided slope -- every frame
+         * on one side of flush lost -- is not dropped: it is fitted without
+         * hinges, as joint would. Dropped, it took a whole pair of a view out
+         * of the solve (four of 24 readings in one render, six in another).
+         */
+        if (!f.determined && hinged.some(Boolean)) { hinged.fill(false); f = fit(points); }
         if (!f.determined) continue;
         const resid = (pts, q) => pts.map(([d, v]) => v - columns(d).reduce((acc, x, a) => acc + x * q[a], 0));
         const r0 = resid(points, f.d).map(Math.abs).sort((a, b) => a - b);
@@ -422,19 +429,31 @@ function main() {
    * calibration alone. A reading a straight model does not describe over its
    * own calibration frames is following something other than the gap: under
    * stack-4's high light, where a pair reads the top cube's shadow, the
-   * worst readings' RMS about the fit is 0.34 to 0.57 px; under stack-2's it
-   * is at most 0.055, and blur, noise and resampling took it to 0.12. The
-   * solve under that light is 0.6 to 7 mm off and dropping those readings
-   * does not rescue it (design-lab-model.md §5, "A twenty-fourth"), so this
-   * says so rather than trying.
+   * worst readings' RMS about the fit was 0.34 to 0.57 px, against at most
+   * 0.055 under stack-2's (design-lab-model.md §5, "A twenty-fourth").
+   *
+   * With the occluding track (the twenty-ninth) the shadow readings got
+   * straighter and the worst under stack-4 is 0.115 -- the same as stack-2's
+   * light with blur, noise and resampling all applied, 0.118. The MEDIAN
+   * still separates them: 0.018 to 0.035 px under stack-2's light however
+   * degraded, 0.068 under stack-4's. So either says so. Neither sees
+   * stack-3's side light, which is straight (median 0.025) and solves ten
+   * times worse: that takes test poses the robot commands (the thirtieth).
    */
   if (opts.calibrate === 'joint' || opts.calibrate === 'hinged') {
-    const BAD_LIGHT_PX = 0.2;
-    const bad = [...calibratedFor(carriedPick).values()].filter((p) => p.calibration?.rms > BAD_LIGHT_PX);
+    const BAD_LIGHT_PX = 0.2, BAD_LIGHT_MEDIAN_PX = 0.05;
+    const all = [...calibratedFor(carriedPick).values()].filter((p) => Number.isFinite(p.calibration?.rms));
+    const bad = all.filter((p) => p.calibration.rms > BAD_LIGHT_PX);
+    const sorted = all.map((p) => p.calibration.rms).sort((a, b) => a - b);
+    const median = sorted.length ? sorted[(sorted.length - 1) >> 1] : null;
     if (bad.length > 0) {
       console.log(`\n  WARNING: ${bad.length} reading(s) are not straight in the pose over their own calibration frames`
         + ` (RMS over ${BAD_LIGHT_PX} px). The light is likely making a pair read a shadow; no calibration fixes that:`);
       for (const p of bad) console.log(`    ${p.key.padEnd(40)} ${fmt(p.calibration.rms)} px`);
+    }
+    if (median > BAD_LIGHT_MEDIAN_PX) {
+      console.log(`\n  WARNING: the readings' median RMS about their own calibration is ${fmt(median)} px`
+        + ` (over ${BAD_LIGHT_MEDIAN_PX}): under a light that suits them it is 0.02 to 0.035. Likely a shadow is being read.`);
     }
   }
 
