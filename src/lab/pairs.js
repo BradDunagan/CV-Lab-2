@@ -97,6 +97,7 @@ const DEFAULTS = {
   stripLevel: 0,
   aperture: 'fit',  // measured on this image's lone segments; or 'held'
   apertureWidth: 1, // the value held, and the one used when none can be measured
+  profile: 'box',   // a pixel's step: 'box', or 'smooth' -- a box blurred (see below)
   minSigmas: 3,     // a gap under this many gapSigma is not told from none
   ledge: 'detect',  // fitPairs: whether a shadow ramp lies inside the strip; or 'none'
   levelSlope: 'fit', // fitPairs: each level may change along the pair; or 'none'
@@ -137,6 +138,83 @@ function coverage(d, a, b) {
   if (d < a - b) { const x = d + a + b; return (x * x) / (8 * a * b); }
   if (d > b - a) { const x = a + b - d; return 1 - (x * x) / (8 * a * b); }
   return 0.5 + d / (2 * b);
+}
+
+/*
+ * THE SMOOTH PROFILE. A box is right for a pixel and wrong for a lens: an
+ * optic's blur has tails, and 0.8 px of it is what real cameras do. With
+ * `profile: 'smooth'` the projected pixel (a unit square, so a = nMin and
+ * b = nMax) is convolved with a blur made of three equal boxes -- a quadratic
+ * B-spline, the classic stand-in for a Gaussian, and still piecewise
+ * polynomial, so nothing transcendental enters. The aperture keeps its
+ * meaning: the width of the box with the same spread, so a number measured
+ * under one profile is comparable with one measured under the other.
+ * Variance adds: w^2/12 = 1/12 + 3 s^2/12. At w <= 1 there is no blur left
+ * to model, and the profile is the box (design-lab-model.md §5, "A
+ * twenty-fifth").
+ */
+const SMOOTH_MIN = 1.004; // below this the blur is too narrow to be worth its cancellation
+
+/** The pixel side and the blur-box width an aperture `w` stands for. */
+function shapeOf(w, profile) {
+  if (profile !== 'smooth' || !(w > SMOOTH_MIN)) return { p: w, s: 0 };
+  return { p: 1, s: Math.sqrt((w * w - 1) / 3) };
+}
+
+/*
+ * The distribution of a sum of uniform variables, by inclusion-exclusion over
+ * the boxes: F(y) = sum over subsets S of (-1)^|S| (y - sum S)_+^n / (n! prod w).
+ * Evaluated on the lower half only, the upper by symmetry, which keeps the
+ * terms -- and the cancellation between them -- small. A box under 1e-3 px is
+ * left out: dropping it moves the result by O(w^2), less than keeping it
+ * costs in cancellation.
+ */
+let termsKey = [], terms = null;
+function termsOf(widths) {
+  if (widths.length === termsKey.length && widths.every((w, i) => w === termsKey[i])) return terms;
+  const ws = widths.filter((w) => w >= 1e-3);
+  const n = ws.length;
+  let W = 0, prod = 1;
+  for (const w of ws) { W += w; prod *= w; }
+  const shifts = [], odds = [];
+  for (let mask = 0; mask < (1 << n); mask++) {
+    let shift = 0, odd = false;
+    for (let i = 0; i < n; i++) if (mask & (1 << i)) { shift += ws[i]; odd = !odd; }
+    // Only the lower half is ever evaluated.
+    if (shift < W / 2) { shifts.push(shift); odds.push(odd); }
+  }
+  termsKey = widths.slice();
+  terms = { n, W, prod, shifts, odds };
+  return terms;
+}
+function boxSum(x, widths, wantDensity) {
+  const { n, W, prod, shifts, odds } = termsOf(widths);
+  if (x <= -W / 2) return 0;
+  if (x >= W / 2) return wantDensity ? 0 : 1;
+  let y = x + W / 2;
+  const flip = y > W / 2;
+  if (flip) y = W - y;
+  const power = wantDensity ? n - 1 : n;
+  let acc = 0;
+  for (let m = 0; m < shifts.length; m++) {
+    const shift = shifts[m];
+    if (shift >= y) continue;
+    let term = 1;
+    for (let j = 0; j < power; j++) term *= y - shift;
+    acc += odds[m] ? -term : term;
+  }
+  let norm = prod;
+  for (let j = 2; j <= power; j++) norm *= j;
+  const value = acc / norm;
+  return wantDensity ? value : (flip ? 1 - value : value);
+}
+
+/** `coverage`, with a blur of three boxes `s` wide on top when s > 0. */
+function smoothCoverage(d, a, b, s) {
+  return s > 0 ? boxSum(d, [2 * a, 2 * b, s, s, s], false) : coverage(d, a, b);
+}
+function smoothDensity(d, a, b, s) {
+  return s > 0 ? boxSum(d, [2 * a, 2 * b, s, s, s], true) : density(d, a, b);
 }
 
 /** The trapezoid itself: d(coverage)/dd. */
@@ -304,7 +382,7 @@ function bandSamples(raster, frame, opts) {
  * be said about how well the rest are known.
  */
 function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = null, slopedLevels = false,
-  heldEdges = [], maxIterations = MAX_ITERATIONS }) {
+  heldEdges = [], maxIterations = MAX_ITERATIONS, profile = 'box' }) {
   const { t, h, v } = samples;
   const n = v.length;
   const E = frame.edges.length;
@@ -339,7 +417,12 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
   const level = (q, j, tt = 0) => (levelAt[j] < 0 ? heldStrip
     : q[levelAt[j]] + (slopeAt[j] < 0 ? 0 : q[slopeAt[j]] * tt));
   const widthOf = (q) => (fitAperture ? q[APERTURE] : aperture);
-  const reachOf = (q, e, w) => w * nMax + (softAt[e] >= 0 ? q[softAt[e]] : 0);
+  // The pixel's side and the blur's box, for an aperture w.
+  let shapeW = NaN, shape = null;
+  const shapeFor = (w) => { if (w !== shapeW) { shapeW = w; shape = shapeOf(w, profile); } return shape; };
+  const lowOf = (w) => shapeFor(w).p * nMin;
+  const blurOf = (w) => shapeFor(w).s;
+  const reachOf = (q, e, w) => shapeFor(w).p * nMax + (softAt[e] >= 0 ? q[softAt[e]] : 0);
   const cOf = (q, e, w) => (anchorOf[e] < 0 ? q[2 * e]
     : q[2 * anchorOf[e]] + frame.edges[e].side * reachOf(q, e, w));
   const mOf = (q, e) => (anchorOf[e] < 0 ? q[2 * e + 1] : q[2 * anchorOf[e] + 1]);
@@ -349,7 +432,7 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
   const predict = (q, i, w) => {
     let value = level(q, 0, t[i]);
     for (let e = 0; e < E; e++) {
-      cover[e] = coverage(h[i] - cOf(q, e, w) - mOf(q, e) * t[i], w * nMin, reachOf(q, e, w));
+      cover[e] = smoothCoverage(h[i] - cOf(q, e, w) - mOf(q, e) * t[i], lowOf(w), reachOf(q, e, w), blurOf(w));
       value += (level(q, e + 1, t[i]) - level(q, e, t[i])) * cover[e];
     }
     return value;
@@ -369,12 +452,13 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
         const d = h[i] - cOf(q, e, w) - mOf(q, e) * t[i];
         const step = level(q, e + 1, t[i]) - level(q, e, t[i]);
         const b = reachOf(q, e, w);
-        const g = -step * density(d, w * nMin, b);
+        const lo = lowOf(w), s = blurOf(w);
+        const g = -step * smoothDensity(d, lo, b, s);
         if (softAt[e] >= 0) {
           // Its width widens the ramp, and an anchored one's also moves it.
           const shift = anchorOf[e] >= 0 ? frame.edges[e].side : 0;
-          row[softAt[e]] = step * (coverage(d - shift * 1e-4, w * nMin, b + 1e-4)
-            - coverage(d + shift * 1e-4, w * nMin, b - 1e-4)) / 2e-4;
+          row[softAt[e]] = step * (smoothCoverage(d - shift * 1e-4, lo, b + 1e-4, s)
+            - smoothCoverage(d + shift * 1e-4, lo, b - 1e-4, s)) / 2e-4;
         }
         if (heldEdges.includes(e)) continue;
         const own = anchorOf[e] >= 0 ? anchorOf[e] : e;
@@ -551,7 +635,7 @@ function loneApertures(segments, raster, paired, opts) {
     const frame = loneFrame(seg, opts);
     if (!frame || 2 * frame.half < APERTURE_MIN_LENGTH) continue;
     const fit = fitBand(bandSamples(raster, frame, opts), frame,
-      { aperture: opts.apertureWidth, fitAperture: true });
+      { aperture: opts.apertureWidth, fitAperture: true, profile: opts.profile });
     if (!fit || !fit.converged) continue;
     if (!(fit.aperture > APERTURE_RANGE[0]) || !(fit.aperture < APERTURE_RANGE[1])) continue;
     found.push({ id: seg.id, aperture: fit.aperture });
@@ -640,6 +724,7 @@ function fitPairs(segments, raster, options = {}) {
       aperture: aperture.width,
       heldStrip: opts.strip === 'held' ? opts.stripLevel : null,
       slopedLevels: opts.levelSlope === 'fit',
+      profile: opts.profile,
     });
     if (!fit) continue;
     const gap = fit.edges[1].c - fit.edges[0].c;
@@ -672,6 +757,7 @@ function fitPairs(segments, raster, options = {}) {
       aperture: aperture.width,
       apertureFrom: aperture.from,
       apertureSegments: aperture.segments,
+      ...(opts.profile !== 'box' ? { profile: opts.profile } : {}),
       rms: fit.rms,
       samples: fit.samples,
       iterations: fit.iterations,
@@ -707,7 +793,7 @@ function ledgeOf(samples, frame, fit, aperture, opts) {
     for (const width of [0.3, 1, 2]) {
       const soft = { c: 0, m: 0, soft: true, anchor, side, width };
       const three = fitBand(samples, { ...frame, edges: [{ c: e0.c, m: e0.m }, soft, { c: e1.c, m: e1.m }] },
-        { aperture, slopedLevels: opts.levelSlope === 'fit', maxIterations: SCREEN_ITERATIONS });
+        { aperture, slopedLevels: opts.levelSlope === 'fit', maxIterations: SCREEN_ITERATIONS, profile: opts.profile });
       if (three && three.rms > 0 && (!best || three.rms < best.rms)) best = { rms: three.rms, edge, width: three.edges[1].width };
     }
   }
@@ -749,7 +835,7 @@ function hiddenIn(raster, l, from, to, aperture, opts, maxIterations) {
   };
   const loneEdges = [{ c: 0, m: 0 }];
   const lone = fitBand(bandSamples(raster, { ...base, edges: loneEdges }, opts),
-    { ...base, edges: loneEdges }, { aperture, maxIterations });
+    { ...base, edges: loneEdges }, { aperture, maxIterations, profile: opts.profile });
   if (!lone) return null;
   const { c, m } = lone.edges[0];
   const heldStrip = opts.strip === 'held' ? opts.stripLevel : null;
@@ -758,13 +844,13 @@ function hiddenIn(raster, l, from, to, aperture, opts, maxIterations) {
   for (const side of [-1, 1]) {
     const pairAt = (g) => (side > 0 ? [{ c, m }, { c: c + g, m }] : [{ c: c - g, m }, { c, m }]);
     const samples = bandSamples(raster, { ...base, edges: pairAt(opts.reach) }, opts);
-    const one = fitBand(samples, { ...base, edges: [{ c, m }] }, { aperture, maxIterations });
+    const one = fitBand(samples, { ...base, edges: [{ c, m }] }, { aperture, maxIterations, profile: opts.profile });
     if (!one) continue;
     // Three starting widths, because a start far from the answer closes the
     // strip up instead of finding it; the best of them is the fit.
     let two = null;
     for (const g of [opts.reach / 4, opts.reach / 2, opts.reach]) {
-      const fit = fitBand(samples, { ...base, edges: pairAt(g) }, { aperture, heldStrip, maxIterations });
+      const fit = fitBand(samples, { ...base, edges: pairAt(g) }, { aperture, heldStrip, maxIterations, profile: opts.profile });
       if (fit && (!two || fit.rms < two.rms)) two = fit;
     }
     if (!two || !(two.rms > 0)) continue;
@@ -963,7 +1049,7 @@ function trackPair(raster, carried, options = {}) {
     if (!(g > 0)) continue;
     const fit = fitBand(samples, { ...frame, edges: edgesAt(g) }, {
       aperture: carried.aperture, heldStrip: fitStrip ? null : carried.stripLevel,
-      slopedLevels: opts.levelSlope === 'fit', heldEdges: [still],
+      slopedLevels: opts.levelSlope === 'fit', heldEdges: [still], profile: opts.profile,
     });
     if (fit && (!best || fit.rms < best.rms)) best = fit;
   }
@@ -987,7 +1073,7 @@ function trackPair(raster, carried, options = {}) {
   let lone = null;
   for (const c0 of [-1, 0, 1]) {
     const fit = fitBand(samples, { ...frame, edges: [{ c: side * c0, m: 0 }] }, {
-      aperture: carried.aperture, slopedLevels: opts.levelSlope === 'fit',
+      aperture: carried.aperture, slopedLevels: opts.levelSlope === 'fit', profile: opts.profile,
     });
     if (fit && (!lone || fit.rms < lone.rms)) lone = fit;
   }
@@ -1003,7 +1089,7 @@ function trackPair(raster, carried, options = {}) {
     if (!(g > 0)) continue;
     const f = fitBand(samples, { ...frame, edges: edgesAt(g) }, {
       aperture: carried.aperture, heldStrip: fitStrip ? null : carried.stripLevel,
-      slopedLevels: opts.levelSlope === 'fit',
+      slopedLevels: opts.levelSlope === 'fit', profile: opts.profile,
     });
     if (f && (!free || f.rms < free.rms)) free = f;
   }

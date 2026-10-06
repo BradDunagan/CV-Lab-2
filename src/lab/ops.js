@@ -177,7 +177,7 @@ function trackKernel(inputs, params) {
     toward: [params.towardX, params.towardY],
     stripLevel: params.stripLevel,
     aperture: params.aperture,
-  }, { guess: params.guess, pad: params.pad, levelSlope: params.levelSlope, strip: params.strip });
+  }, { guess: params.guess, pad: params.pad, levelSlope: params.levelSlope, strip: params.strip, profile: params.profile });
   return { kind: 'features', features: record ? [record] : [], width: info.width, height: info.height };
 }
 
@@ -594,6 +594,15 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
          */
         { name: 'aperture', type: 'enum', values: ['fit', 'held'], default: 'fit' },
         { name: 'apertureWidth', type: 'number', default: 1, min: 0.25, max: 8 },
+        /*
+         * The shape of one step through that aperture. `box`: the projected
+         * square. `smooth`: a unit square blurred by a Gaussian-like kernel
+         * of the same total spread, which is what a lens does. Right on a
+         * synthetic blurred edge and no better on the stack's blurred
+         * renders, where what blur costs is a ledge in shadow
+         * (design-lab-model.md §5, "A twenty-fifth").
+         */
+        { name: 'profile', type: 'enum', values: ['box', 'smooth'], default: 'box' },
         // A gap the fit cannot tell from none is one edge found twice, or
         // two parts in contact. This cannot say which, and reports neither.
         { name: 'minSigmas', type: 'number', default: 3, min: 0 },
@@ -657,6 +666,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'stripLevel', type: 'number', default: 0 },
         { name: 'aperture', type: 'enum', values: ['fit', 'held'], default: 'fit' },
         { name: 'apertureWidth', type: 'number', default: 1, min: 0.25, max: 8 },
+        { name: 'profile', type: 'enum', values: ['box', 'smooth'], default: 'box' },
         // Which segments are already a pair, and so not searched: fitPairs's
         // own three, at fitPairs's defaults, so the two agree on who is lone
         // and measure the aperture on the same segments.
@@ -702,6 +712,8 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'towardY', type: 'number', default: 0 },
         { name: 'stripLevel', type: 'number', default: 0 },
         { name: 'aperture', type: 'number', default: 1, min: 0.25, max: 8 },
+        // As the record carried from had it.
+        { name: 'profile', type: 'enum', values: ['box', 'smooth'], default: 'box' },
         // Where the fit starts, px; it also starts at 0.25, 0.5, 1 and 2.
         { name: 'guess', type: 'number', default: 1, min: 0 },
         { name: 'pad', type: 'number', default: 4, min: 1, max: 32 },
