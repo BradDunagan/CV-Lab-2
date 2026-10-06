@@ -1957,6 +1957,20 @@ truth, x / y / z mm and turn degrees:
 - **Tipping** -- turning about a horizontal axis -- was not rendered:
   gap-sweep's poses turn about the vertical only.
 
+**Closed, the range stops mattering.** Three servo loops started where one
+shot is poor (hinged, lateral floor 2 mm, its own robot each):
+
+| start | first estimate off by | renders | at contact |
+|---|---|---|---|
+| (0, 6, 0), 8° | 1.06 / 0.45 / 0.79 mm, 1.38° | 6 | −0.01 / −0.01 / −0.01 / 0.05 |
+| (−4, 8, 4), −6° | 0.19 / 0.26 / 0.38 mm, 0.55° | 5 | −0.01 / −0.06 / −0.02 / −0.03 |
+| (6, 9, −5), 0° | 0.05 / 0.02 / 0.01 mm | 3 | −0.05 / −0.06 / 0.01 / −0.01 |
+
+A first estimate that is wrong but points the right way is enough: one
+correction brings the part inside the calibrated range, and from there the
+loop is the twenty-second's. From 8 degrees it took two corrections to be
+within 0.04 mm.
+
 #### A twenty-fourth: images more like a camera's
 
 The renders are noiseless, sharp to the pixel and sRGB-encoded exactly as
