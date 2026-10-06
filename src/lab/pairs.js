@@ -931,7 +931,9 @@ const TRACK_FREE_RATIO = 1.15;
  *
  * Returns one `edge-track` record: the gap at the middle of the line, positive
  * toward `toward`, with `gapSigma`, the `still` line as given and the `moving`
- * edge over the same stretch; or null when no
+ * edge over the same stretch; or, where a strip and one edge fit about as
+ * well, `model: 'ambiguous'` with no gap and both readings as `hypotheses`,
+ * each with its gap and moving line; or null when no
  * strip can be fitted -- the edges cross, which is what contact does in most
  * views. A gap returned is NOT tested against its sigma: at contact a few
  * views return 0.02 to 0.09 px with sigmas that would pass, and the caller is
@@ -976,8 +978,11 @@ function trackPair(raster, carried, options = {}) {
    * Which picture it is, is how much better two edges fit than one (`ratio`,
    * the one edge's rms over the two's). Over a real strip 1.2 and up; over
    * an overhang under 1. Between, both happen -- a real 0.3 px gap reads
-   * 1.11, an overhang of 0.4 px 1.09 -- and there the record is not made: a
-   * reading that may be off by half a pixel either way is not one.
+   * 1.11, an overhang of 0.4 px 1.09 -- and there no gap is given: a
+   * reading that may be off by half a pixel either way is not one. Both are
+   * given instead, as `hypotheses`, for a caller that can tell them apart
+   * from outside the frame: a pose carried from the last frame predicts the
+   * gap (design-lab-model.md §5, "A twenty-first").
    */
   let lone = null;
   for (const c0 of [-1, 0, 1]) {
@@ -1009,14 +1014,38 @@ function trackPair(raster, carried, options = {}) {
   // One edge only on evidence: two that fit no better. Two that failed to fit
   // at all are not that -- at 50 degrees they failed on gaps of 1.2 to 2.7 px.
   else if (lone && ratio !== null && ratio < TRACK_EDGE_RATIO && !(freeRatio >= TRACK_FREE_RATIO)) model = 'edge';
+  else if (best && lone) model = 'ambiguous';
   else return null;
+  const movingLine = (edge) => {
+    const at = (t) => {
+      const hh = edge.c + edge.m * t;
+      return [frame.ox + frame.ux * t + frame.nx * hh, frame.oy + frame.uy * t + frame.ny * hh];
+    };
+    const [x0, y0] = at(-frame.half), [x1, y1] = at(frame.half);
+    return { x0, y0, x1, y1 };
+  };
+  const stillLine = { x0: carried.line.x0, y0: carried.line.y0, x1: carried.line.x1, y1: carried.line.y1 };
+  if (model === 'ambiguous') {
+    const hypothesis = (m, f, edge) => ({ model: m, gap: side * edge.c, gapSigma: f.gapSigma, moving: movingLine(edge), rms: f.rms });
+    return {
+      type: 'edge-track',
+      id: 1,
+      still: stillLine,
+      toward: [carried.toward[0], carried.toward[1]],
+      gap: null,
+      gapSigma: null,
+      moving: null,
+      model,
+      ratio,
+      freeRatio,
+      hypotheses: [hypothesis('strip', best, best.edges[1 - still]), hypothesis('edge', lone, lone.edges[0])],
+      stripLevel: fitStrip ? best.levels[1] : carried.stripLevel,
+      aperture: carried.aperture,
+    };
+  }
   const fit = model === 'strip' ? best : lone;
   const moving = model === 'strip' ? best.edges[1 - still] : lone.edges[0];
-  const at = (t) => {
-    const hh = moving.c + moving.m * t;
-    return [frame.ox + frame.ux * t + frame.nx * hh, frame.oy + frame.uy * t + frame.ny * hh];
-  };
-  const [x0, y0] = at(-frame.half), [x1, y1] = at(frame.half);
+  const { x0, y0, x1, y1 } = movingLine(moving);
   return {
     type: 'edge-track',
     id: 1,
