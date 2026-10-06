@@ -94,6 +94,16 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
                      holding that edge (and, where the frame's own gap is
                      narrow, that level). Adds the tracked columns. Needs a
                      script binding G and P = fitPairs(F, G)
+  --carry-from <dir> take the still edges from these --carry runs' frames
+                     instead (results directories, repeatable; this run's own
+                     frames count only if its own directory is named). The
+                     still part and the cameras are the same in every run, so
+                     a view's still edge is one line: runs given the same list
+                     hold the same edge, and a calibration made from them
+                     absorbs whatever offset that edge has. For views whose
+                     own frames have nothing to carry from, and for a run of
+                     one pose, as a closed loop renders. Pairs are matched by
+                     the angle they run at, within 10 degrees
   --carry-min <px>   how wide a gap must be to be carried from, or to fit its
                      own strip level                      (default 3)
   --ledge-max <x>    a frame whose fitPairs ledge gain reaches this is not
@@ -122,7 +132,7 @@ flush with the table's front edge, so the two edges close onto each other.
 function parseArgs(argv) {
   const opts = {
     name: null, scene: 'saved:gap-1', moving: 'Cube', target: 'Table', axis: [0, 1, 0],
-    gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], size: 512, samples: 96, skipRender: false, overwrite: false,
+    gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], carryFrom: [], size: 512, samples: 96, skipRender: false, overwrite: false,
     script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
     yaw: null, elevation: null, offset: null, poses: null,
     carry: false, carryMin: 3, ledgeMax: 1.2, dryRun: false,
@@ -172,6 +182,7 @@ function parseArgs(argv) {
       case '--samples': opts.samples = list(argv[++i], '--samples')[0]; break;
       case '--skip-render': opts.skipRender = true; break;
       case '--carry': opts.carry = true; break;
+      case '--carry-from': opts.carryFrom.push(argv[++i]); break;
       case '--carry-min': opts.carryMin = list(argv[++i], '--carry-min')[0]; break;
       case '--ledge-max': opts.ledgeMax = list(argv[++i], '--ledge-max')[0]; break;
       case '--overwrite': opts.overwrite = true; break;
@@ -184,6 +195,7 @@ function parseArgs(argv) {
     }
   }
   // Checked once every option is in, since they depend on each other.
+  if (opts.carryFrom.length && !opts.carry) throw new Error('--carry-from needs --carry');
   if (opts.poses && opts.offset) throw new Error('--poses are displacements from contact; --offset does not apply');
   if (!opts.poses && !opts.offset && opts.gaps.some((v) => v < 0)) {
     throw new Error('--gaps cannot be negative without --offset: that is the part inside the other');
@@ -389,6 +401,37 @@ function gridMaps(rows, opts) {
   return out.join('\n\n');
 }
 
+const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[(s.length - 1) >> 1] : null; };
+/** Degrees between two directions in the image, round the 0/180 join. */
+const angleApart = (a, b) => Math.abs((((a - b + 90) % 180) + 180) % 180 - 90);
+
+/**
+ * Another --carry run's candidates for carrying from, placed as carryPlan
+ * places its own: frames whose refit read a pair as two detected edges at
+ * least carryMin px apart, with no ledge. Its rows name no shot before
+ * 2026-10-05, so the name is rebuilt from the row the way gapShots made it.
+ */
+function pooledCandidates(dir, opts) {
+  const record = JSON.parse(fs.readFileSync(path.resolve(ROOT, dir, 'gap-sweep.json'), 'utf8'));
+  const out = [];
+  for (const row of record.rows) {
+    if (!(row.refit?.from === 'pair' && row.refit.gapPx >= opts.carryMin) || row.refit.ledge?.gain >= opts.ledgeMax) continue;
+    const view = row.yaw === undefined ? null : { yaw: row.yaw, elevation: row.elevation };
+    const name = row.shot ?? (row.pose !== undefined
+      ? `${view ? `y${angleName(view.yaw)}-e${angleName(view.elevation)}-` : ''}pose-${row.pose}.png`
+      : shotName(row.gapMm, view));
+    const file = path.resolve(ROOT, dir, name.replace(/\.png$/, '.features.json'));
+    if (!fs.existsSync(file)) continue;
+    const fitted = (slots(file).fitted ?? []).find((p) => p.id === row.refit.pair);
+    if (!fitted) continue;
+    const [moving, still] = fitted.a.segment === row.detectedPair[1] ? [fitted.b, fitted.a] : [fitted.a, fitted.b];
+    out.push({ view: `${row.yaw ?? ''},${row.elevation ?? ''}`, pairAngle: row.pairAngle,
+      s: { name, gapMm: row.gapMm, run: path.relative(ROOT, path.resolve(ROOT, dir)), ...(view ? { view } : {}) },
+      row, record: fitted, moving, still });
+  }
+  return out;
+}
+
 /**
  * What --carry writes into each frame.
  *
@@ -408,8 +451,12 @@ function gridMaps(rows, opts) {
  *
  * A pair with no frame to carry from -- every wide frame has a ledge, or none
  * is wide -- gets nothing, and the plan says so.
+ *
+ * `pooled` are candidates from other runs (--carry-from), each already
+ * placed: the same view, matched to a pair here by the angle it runs at.
+ * Given any, this run's own frames are candidates only if `ownToo`.
  */
-function carryPlan(rows, shots, featuresOf, opts) {
+function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, ownRun = '') {
   const viewOf = (x) => `${x.view?.yaw ?? x.yaw ?? ''},${x.view?.elevation ?? x.elevation ?? ''}`;
   const n = (v) => v.toFixed(6);
   const shotOf = (s) => (r) => r.gapMm === s.gapMm && (s.pose === undefined || r.pose === s.pose);
@@ -421,7 +468,7 @@ function carryPlan(rows, shots, featuresOf, opts) {
     const pairs = [...new Set(rows.filter((r) => viewOf(r) === view && r.pair).map((r) => r.pair))].sort((a, b) => a - b);
     for (const pair of pairs) {
       const rowIn = (s) => rows.find((r) => viewOf(r) === view && r.pair === pair && shotOf(s)(r));
-      const candidates = frames.map((s) => ({ s, row: rowIn(s) }))
+      const candidates = (ownToo ? frames : []).map((s) => ({ s, row: rowIn(s) }))
         .filter(({ row }) => row?.refit?.from === 'pair' && row.refit.gapPx >= opts.carryMin)
         .filter(({ row }) => !(row.refit.ledge?.gain >= opts.ledgeMax))
         .sort((a, b) => b.row.refit.gapPx - a.row.refit.gapPx);
@@ -433,7 +480,13 @@ function carryPlan(rows, shots, featuresOf, opts) {
         const [moving, still] = record.a.segment === c.row.detectedPair[1] ? [record.b, record.a] : [record.a, record.b];
         return { ...c, record, moving, still };
       }).filter(Boolean);
+      const angle = median(rows.filter((r) => viewOf(r) === view && r.pair === pair && r.pairAngle != null).map((r) => r.pairAngle));
+      placed.push(...(pooled ?? []).filter((c) => c.view === view && angle !== null && angleApart(c.pairAngle, angle) <= 10));
       if (placed.length === 0) { missing.push({ view, pair }); continue; }
+      // In a fixed order before anything is measured against the first, so
+      // that runs given the same candidates choose the same one.
+      const order = (c) => `${c.s.run ?? ownRun}/${c.s.name}`;
+      placed.sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
       /*
        * The median of them, not the widest. A mild ledge can stay under
        * ledgeMax and still move its frame's still edge 0.1 px: on the x
@@ -456,7 +509,7 @@ function carryPlan(rows, shots, featuresOf, opts) {
       const { s: from, row, record, moving, still } = placed[(placed.length - 1) >> 1];
       const carried = { line: still, toward: [(moving.x0 + moving.x1) / 2, (moving.y0 + moving.y1) / 2],
         stripLevel: record.levels[1], aperture: record.aperture };
-      sources.push({ ...(from.view ?? {}), pair, from: from.name, fromMm: from.gapMm, gapPx: row.refit.gapPx,
+      sources.push({ ...(from.view ?? {}), pair, ...(from.run ? { run: from.run } : {}), from: from.name, fromMm: from.gapMm, gapPx: row.refit.gapPx,
         ledgeGain: row.refit.ledge?.gain ?? null, of: placed.length, stripLevel: carried.stripLevel, aperture: carried.aperture });
       for (const s of frames) {
         const own = rowIn(s);
@@ -547,6 +600,7 @@ function main() {
     // One row per facing pair per shot: a fixture with two pairs -- a cube
     // stacked on a cube -- gets two rows a shot, and each is its own measurement.
     const perShot = shots.flatMap((s) => gapRows(featuresOf(s), s, parts).map((r) => ({
+      shot: s.name,
       ...(s.view ?? {}),
       ...(s.pose ? { pose: s.pose, poseMm: s.poseMm, turnDeg: s.turnDeg } : {}),
       ...r,
@@ -577,7 +631,13 @@ function main() {
     if (!/^\s*G\s*=/m.test(fs.readFileSync(path.resolve(ROOT, opts.script), 'utf8'))) {
       throw new Error('--carry runs trackPair(G, ...): the script must bind G, the gray image before the blur');
     }
-    carry = carryPlan(rows, shots, featuresOf, opts);
+    // This run's own directory among --carry-from is its own frames, read
+    // fresh; the others are read from their records.
+    const own = (d) => path.resolve(ROOT, d) === path.resolve(ROOT, res);
+    carry = opts.carryFrom.length
+      ? carryPlan(rows, shots, featuresOf, opts, opts.carryFrom.filter((d) => !own(d)).flatMap((d) => pooledCandidates(d, opts)),
+        opts.carryFrom.some(own), res)
+      : carryPlan(rows, shots, featuresOf, opts);
     // What was carried from where, and the commands it became: the latter in
     // the form lab-cli's --extra reads.
     fs.writeFileSync(path.join(ROOT, res, 'carry.json'),

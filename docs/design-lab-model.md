@@ -1689,6 +1689,72 @@ All four views, held, no truth: 0.18 / 0.05 / 0.08 mm and 0.06 degrees.
   degrees: the readings it marks down are the end readings, which carry the
   turn. Not kept; the scatter is reported.
 
+#### An eighteenth: render noise, and one still edge for every run
+
+Every number above came from one render of each pose. The ten test poses
+were rendered twice more (`stack-2g-test-r2`, `-r3`), the same shots;
+three-gpu-pathtracer draws its samples from `Math.random` unless
+`stableNoise` is set, and pt-lab does not set it, so each render is the
+same scene under independent noise. Each error splits into the part every
+render repeats (bias, the RMS over poses of the three renders' mean) and
+the part that changes (scatter, the pooled SD across renders):
+
+| tracked readings, px | bias | scatter |
+|---|---|---|
+| pair 1, middle / ends | 0.035 / 0.04 | 0.022 / 0.04-0.05 |
+| pair 2, middle / ends | 0.076 / 0.08 | 0.017 / 0.035-0.040 |
+
+Solved, all four views, mm and degrees: x 0.070 bias / 0.023 scatter, y
+0.017 / 0.016, z 0.050 / 0.023, turn 0.020 / 0.025. **x and z are mostly
+error the scene repeats; y and the turn are at the noise.** Detections are
+1 px of bias against 0.02-0.05 of scatter -- the push-apart is steady,
+which is why calibrating them helped so much.
+
+The one thing that moved between renders more than a reading did was **the
+frame each pair was carried from.** The source is the median of a run's own
+clean frames, and with three to seven candidates noise reorders them: four of
+eight view-pairs changed source between renders, and 35/50's side pair had
+one in the first render (gain 1.17, just under 1.2) and none in the other two,
+so it fell back to the refit.
+
+The still part and the cameras are the same in every run, so a view's still
+edge is one line, and any run's clean frames are evidence of it. **`gap-sweep
+--carry-from <dir>`** takes the candidates from the runs named -- this one's
+own only if its own directory is among them -- matched to this run's pairs by
+the angle they run at, ordered canonically, and takes the median as before.
+Given the same list, the x, y, z and turn sweeps and the three test renders
+all choose the same eight frames: 15 to 19 candidates each at 20 degrees, but
+1 to 5 at 50, where few frames read a pair 3 px wide. Every view-pair has a
+source, 35/50's side pair now reads in 33 of 39 rows instead of 28, and
+the ends' scatter on pair 2 halves (0.04 → 0.017 px), the source no longer
+moving under them.
+
+Measured against the truth, the pooled edge is no better: its median sits
+further from the true edge on pair 2 (bias 0.08 → 0.11 px), and x gets worse
+(0.07 → 0.10 mm, four views). But the same edge is held in the calibration
+sweeps, so its offset is in the readings the calibration is made from, and
+**a calibration from the readings absorbs it.** Test poses, three renders,
+x / y / z mm and turn degrees:
+
+| | eleven sets | ten (not 35/50 + 60/50) | four views |
+|---|---|---|---|
+| own frames, truth | 0.10 / 0.06 / 0.07 / 0.04 | 0.09 / 0.04 / 0.06 / 0.04 | 0.07 / 0.02 / 0.05 / 0.03 |
+| pooled, truth | 0.13 / 0.07 / 0.07 / 0.04 | 0.13 / 0.04 / 0.06 / 0.04 | 0.10 / 0.03 / 0.04 / 0.04 |
+| **pooled, joint -- no truth** | 0.14 / 0.13 / 0.11 / 0.03 | **0.10 / 0.04 / 0.06 / 0.03** | **0.08 / 0.02 / 0.04 / 0.03** |
+
+The seventeenth's no-truth result was 0.19 / 0.09 / 0.10 and 0.06 over the
+eleven, 0.18 / 0.05 / 0.08 and 0.06 from four views. With one still edge for
+everything, **no truth is as good as truth.**
+
+- **The two high views alone are the exception.** 35/50 + 60/50 solves pose 5
+  (2.5, 2.5, 0.8 mm) 2.5 to 5 mm off in two renders of three, under the joint
+  calibration: one reading off with nothing to outvote it, in the set with the
+  weakest geometry. It is the whole difference between the eleven and the ten.
+  A solve that checks its own residuals would refuse it; nothing does yet.
+- **Render noise is not what limits this.** What is left in x is repeated
+  from render to render and from pose to pose: the side pair's narrow-gap
+  ledge (the seventeenth).
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
