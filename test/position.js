@@ -234,6 +234,22 @@ test('lifted readings give back the displacement, high and low, either side of z
   }
 });
 
+test('a hinge that changes with the lift is solved too, on both sides of flush', () => {
+  const LH = [[0, 0, 0.03], [-0.04, 0, 0], [0, 0, 0.02], [-0.03, 0, 0], [0.02, 0, -0.01]];
+  for (const [x, z] of [[-2, -1], [1.5, -0.6], [-0.4, 1.2]]) {
+    const d = [x, -2.5, z];
+    const obs = HINGED.map(([j, h], k) => {
+      const o = lifted(j, h, LIFTS[k], 4 + k, d);
+      o.liftHinge = LH[k];
+      o.measured += LH[k].reduce((acc, l, a) => acc + l * d[1] * Math.min(d[a], 0), 0);
+      return o;
+    });
+    const r = solveLifted(obs);
+    assert.ok(r.determined, r.reason);
+    r.d.forEach((v, a) => near(v, d[a], 1e-8, `axis ${a} at x ${x}, z ${z}`));
+  }
+});
+
 test('the lift terms matter: ignored, the same readings solve somewhere else', () => {
   const d = [1.5, -3, -0.8];
   const obs = HINGED.map(([j, h], k) => lifted(j, h, LIFTS[k], 4 + k, d));
