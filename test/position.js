@@ -11,7 +11,7 @@
  */
 
 const assert = require('node:assert/strict');
-const { solvePosition, solveHinged } = require('../src/lab/position');
+const { solvePosition, solveHinged, solveLifted } = require('../src/lab/position');
 
 let failures = 0;
 function test(name, fn) {
@@ -209,6 +209,42 @@ test('with no hinges, solveHinged is solvePosition', () => {
   const obs = HINGED.map(([j], k) => reading(j, k, D));
   assert.deepEqual(solveHinged(obs), solvePosition(obs));
   assert.deepEqual(solveHinged(obs.map((o) => ({ ...o, hinge: [0, 0, 0] }))).d, solvePosition(obs).d);
+});
+
+/*
+ * Lifted readings: each slope in x and z changes with the lift, y. Made from
+ * that bilinear model, with hinges as well, the displacement comes back
+ * exactly, from a start that knows nothing of the lift terms.
+ */
+const lifted = (jacobian, hinge, lift, reference, d) => ({
+  jacobian, hinge, lift, reference,
+  measured: reference + jacobian.reduce((s, j, a) => s + j * d[a] + hinge[a] * Math.min(d[a], 0) + lift[a] * d[1] * d[a], 0),
+});
+const LIFTS = [[0, 0, 0.02], [-0.03, 0, 0], [0, 0, 0.04], [0.05, 0, 0], [0.01, 0, -0.02]];
+
+test('lifted readings give back the displacement, high and low, either side of zero', () => {
+  for (const y of [-3, -0.5, 2]) {
+    for (const x of [-2, 1.5]) {
+      const d = [x, y, -0.8];
+      const r = solveLifted(HINGED.map(([j, h], k) => lifted(j, h, LIFTS[k], 4 + k, d)));
+      assert.ok(r.determined, r.reason);
+      r.d.forEach((v, a) => near(v, d[a], 1e-8, `axis ${a} at x ${x}, y ${y}`));
+      near(r.residualRms, 0, 1e-9, 'residual against the bilinear model');
+    }
+  }
+});
+
+test('the lift terms matter: ignored, the same readings solve somewhere else', () => {
+  const d = [1.5, -3, -0.8];
+  const obs = HINGED.map(([j, h], k) => lifted(j, h, LIFTS[k], 4 + k, d));
+  const wrong = solveHinged(obs);
+  assert.ok(Math.max(...wrong.d.map((v, a) => Math.abs(v - d[a]))) > 0.05, 'ignoring the lift should cost something');
+});
+
+test('with no lift terms, solveLifted is solveHinged', () => {
+  const obs = HINGED.map(([j, h], k) => hinged(j, h, 4 + k, [0.3, -1, -0.7]));
+  assert.deepEqual(solveLifted(obs), solveHinged(obs));
+  assert.deepEqual(solveLifted(obs.map((o) => ({ ...o, lift: [0, 0, 0] }))).d, solveHinged(obs).d);
 });
 
 if (failures > 0) {

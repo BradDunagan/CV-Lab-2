@@ -56,11 +56,13 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
   --target <name>    the part it closes on                (default Table)
   --axis <x,y,z>     the direction that OPENS the gap     (default 0,1,0)
   --gaps <mm,...>    the steps, in millimetres            (default 50,20,10,5,2,1,0.5,0)
-  --poses <x,y,z[,turn];...>
+  --poses <x,y,z[,turn[,tipX,tipZ]];...>
                      instead of a sweep, a list of poses: each a displacement
                      from contact in millimetres and, optionally, a turn about
-                     the vertical in degrees. One shot per pose per view, named
-                     pose-1.png and on. For poses off the axes, and turned ones
+                     the vertical in degrees, and a tip about the x and the z
+                     axis, in degrees (the part's Euler rotation, about its own
+                     centre). One shot per pose per view, named pose-1.png and
+                     on. For poses off the axes, and turned or tipped ones
   --offset <x,y,z>   millimetres added to every step, on top of the sweep along
                      --axis. For sweeping a direction that does not open the
                      gap: lift the part 2 mm with --offset 0,2,0 and slide it
@@ -163,8 +165,8 @@ function parseArgs(argv) {
       case '--poses': {
         opts.poses = String(argv[++i]).split(';').filter((p) => p.trim()).map((p) => {
           const v = list(p, '--poses');
-          if (v.length !== 3 && v.length !== 4) throw new Error(`--poses: "${p}" needs x,y,z or x,y,z,turn`);
-          return { mm: v.slice(0, 3), turn: v[3] ?? 0 };
+          if (![3, 4, 6].includes(v.length)) throw new Error(`--poses: "${p}" needs x,y,z or x,y,z,turn or x,y,z,turn,tipX,tipZ`);
+          return { mm: v.slice(0, 3), turn: v[3] ?? 0, tip: [v[4] ?? 0, v[5] ?? 0] };
         });
         if (opts.poses.length === 0) throw new Error('--poses needs at least one pose');
         break;
@@ -244,6 +246,7 @@ function gapShots(opts) {
       pose: k + 1,
       poseMm: p.mm,
       turnDeg: p.turn,
+      ...(p.tip[0] || p.tip[1] ? { tipDeg: p.tip } : {}),
       ...(view ? { view: { yaw: view.yaw, elevation: view.elevation } } : {}),
       camera: view ? view.camera : data.camera.position,
       target: data.camera.target,
@@ -252,7 +255,7 @@ function gapShots(opts) {
       transforms: {
         [opts.moving]: {
           position: contact.map((c, j) => c + p.mm[j] / 1000),
-          rotation: [turned[0], turned[1] + p.turn, turned[2]],
+          rotation: [turned[0] + p.tip[0], turned[1] + p.turn, turned[2] + p.tip[1]],
         },
       },
     })));
@@ -607,7 +610,7 @@ function main() {
     const perShot = shots.flatMap((s) => gapRows(featuresOf(s), s, parts, opts.maxAngle ? { maxAngle: opts.maxAngle } : {}).map((r) => ({
       shot: s.name,
       ...(s.view ?? {}),
-      ...(s.pose ? { pose: s.pose, poseMm: s.poseMm, turnDeg: s.turnDeg } : {}),
+      ...(s.pose ? { pose: s.pose, poseMm: s.poseMm, turnDeg: s.turnDeg, ...(s.tipDeg ? { tipDeg: s.tipDeg } : {}) } : {}),
       ...r,
     })));
     // Renumbered a view at a time, so that pair 1 is one pair down the sweep
@@ -740,8 +743,10 @@ function main() {
       fmt(r.tracked?.rms, 4)]
     : []);
   const perKey = gridded || paired || !!opts.offset;
-  const poseHead = posed ? ['pose', 'poseX', 'poseY', 'poseZ', 'turnDeg'] : [];
-  const poseCells = (r) => (posed ? [r.pose, fmt(r.poseMm?.[0], 2), fmt(r.poseMm?.[1], 2), fmt(r.poseMm?.[2], 2), fmt(r.turnDeg, 2)] : []);
+  const tipped = rows.some((r) => r.tipDeg);
+  const poseHead = posed ? ['pose', 'poseX', 'poseY', 'poseZ', 'turnDeg', ...(tipped ? ['tipXDeg', 'tipZDeg'] : [])] : [];
+  const poseCells = (r) => (posed ? [r.pose, fmt(r.poseMm?.[0], 2), fmt(r.poseMm?.[1], 2), fmt(r.poseMm?.[2], 2), fmt(r.turnDeg, 2),
+    ...(tipped ? [fmt(r.tipDeg?.[0] ?? 0, 2), fmt(r.tipDeg?.[1] ?? 0, 2)] : [])] : []);
   const viewHead = [...poseHead, ...(gridded ? ['yaw', 'elevation'] : []), ...(paired ? ['pair'] : []),
     ...(perKey ? ['pxPerMm', 'overlapPx'] : [])];
   const viewCells = (r) => [...poseCells(r), ...(gridded ? [r.yaw, r.elevation] : []), ...(paired ? [r.pair ?? ''] : []),

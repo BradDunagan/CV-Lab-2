@@ -156,4 +156,56 @@ function solveHinged(observations, { prior = null, iterations = 10 } = {}) {
   return s;
 }
 
-module.exports = { solvePosition, solveHinged };
+/**
+ * The same, for readings whose slopes depend on the lift: `lift[a]` adds
+ * lift[a] * d[liftAxis] * d[a] to an observation's model. Seen from above
+ * and at an angle, a sideways move opens a gap by an amount that depends on
+ * how high the part is, so a Jacobian measured at one lift is wrong at
+ * another -- by 0.06 to 0.10 mm in x at 1 mm up, calibrated at 4
+ * (design-lab-model.md §5, "A twenty-seventh").
+ *
+ * Bilinear, so solved by Gauss-Newton: at the current estimate d0 the lift
+ * term is replaced by its tangent, q(d0) + grad q(d0) . (d - d0), which for a
+ * bilinear q is grad q(d0) . d - q(d0); that is solved as solveHinged solves
+ * it, and repeated until the estimate stops moving. The covariance is the
+ * last tangent's. Observations with no lift give solveHinged's answer.
+ */
+function solveLifted(observations, { prior = null, liftAxis = 1, iterations = 20 } = {}) {
+  if (!observations.some((o) => o.lift?.some((l) => l !== 0))) return solveHinged(observations, { prior });
+  let d0 = prior ? prior.d.slice() : null;
+  let s = null;
+  for (let it = 0; it < iterations; it++) {
+    const tangent = observations.map((o) => {
+      if (!o.lift || !d0) return o;
+      const y = d0[liftAxis];
+      let q = 0;
+      const grad = o.jacobian.map(() => 0);
+      for (let a = 0; a < o.jacobian.length; a++) {
+        const l = o.lift[a] ?? 0;
+        if (l === 0) continue;
+        q += l * y * d0[a];
+        grad[a] += l * y;
+        grad[liftAxis] += l * d0[a];
+      }
+      return { ...o, jacobian: o.jacobian.map((j, a) => j + grad[a]), reference: o.reference - q };
+    });
+    s = solveHinged(tangent, { prior });
+    if (!s.determined) return s;
+    const moved = d0 ? Math.max(...s.d.map((v, a) => Math.abs(v - d0[a]))) : Infinity;
+    d0 = s.d;
+    if (moved < 1e-9) break;
+  }
+  // The residual against the model itself, not the last tangent.
+  const obs = observations.filter((o) => Number.isFinite(o.measured) && Number.isFinite(o.reference));
+  let sse = 0;
+  for (const o of obs) {
+    let m = o.reference;
+    for (let a = 0; a < o.jacobian.length; a++) {
+      m += o.jacobian[a] * d0[a] + (o.hinge?.[a] ?? 0) * Math.min(d0[a], 0) + (o.lift?.[a] ?? 0) * d0[liftAxis] * d0[a];
+    }
+    sse += (o.measured - m) ** 2;
+  }
+  return { ...s, residualRms: obs.length ? Math.sqrt(sse / obs.length) : null };
+}
+
+module.exports = { solvePosition, solveHinged, solveLifted };

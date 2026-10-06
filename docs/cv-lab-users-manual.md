@@ -1632,10 +1632,13 @@ that direction, and its `errorMm` is left empty rather than divided by nearly
 nothing. A true gap can be negative: the moving part's edge has passed the
 target's, an overhang.
 
-**`--poses "x,y,z[,turn];..."` renders a list of poses instead of a sweep.**
-Each is a displacement from contact in millimetres and, optionally, a turn
-about the vertical in degrees; one shot per pose per view, named `pose-1.png`
-and on. The table gains `pose`, `poseX`, `poseY`, `poseZ` and `turnDeg`.
+**`--poses "x,y,z[,turn[,tipX,tipZ]];..."` renders a list of poses instead of
+a sweep.** Each is a displacement from contact in millimetres and, optionally,
+a turn about the vertical in degrees, and a tip about the x and the z axis in
+degrees (the moving part's Euler rotation, about its own centre); one shot per
+pose per view, named `pose-1.png` and on. The table gains `pose`, `poseX`,
+`poseY`, `poseZ` and `turnDeg`, and `tipXDeg` and `tipZDeg` when any pose is
+tipped.
 
 Every row also reads the gap a sixth of the way in from each end of the pair
 (`endsTruePx`, `endsDetectedPx`, and `endsPx` in the refit, in the JSON). One
@@ -1801,6 +1804,16 @@ as the detections' (1.67/0.82/1.75 mm to 0.73/0.29/0.58 on the stack's test
 poses), and cannot remove scatter: the refit stays at about 0.2 mm. Scatter in
 the frames calibrated from is carried into every solve (`design-lab-model.md`
 §5, "A fourteenth").
+
+**`--lift <dir>` makes the slopes depend on the height** (repeatable; with
+`--calibrate joint` or `hinged`). Seen from above and at an angle, a sideways
+move opens a gap by an amount that depends on how high the part is, so a
+Jacobian measured at one lift is wrong at another. A `--lift` run is an axis
+sweep or a `--poses` run made at another lift (its own `--offset`); its frames
+join the calibration, which then fits each reading's x, z and turn slopes as
+changing with y -- a y·x, y·z and y·turn term -- and every solve is made with
+them, iteratively, since the model is no longer linear. They are in
+`--save-calibration`'s file as `lift`, and `npm run servo` uses them.
 
 **`--sequence <dir>` solves a gap sweep frame by frame**, in the order it was
 swept, twice: each frame alone, and each with the previous frame's pose
