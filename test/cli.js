@@ -425,6 +425,70 @@ test('every suite under test/ is syntactically valid', () => {
   }
 });
 
+/* ---- npm run degrade ------------------------------------------------ */
+
+/*
+ * scripts/degrade.js run as a person would, on a two-file "generated run" it
+ * can recognise: shots.json, one image, its truth and an AOV pass.
+ */
+{
+  const { encodePNG, decodePNG } = require('../scripts/png');
+  const DEGRADE = path.join(ROOT, 'scripts', 'degrade.js');
+  const toLinear = (u) => { const v = u / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const run = (src, dst, ...args) => spawnSync(process.execPath, [DEGRADE, src, dst, ...args], { encoding: 'utf8' });
+  /** A w x w run whose red channel is `value(x, y)` (0-255), with a truth edge and a depth pass. */
+  const makeRun = (dir, w, value) => {
+    fs.mkdirSync(path.join(dir, 'aov'), { recursive: true });
+    const px = Buffer.alloc(w * w * 4);
+    for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) {
+      const v = value(x, y);
+      px.set([v, v, v, 255], (y * w + x) * 4);
+    }
+    fs.writeFileSync(path.join(dir, 'a.png'), encodePNG(w, w, px));
+    fs.writeFileSync(path.join(dir, 'aov', 'a-depth.png'), encodePNG(w, w, px));
+    fs.writeFileSync(path.join(dir, 'shots.json'), '[]\n');
+    fs.writeFileSync(path.join(dir, 'a.gt.json'), JSON.stringify({ size: w,
+      edges: [{ id: 1, x0: 2, y0: 4, x1: 10, y1: 12, length: Math.hypot(8, 8) }], vertices: [{ id: 1, x: 6, y: 8 }] }));
+  };
+
+  test('degrade --downsample 2 is the 2x2 mean in linear light, with the truth and the passes made to match', () => {
+    const src = path.join(tmp, 'deg-src'), dst = path.join(tmp, 'deg-ds');
+    const value = (x, y) => (x * 37 + y * 11) % 256;
+    makeRun(src, 16, value);
+    const r = run(src, dst, '--downsample', '2');
+    assert.equal(r.status, 0, r.stderr);
+    const out = decodePNG(fs.readFileSync(path.join(dst, 'a.png')));
+    assert.equal(out.width, 8);
+    for (const [x, y] of [[0, 0], [3, 5], [7, 7]]) {
+      const mean = [0, 1].flatMap((j) => [0, 1].map((i) => toLinear(value(2 * x + i, 2 * y + j)))).reduce((a, b) => a + b) / 4;
+      assert.ok(Math.abs(toLinear(out.data[(y * 8 + x) * out.channels]) - mean) < 0.004, `pixel ${x},${y}`);
+    }
+    const truth = JSON.parse(fs.readFileSync(path.join(dst, 'a.gt.json'), 'utf8'));
+    assert.equal(truth.size, 8);
+    assert.deepEqual([truth.edges[0].x0, truth.edges[0].y1, truth.vertices[0].x], [1, 6, 3]);
+    // A depth pass is packed fixed-point and is sampled, not averaged.
+    const depth = decodePNG(fs.readFileSync(path.join(dst, 'aov', 'a-depth.png')));
+    assert.equal(depth.width, 8);
+    assert.equal(depth.data[(3 * 8 + 2) * depth.channels], value(5, 7));
+  });
+
+  test('degrade --interp cubic carries a ramp through a distortion as a ramp; the pixels move, they do not blur', () => {
+    const src = path.join(tmp, 'deg-ramp'), dst = path.join(tmp, 'deg-ramp-k');
+    const w = 64, ramp = (x) => 0.1 + 0.6 * (x / (w - 1));
+    // Written in sRGB so that it is a straight line in linear light.
+    const toSrgb = (v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
+    makeRun(src, w, (x) => Math.round(toSrgb(ramp(x)) * 255));
+    const r = run(src, dst, '--k1', '-0.05', '--interp', 'cubic');
+    assert.equal(r.status, 0, r.stderr);
+    const out = decodePNG(fs.readFileSync(path.join(dst, 'a.png')));
+    const c = (w - 1) / 2, s = w / 2;
+    for (const [x, y] of [[10, 10], [40, 20], [50, 50]]) {
+      const nx = (x - c) / s, ny = (y - c) / s, sx = c + nx * (1 + -0.05 * (nx * nx + ny * ny)) * s;
+      assert.ok(Math.abs(toLinear(out.data[(y * w + x) * out.channels]) - ramp(sx)) < 0.006, `pixel ${x},${y}`);
+    }
+  });
+}
+
 /* ------------------------------------------------------------------- */
 
 fs.rmSync(tmp, { recursive: true, force: true });

@@ -21,7 +21,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { solvePosition, solveHinged } = require('../src/lab/position');
+const { solvePosition, solveLifted } = require('../src/lab/position');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -128,6 +128,9 @@ const fmt = (v, d = 3) => (v === null || v === undefined || !Number.isFinite(v) 
 const vec = (v, d = 2) => v.map((x) => fmt(x, d).padStart(d + 4)).join(' ');
 const viewOf = (r) => `yaw ${r.yaw}, elev ${r.elevation}`;
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[(s.length - 1) >> 1] : null; };
+/** A calibrated reading's model of the displacement d: slopes, hinges, and the lift's terms (y is d[1]). */
+const modelOf = (p) => (d) => p.reference + p.jacobian.reduce((acc, j, a) => acc + j * d[a]
+  + (p.hinge?.[a] ?? 0) * Math.min(d[a], 0) + (p.lift?.[a] ?? 0) * d[1] * d[a], 0);
 
 /**
  * Each view's pairs by the angle they run at in the image, from the sweeps
@@ -237,12 +240,11 @@ function main() {
   for (let k = 0; k < opts.maxSteps; k++) {
     const stepName = `servo/${opts.name}/step-${String(k).padStart(2, '0')}`;
     const reads = opts.dryRun
-      ? new Map(used.map((p) => [p.key, [p.reference + p.jacobian.reduce((acc, j, a) => acc + j * (truth[a] - reference[a])
-        + (p.hinge?.[a] ?? 0) * Math.min(truth[a] - reference[a], 0), 0) + g() * opts.dryNoise, null]]))
+      ? new Map(used.map((p) => [p.key, [modelOf(p)(truth.map((v, a) => v - reference[a])) + g() * opts.dryNoise, null]]))
       : readingsOf(gapSweep(opts, stepName, truth), angles);
     const obs = used.map((p) => {
       const v = reads.get(p.key);
-      return { jacobian: p.jacobian, hinge: p.hinge, reference: p.reference, measured: v ? v[0] : null, weight: weightOf(v?.[1]) };
+      return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, reference: p.reference, measured: v ? v[0] : null, weight: weightOf(v?.[1]) };
     });
     const n = () => obs.filter((o) => Number.isFinite(o.measured)).length;
     // The prior: the last estimate moved by the move commanded since, or the
@@ -259,15 +261,14 @@ function main() {
     for (const [i, p] of used.entries()) {
       const v = reads.get(p.key);
       if (!v?.[2]) continue;
-      const model = (d) => p.reference + p.jacobian.reduce((acc, j, a) => acc + j * d[a] + (p.hinge?.[a] ?? 0) * Math.min(d[a], 0), 0);
-      const predicted = model(prior.d);
+      const predicted = modelOf(p)(prior.d);
       const jp = p.jacobian.map((_, a) => prior.covariance[a].reduce((acc, c, b) => acc + c * p.jacobian[b], 0));
       const sigma = Math.sqrt(p.jacobian.reduce((acc, j, a) => acc + j * jp[a], 0) + opts.readingSigma ** 2);
       const [near, far] = [...v[2]].sort((x, y) => Math.abs(x - predicted) - Math.abs(y - predicted));
       if (Math.abs(far - predicted) - Math.abs(near - predicted) >= 3 * sigma) { obs[i].measured = near; resolved++; } else unresolved++;
     }
-    const s = solveHinged(obs, { prior });
-    const alone = solveHinged(obs.map((o) => ({ ...o, weight: 1 })));
+    const s = solveLifted(obs, { prior });
+    const alone = solveLifted(obs.map((o) => ({ ...o, weight: 1 })));
     if (!s.determined) throw new Error(`step ${k}: ${s.reason}`);
     state = s;
     const estimate = s.d.map((v, a) => v + reference[a]);

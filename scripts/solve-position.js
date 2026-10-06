@@ -30,7 +30,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { solvePosition, solveHinged } = require('../src/lab/position');
+const { solvePosition, solveLifted } = require('../src/lab/position');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -45,6 +45,9 @@ CV-Lab relative position -- several gap readings solved for one displacement
   --turn <dir>          a gap-sweep --poses run of turns about the vertical,
                         every pose at the reference offset: adds the turn as a
                         fourth unknown, in degrees
+  --tipx, --tipz <dir>  gap-sweep --poses runs of tips about the x or the z axis,
+                        every pose at the reference offset: adds that tip as
+                        an unknown, in degrees, as --turn adds the turn
   --test <dir>          a gap-sweep --poses run to score, poses the Jacobian
                         was not measured on
   --readings <which>    mid | ends | both: where along each pair the gap is
@@ -97,6 +100,14 @@ CV-Lab relative position -- several gap readings solved for one displacement
                                      beside the moving edge appears on one
                                      side of flush only
                         A reading that cannot be calibrated is dropped (default truth)
+  --lift <dir>          a gap sweep (an axis, or --poses) made at another lift:
+                        its frames join a joint or hinged calibration, which
+                        then fits each reading's slopes in x, z and the turn
+                        as changing with the lift -- a y*x, y*z and y*turn
+                        term -- and the solve is made with them. Repeatable
+  --robust <px>         reweight each pose's readings by Huber's rule: a reading
+                        whose residual exceeds this many px counts linearly,
+                        not quadratically, for five rounds    (default: off)
   --max-views <n>       the largest set of views to combine   (default 3)
   --max-sigma <n>       a pose is not solved from readings that would turn one
                         pixel of error into more than this on any unknown
@@ -109,13 +120,15 @@ CV-Lab relative position -- several gap readings solved for one displacement
 
 function parseArgs(argv) {
   const opts = { dirs: {}, test: null, readings: 'both', weights: 'sigma', out: null, maxViews: 3, maxSigma: 10, maxResidual: Infinity,
-    calibrate: 'truth', saveCalibration: null, sequences: [], readingSigma: 0.1, motionSigma: 0.1, turnSigma: 0.1, startSigma: 1, trials: 20 };
+    calibrate: 'truth', saveCalibration: null, sequences: [], lift: [], robust: 0, readingSigma: 0.1, motionSigma: 0.1, turnSigma: 0.1, startSigma: 1, trials: 20 };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (['--x', '--y', '--z', '--turn'].includes(arg)) opts.dirs[arg.slice(2)] = argv[++i];
+    if (['--x', '--y', '--z', '--turn', '--tipx', '--tipz'].includes(arg)) opts.dirs[arg.slice(2)] = argv[++i];
     else if (arg === '--test') opts.test = argv[++i];
     else if (arg === '--calibrate') opts.calibrate = argv[++i];
     else if (arg === '--sequence') opts.sequences.push(argv[++i]);
+    else if (arg === '--lift') opts.lift.push(argv[++i]);
+    else if (arg === '--robust') opts.robust = Number(argv[++i]);
     else if (arg === '--reading-sigma') opts.readingSigma = Number(argv[++i]);
     else if (arg === '--motion-sigma') opts.motionSigma = Number(argv[++i]);
     else if (arg === '--turn-sigma') opts.turnSigma = Number(argv[++i]);
@@ -134,6 +147,7 @@ function parseArgs(argv) {
   if (!['mid', 'ends', 'both'].includes(opts.readings)) throw new Error('--readings is mid, ends or both');
   if (!['none', 'sigma'].includes(opts.weights)) throw new Error('--weights is none or sigma');
   if (!['truth', 'reference', 'full', 'joint', 'hinged'].includes(opts.calibrate)) throw new Error('--calibrate is truth, reference, full, joint or hinged');
+  if (opts.lift.length > 0 && !['joint', 'hinged'].includes(opts.calibrate)) throw new Error('--lift needs --calibrate joint or hinged');
   return opts;
 }
 
@@ -195,26 +209,66 @@ function main() {
   }
   if (opts.help || ['x', 'y', 'z'].some((a) => !opts.dirs[a])) { console.log(USAGE); process.exit(opts.help ? 0 : 2); }
 
-  const unknowns = ['x', 'y', 'z', ...(opts.dirs.turn ? ['turn'] : [])];
-  const units = (u) => (u === 'turn' ? 'deg' : 'mm');
+  const ANGLES = ['turn', 'tipx', 'tipz'];
+  const unknowns = ['x', 'y', 'z', ...ANGLES.filter((u) => opts.dirs[u])];
+  const units = (u) => (ANGLES.includes(u) ? 'deg' : 'mm');
+  // A row's angles, for the angular unknowns this solve has.
+  const angleOf = (u, r) => (u === 'turn' ? r.turnDeg ?? 0 : r.tipDeg?.[u === 'tipx' ? 0 : 1] ?? 0);
+  const anglesOf = (r) => unknowns.filter((u) => ANGLES.includes(u)).map((u) => angleOf(u, r));
   const sweeps = Object.fromEntries(unknowns.map((u) => [u, load(opts.dirs[u])]));
   const offsets = ['x', 'y', 'z'].map((a) => JSON.stringify(sweeps[a].offsetMm ?? null));
   if (new Set(offsets).size !== 1) {
     throw new Error(`the three sweeps were made from different reference poses: --offset ${offsets.join(', ')}`);
   }
   const reference = sweeps.x.offsetMm ?? [0, 0, 0];
-  if (opts.dirs.turn) {
-    const off = (sweeps.turn.poses ?? []).filter((p) => p.mm.some((v, k) => Math.abs(v - reference[k]) > 1e-9));
-    if (off.length > 0) throw new Error('every pose of the --turn sweep must sit at the reference offset');
+  for (const u of ANGLES.filter((a) => opts.dirs[a])) {
+    const off = (sweeps[u].poses ?? []).filter((p) => p.mm.some((v, k) => Math.abs(v - reference[k]) > 1e-9));
+    if (off.length > 0) throw new Error(`every pose of the --${u} sweep must sit at the reference offset`);
   }
 
   /*
    * Each row of each sweep is a pose: its displacement from the reference,
    * and the step that the sweep moved along.
    */
-  const stepOf = (u, r) => (u === 'turn' ? r.turnDeg : r.gapMm);
+  const stepOf = (u, r) => (ANGLES.includes(u) ? angleOf(u, r) : r.gapMm);
   const displacementOf = (u, r) => unknowns.map((v) => (v === u ? stepOf(u, r) : 0));
   const rowsOf = (u) => sweeps[u].rows.filter((r) => r.pair !== null && r.pair !== undefined);
+  /*
+   * The --lift sweeps' frames: each row with its whole displacement from the
+   * reference, an axis sweep's from its offset and step, a --poses run's from
+   * its pose.
+   */
+  const LIFT = unknowns.indexOf('y');
+  const liftRows = opts.lift.flatMap((dir) => {
+    const sw = load(dir);
+    return sw.rows.filter((r) => r.pair !== null && r.pair !== undefined).map((r) => {
+      const mm = r.poseMm ?? [0, 1, 2].map((k) => (sw.offsetMm?.[k] ?? 0) + (sw.axis?.[k] ?? 0) * r.gapMm);
+      return { row: r, d: [...mm.map((v, k) => v - reference[k]), ...anglesOf(r)] };
+    });
+  });
+  const lifted = liftRows.length > 0;
+  /*
+   * One pose's solve, optionally Huber-reweighted: each reading's residual
+   * against the solution, and a reading further off than --robust px keeps
+   * k/|r| of its weight. Five rounds from the plain solve.
+   */
+  const modelAt = (o, d) => o.reference + o.jacobian.reduce((acc, j, a) => acc + j * d[a]
+    + (o.hinge?.[a] ?? 0) * Math.min(d[a], 0) + (o.lift?.[a] ?? 0) * d[LIFT] * d[a], 0);
+  const robustly = (obs, prior = null) => {
+    let s = solveLifted(obs, { prior, liftAxis: LIFT });
+    if (!(opts.robust > 0)) return s;
+    for (let round = 0; round < 5 && s.determined; round++) {
+      const w = obs.map((o) => {
+        if (!Number.isFinite(o.measured)) return o;
+        const r = Math.abs(o.measured - modelAt(o, s.d));
+        return { ...o, weight: (o.weight ?? 1) * (r > opts.robust ? opts.robust / r : 1) };
+      });
+      const next = solveLifted(w, { prior, liftAxis: LIFT });
+      if (!next.determined) break;
+      s = { ...next, residualRms: s.residualRms };
+    }
+    return s;
+  };
   const points = POINTS[opts.readings];
 
   /* ---- 1. the Jacobian ---------------------------------------------- */
@@ -269,13 +323,17 @@ function main() {
          * 3 MADs (scaled to a sigma, and never under 0.05 px) is dropped and
          * the fit made again.
          */
-        const points = unknowns.flatMap((u) => rowsOf(u).filter((r) => keyOf(r, point) === key)
-          .map((r) => [displacementOf(u, r), pick(readingsOf(r)[point])]))
+        const points = [...unknowns.flatMap((u) => rowsOf(u).filter((r) => keyOf(r, point) === key)
+          .map((r) => [displacementOf(u, r), pick(readingsOf(r)[point])])),
+        ...liftRows.filter(({ row }) => keyOf(row, point) === key).map(({ row, d }) => [d, pick(readingsOf(row)[point])])]
           .filter(([, v]) => v !== null && v !== undefined && Number.isFinite(v));
         // Hinged: one more column per lateral axis, the displacement where
         // it is below zero and nothing where it is not.
         const hinged = opts.calibrate === 'hinged' ? unknowns.map((u) => u === 'x' || u === 'z') : unknowns.map(() => false);
-        const columns = (d) => [1, ...d, ...d.filter((_, a) => hinged[a]).map((x) => Math.min(x, 0))];
+        // Lifted: one more column per other axis, its displacement times the lift's.
+        const liftOn = unknowns.map((u, a) => lifted && a !== LIFT);
+        const columns = (d) => [1, ...d, ...d.filter((_, a) => hinged[a]).map((x) => Math.min(x, 0)),
+          ...d.filter((_, a) => liftOn[a]).map((x) => x * d[LIFT])];
         const fit = (pts) => solvePosition(pts.map(([d, v]) => ({ jacobian: columns(d), reference: 0, measured: v })));
         let f = fit(points);
         if (!f.determined) continue;
@@ -295,8 +353,9 @@ function main() {
         const fitRms = Math.sqrt(rk.reduce((acc, x) => acc + x * x, 0) / Math.max(1, kept.length - f.d.length));
         let h = 1 + unknowns.length;
         const hinge = hinged.map((on) => (on ? f.d[h++] : 0));
+        const lift = liftOn.map((on) => (on ? f.d[h++] : 0));
         out.set(key, { ...truth, reference: f.d[0], jacobian: f.d.slice(1, 1 + unknowns.length),
-          ...(hinged.some(Boolean) ? { hinge } : {}),
+          ...(hinged.some(Boolean) ? { hinge } : {}), ...(lifted ? { lift } : {}),
           calibration: { frames: points.length, kept: kept.length, rms: fitRms } });
       } else if (opts.calibrate === 'reference') {
         const at = unknowns.flatMap((u) => valuesOf(u).filter(([x]) => x === 0).map(([, v]) => v));
@@ -322,7 +381,7 @@ function main() {
   const posesFrom = (rows, displacementFor) => {
     const groups = new Map();
     for (const r of rows) {
-      const id = r.pose ?? `${r.gapMm}/${r.turnDeg ?? 0}`;
+      const id = r.pose ?? `${r.gapMm}/${r.turnDeg ?? 0}/${r.tipDeg ?? ''}`;
       if (!groups.has(id)) groups.set(id, { d: displacementFor(r), label: null, readings: new Map() });
       for (const p of points) groups.get(id).readings.set(keyOf(r, p), readingsOf(r)[p]);
     }
@@ -333,7 +392,7 @@ function main() {
   const testPoses = opts.test
     ? posesFrom(load(opts.test).rows.filter((r) => r.pair !== null && r.pair !== undefined), (r) => [
       ...r.poseMm.map((v, k) => v - reference[k]),
-      ...(opts.dirs.turn ? [r.turnDeg ?? 0] : []),
+      ...anglesOf(r),
     ]).map((pose, k) => ({ ...pose, label: `pose ${k + 1}` }))
     : [];
 
@@ -399,10 +458,10 @@ function main() {
       const obs = used.map((p) => {
         const r = pose.readings.get(p.key);
         const sigma = sigmaOf(pick, r);
-        return { jacobian: p.jacobian, hinge: p.hinge, reference: p.reference, measured: r ? pick(r) : null,
+        return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, reference: p.reference, measured: r ? pick(r) : null,
           weight: opts.weights === 'sigma' && sigma > 0 ? 1 / (sigma * sigma) : 1 };
       });
-      const s = solveHinged(obs);
+      const s = robustly(obs);
       /*
        * A pose is solved from the readings it HAS, and one that lost a few
        * can be left with readings that barely separate the unknowns. The
@@ -484,7 +543,7 @@ function main() {
     const rows = run.rows.filter((r) => r.pair !== null && r.pair !== undefined);
     const frames = posesFrom(rows, (r) => [
       ...offset.map((o, k) => o + run.axis[k] * r.gapMm - reference[k]),
-      ...(opts.dirs.turn ? [r.turnDeg ?? 0] : []),
+      ...anglesOf(r),
     ]).map((f, k) => ({ ...f, label: `frame ${k + 1}` }));
     return { dir, frames };
   });
@@ -501,7 +560,7 @@ function main() {
     const rel = opts.weights === 'sigma' && sigma > 0 && medianSigma ? sigma / medianSigma : 1;
     return 1 / (opts.readingSigma * rel) ** 2;
   };
-  const motion = unknowns.map((u) => (u === 'turn' ? opts.turnSigma : opts.motionSigma) ** 2);
+  const motion = unknowns.map((u) => (ANGLES.includes(u) ? opts.turnSigma : opts.motionSigma) ** 2);
   const start = unknowns.map((u) => opts.startSigma ** 2);
   const diagonal = (v) => v.map((x, a) => v.map((_, b) => (a === b ? x : 0)));
 
@@ -520,7 +579,7 @@ function main() {
   };
   const commandedFor = (frames, trial) => {
     const g = gaussians(1000 + trial);
-    const sd = (u, size) => (u === 'turn' ? (size === 'start' ? opts.startSigma : opts.turnSigma)
+    const sd = (u, size) => (ANGLES.includes(u) ? (size === 'start' ? opts.startSigma : opts.turnSigma)
       : size === 'start' ? opts.startSigma : opts.motionSigma);
     const startErr = unknowns.map((u) => g() * sd(u, 'start'));
     const stepErr = frames.map(() => unknowns.map((u) => g() * sd(u, 'step')));
@@ -548,7 +607,7 @@ function main() {
         const obs = used.map((p) => {
           const r = frame.readings.get(p.key);
           const [value, sigma] = r ? pick(r) : [null, null];
-          return { jacobian: p.jacobian, hinge: p.hinge, reference: p.reference, measured: value, weight: weightOf(sigma) };
+          return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, reference: p.reference, measured: value, weight: weightOf(sigma) };
         });
         /*
          * Carried: the last solution moved by the commanded move, its
@@ -563,7 +622,7 @@ function main() {
               covariance: state.covariance.map((row, a) => row.map((x, b) => x + (a === b ? motion[a] : 0))) }
             : { d: believed.slice(), covariance: diagonal(k === 0 ? start : start.map((v, a) => v + k * motion[a])) };
         }
-        const s = solveHinged(obs, { prior });
+        const s = solveLifted(obs, { prior, liftAxis: LIFT });
         if (!s.determined || (mode === 'alone' && Math.max(...s.sigma) > opts.maxSigma * opts.readingSigma)) {
           state = null;
           return;
@@ -628,7 +687,8 @@ function main() {
       unknowns, reference, calibrate: opts.calibrate, readings: opts.readings,
       sweeps: Object.fromEntries(unknowns.map((u) => [u, opts.dirs[u]])),
       medianSigma: sigmas.length ? sigmas[(sigmas.length - 1) >> 1] : null,
-      calibrated: [...calibratedFor(carriedPick).values()].map(({ key, view, jacobian, hinge, reference: at }) => ({ key, view, jacobian, ...(hinge ? { hinge } : {}), reference: at })),
+      ...(lifted ? { lift: opts.lift } : {}),
+      calibrated: [...calibratedFor(carriedPick).values()].map(({ key, view, jacobian, hinge, lift, reference: at }) => ({ key, view, jacobian, ...(hinge ? { hinge } : {}), ...(lift ? { lift } : {}), reference: at })),
     };
     fs.writeFileSync(path.resolve(ROOT, opts.saveCalibration), `${JSON.stringify(saved, null, 2)}\n`);
     console.log(`\n${opts.saveCalibration}`);
