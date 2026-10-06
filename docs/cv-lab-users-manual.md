@@ -1815,6 +1815,21 @@ changing with y -- a y·x, y·z and y·turn term -- and every solve is made with
 them, iteratively, since the model is no longer linear. They are in
 `--save-calibration`'s file as `lift`, and `npm run servo` uses them.
 
+**`--tipx <dir>` and `--tipz <dir>` add tips as unknowns**: `--poses` runs
+of tips about the x or the z axis at the reference offset, solved for in
+degrees as `--turn` is. A tip is seen at a pair's ends, as a turn is, so
+four views determine all six unknowns; but two more unknowns from the same
+readings cost precision when nothing is tipped. **`--tip-prior <deg>`**
+says what is known of a tip before it is seen -- zero, to that many degrees,
+how level a gripper holds a part -- and weighs the readings absolutely
+(`--reading-sigma` for a reading of the calibration's median gapSigma)
+against it.
+
+**`--robust <px>` reweights each pose's readings by Huber's rule**: a
+reading further than that from its pose's solution keeps px/|residual| of
+its weight, for five rounds. On camera-like images (noise, blur,
+distortion) 0.1 px helps; on clean renders it changes nothing.
+
 **`--sequence <dir>` solves a gap sweep frame by frame**, in the order it was
 swept, twice: each frame alone, and each with the previous frame's pose
 carried in. The carried pose is the last solution moved by the motion

@@ -2175,6 +2175,54 @@ solve better -- y and z 0.033 / 0.050 mm against 0.019-0.023 / 0.021-0.023
 over three native renders. It is the right control for distortion, which is
 all it is used for here. (`notes/brads-notes/2026-10-06-distort/`.)
 
+#### A twenty-eighth: tipping
+
+Never rendered until now: `gap-sweep --poses` takes `x,y,z,turn,tipX,tipZ`,
+the moving part's Euler rotation about its own centre. A sweep of tips about
+x and one about z (-2 to +2 degrees, at the reference pose), and eight test
+poses mixing tips up to 1.5 degrees with offsets and turns.
+
+**The pairs read a tip as faithfully as they read a turn.** A tip about x
+leaves the front pair's two ends together and moves its middle (by up to
+0.8 px per degree), and spreads the side pair's ends apart, 0.5 to 1.4 px
+per degree; a tip about z does the reverse. Read against the truth, the
+spread follows to 0.02 px per degree in every view. A turn spreads both
+pairs at once, so a turn and two tips are three different patterns, and
+the ends see all three.
+
+**Ignored, a tip is ruinous.** Solved with the four unknowns, no truth,
+four views, the tipped test poses come out 0.61 / 0.65 / 0.65 mm and 0.50
+degrees off: about half a millimetre per degree of tip, all of it pushed
+into position and the turn.
+
+**As unknowns, tips are determined.** `position --tipx --tipz` adds them,
+calibrated from the two sweeps like the turn. Four views, no truth:
+
+| | test poses (untipped) | tipped test poses |
+|---|---|---|
+| four unknowns | 0.026 / 0.019 / 0.023 / 0.019 | 0.61 / 0.65 / 0.65 / 0.50 |
+| six unknowns | 0.050 / 0.058 / 0.035 / 0.014, tips 0.05 | 0.096 / 0.046 / 0.054 / 0.032, tips 0.06 / 0.05 |
+
+Two more unknowns from the same readings cost precision when nothing is
+tipped (sigma per px 0.4 -> 0.6). **`--tip-prior <deg>`** puts what is known
+before looking -- zero, to how level a gripper holds a part -- against the
+readings, weighed absolutely (`--reading-sigma`, 0.1 px at the median
+gapSigma). Untipped / tipped, four views:
+
+| tip prior | untipped | tipped |
+|---|---|---|
+| 0.05 deg | 0.031 / 0.032 / 0.021 / 0.016 | 0.38 / 0.39 / 0.38 / 0.27 |
+| 0.3 deg | 0.048 / 0.056 / 0.033 / 0.014 | 0.099 / 0.053 / 0.060 / 0.029 |
+| 1 deg | 0.050 / 0.058 / 0.035 / 0.014 | 0.096 / 0.046 / 0.054 / 0.031 |
+
+So a tip needs its own unknowns whenever a part can sit in the gripper more
+than about a tenth of a degree off level, with the prior set to what the
+gripper really does: a tight prior on a tipped part is as wrong as no tip
+unknowns at all. (Weighed against a prior, the readings' 1/gapSigma^2
+weights were first used as they stand; gapSigma, ~0.02 px, is a fifth of a
+reading's real error, and no prior moved anything.)
+(`notes/brads-notes/2026-10-06-tip/`.)
+
 #### A twenty-ninth: past seven degrees, the edges cross
 
 Turned past about five degrees, the stack's pairs stop being parallel in the

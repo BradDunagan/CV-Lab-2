@@ -105,6 +105,10 @@ CV-Lab relative position -- several gap readings solved for one displacement
                         then fits each reading's slopes in x, z and the turn
                         as changing with the lift -- a y*x, y*z and y*turn
                         term -- and the solve is made with them. Repeatable
+  --tip-prior <deg>     with --tipx/--tipz, what is known of a tip before it is
+                        seen: zero, to this many degrees (a gripper holds a part
+                        level to about so much). Readings weighed absolutely,
+                        1/gapSigma^2 px^-2, against it            (default: none)
   --robust <px>         reweight each pose's readings by Huber's rule: a reading
                         whose residual exceeds this many px counts linearly,
                         not quadratically, for five rounds    (default: off)
@@ -120,7 +124,7 @@ CV-Lab relative position -- several gap readings solved for one displacement
 
 function parseArgs(argv) {
   const opts = { dirs: {}, test: null, readings: 'both', weights: 'sigma', out: null, maxViews: 3, maxSigma: 10, maxResidual: Infinity,
-    calibrate: 'truth', saveCalibration: null, sequences: [], lift: [], robust: 0, readingSigma: 0.1, motionSigma: 0.1, turnSigma: 0.1, startSigma: 1, trials: 20 };
+    calibrate: 'truth', saveCalibration: null, sequences: [], lift: [], robust: 0, tipPrior: 0, readingSigma: 0.1, motionSigma: 0.1, turnSigma: 0.1, startSigma: 1, trials: 20 };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (['--x', '--y', '--z', '--turn', '--tipx', '--tipz'].includes(arg)) opts.dirs[arg.slice(2)] = argv[++i];
@@ -129,6 +133,7 @@ function parseArgs(argv) {
     else if (arg === '--sequence') opts.sequences.push(argv[++i]);
     else if (arg === '--lift') opts.lift.push(argv[++i]);
     else if (arg === '--robust') opts.robust = Number(argv[++i]);
+    else if (arg === '--tip-prior') opts.tipPrior = Number(argv[++i]);
     else if (arg === '--reading-sigma') opts.readingSigma = Number(argv[++i]);
     else if (arg === '--motion-sigma') opts.motionSigma = Number(argv[++i]);
     else if (arg === '--turn-sigma') opts.turnSigma = Number(argv[++i]);
@@ -255,7 +260,22 @@ function main() {
   const modelAt = (o, d) => o.reference + o.jacobian.reduce((acc, j, a) => acc + j * d[a]
     + (o.hinge?.[a] ?? 0) * Math.min(d[a], 0) + (o.lift?.[a] ?? 0) * d[LIFT] * d[a]
     + (o.liftHinge?.[a] ?? 0) * d[LIFT] * Math.min(d[a], 0), 0);
-  const robustly = (obs, prior = null) => {
+  /*
+   * A prior on the tips alone: zero, to --tip-prior degrees; every other
+   * unknown free (a variance far past anything solved).
+   */
+  const tipPrior = opts.tipPrior > 0 && unknowns.some((u) => u === 'tipx' || u === 'tipz')
+    ? { d: unknowns.map(() => 0),
+      covariance: unknowns.map((u, a) => unknowns.map((v, b) => (a !== b ? 0
+        : u === 'tipx' || u === 'tipz' ? opts.tipPrior ** 2 : 1e6))) }
+    : null;
+  // Against a prior the readings' weights must be absolute: --reading-sigma
+  // px for a reading of the calibration sweeps' median gapSigma, as --sequence.
+  const calSigmas = unknowns.flatMap((u) => rowsOf(u)).flatMap((r) => [r.tracked?.gapSigma, r.refit?.gapSigma])
+    .filter((v) => v > 0).sort((a, b) => a - b);
+  const calMedian = calSigmas.length ? calSigmas[(calSigmas.length - 1) >> 1] : 1;
+  const robustly = (obs0, prior = null) => {
+    const obs = prior ? obs0.map((o) => ({ ...o, weight: (o.weight ?? 1) * (calMedian / opts.readingSigma) ** 2 })) : obs0;
     let s = solveLifted(obs, { prior, liftAxis: LIFT });
     if (!(opts.robust > 0)) return s;
     for (let round = 0; round < 5 && s.determined; round++) {
@@ -485,7 +505,7 @@ function main() {
         return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, liftHinge: p.liftHinge, reference: p.reference, measured: r ? pick(r) : null,
           weight: opts.weights === 'sigma' && sigma > 0 ? 1 / (sigma * sigma) : 1 };
       });
-      const s = robustly(obs);
+      const s = robustly(obs, tipPrior);
       /*
        * A pose is solved from the readings it HAS, and one that lost a few
        * can be left with readings that barely separate the unknowns. The
