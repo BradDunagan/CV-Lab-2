@@ -2064,6 +2064,71 @@ and two sizes; what it cannot do is tell a gap from a shadow beside an edge,
 and nothing that sees only pixels can. In the renderer `explain` can.
 (`notes/brads-notes/2026-10-05-findpairs/`.)
 
+#### A twenty-fifth: a pixel shaped like a lens's blur
+
+Blur was the largest cost of a camera-like image (the twenty-fourth: 0.8 px
+of Gaussian took four-view, no-truth x from 0.039 to 0.170 mm), and the fit
+models a pixel as a box. `fitPairs`, `findPairs` and `trackPair` now take
+**`profile: smooth`**: the projected unit pixel convolved with three equal
+boxes -- a quadratic B-spline, Gaussian-like and still piecewise polynomial,
+so the no-transcendentals rule holds. The aperture keeps its meaning, the
+width of the box with the same spread, so the two profiles' numbers compare;
+at an aperture of 1 or less the profile is the box.
+
+**The shape is right.** On a strip area-sampled exactly and blurred by a
+sampled Gaussian, with each profile's aperture measured on a lone edge of the
+same image, as the pipeline does, the smooth profile reads gaps of 2 to 4 px
+at 7 to 30 degrees to within 0.004-0.065 px at sigma 0.8 and 1.0; the box
+errs by up to 0.24 px, and by an amount that changes with the gap, which no
+calibration removes. It fits the pixels three times better.
+
+**On the stack's blurred renders it does not help**, and why is the useful
+part. Test poses, no truth (hinged, pooled still edge), x / y / z mm and
+turn degrees; "ten sets" is the RMS over every multi-view set but the weak
+35/50 + 60/50 pair:
+
+| | ten sets | four views |
+|---|---|---|
+| clean, box | 0.064 / 0.037 / 0.060 / 0.026 | 0.039 / 0.023 / 0.034 / 0.020 |
+| clean, smooth | 0.068 / 0.042 / 0.068 / 0.026 | 0.036 / 0.024 / 0.037 / 0.019 |
+| blur 0.8, box | 0.197 / 0.088 / 0.101 / 0.104 | 0.170 / 0.072 / 0.065 / 0.074 |
+| blur 0.8, smooth | 0.219 / 0.177 / 0.302 / 0.112 | 0.123 / 0.094 / 0.117 / 0.103 |
+| blur 0.8, box, aperture per pair | 0.185 / 0.111 / 0.163 / 0.086 | 0.140 / 0.064 / 0.090 / 0.065 |
+| blur 0.8, smooth, aperture per pair | 0.178 / 0.105 / 0.143 / 0.093 | 0.124 / 0.079 / 0.111 / 0.086 |
+
+- **The aperture, measured on the image's lone segments, is too wide under
+  the smooth profile**: 3.23 px median on the blurred renders, where the
+  pairs themselves say 2.95-3.05. Real lone edges -- a table's, a shadow's --
+  have tails a step does not, and the smooth model turns tails into width
+  where the box ignores them. It is steep: held at 2.8, 2.9, 3.0, 3.1 and
+  3.2 px, the blurred front pair's refit error runs 0.175, 0.077, 0.061,
+  0.218, 0.310 px RMS, about a tenth of a pixel of gap per tenth of a pixel
+  of aperture. At the right width the smooth profile reads that pair better
+  than the box (0.061 against 0.092, non-linear part 0.021 against 0.031).
+- **Measuring it on the pair itself** -- where the gap is wide, the two edges
+  pin it as a lone step does -- gives the right width. One aperture per image
+  from all its wide pairs jumps from frame to frame (shadow lines join in;
+  the clean front pair went 0.029 -> 0.074 px). Each pair its own, gated on
+  the DETECTED gap, fails on true gaps of 1.4 px detected wider; gated on the
+  fitted gap (at least 2 px and 1.2 apertures) and carried to the narrow
+  frames by `--carry`, it is the last two rows: no consistent gain. Not kept.
+- **What blur costs in the solve is the ledge, not the shape.** The front
+  pair's carried readings barely change under blur: along the x sweep, their
+  error relative to flush moves by at most 0.03 px more than unblurred, and
+  the part of it not straight in the gap is 0.023 px against 0.031. The side
+  pair's error on the slid-back side -- the ledge in soft shadow, the
+  fifteenth -- doubles: at -4 mm +0.23 -> +0.47, +0.31 -> +0.62, +0.18 ->
+  +0.42, +0.30 -> +0.67 px in the four views, and its non-straight part goes
+  0.029 -> 0.075. The front pair's blur bias is nearly straight in the gap,
+  and the no-truth calibration takes it out whatever the profile. Some 50°
+  side-pair frames also flip by 0.2 px under blur where the gap is under a
+  pixel and a half: there the strip-or-edge choice was set on sharp images.
+
+So the profile stays, opt-in, for an image whose edges are cleaner than its
+lone segments' median; the default stays the box. What a blurred camera needs
+next is the ledge read under blur, and a way to measure the aperture on the
+edges that matter. (`notes/brads-notes/2026-10-06-aperture/`.)
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

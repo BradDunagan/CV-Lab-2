@@ -512,7 +512,7 @@ function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, 
       placed.sort((a, b) => offsetOf(a.still) - offsetOf(b.still));
       const { s: from, row, record, moving, still } = placed[(placed.length - 1) >> 1];
       const carried = { line: still, toward: [(moving.x0 + moving.x1) / 2, (moving.y0 + moving.y1) / 2],
-        stripLevel: record.levels[1], aperture: record.aperture };
+        stripLevel: record.levels[1], aperture: record.aperture, profile: record.profile ?? 'box' };
       sources.push({ ...(from.view ?? {}), pair, ...(from.run ? { run: from.run } : {}), from: from.name, fromMm: from.gapMm, gapPx: row.refit.gapPx,
         ledgeGain: row.refit.ledge?.gain ?? null, of: placed.length, stripLevel: carried.stripLevel, aperture: carried.aperture });
       for (const s of frames) {
@@ -522,7 +522,8 @@ function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, 
         (commands[s.name.replace(/\.png$/, '')] ??= []).push(`K${pair} = trackPair(G, x0=${n(carried.line.x0)}, y0=${n(carried.line.y0)}, `
           + `x1=${n(carried.line.x1)}, y1=${n(carried.line.y1)}, towardX=${n(carried.toward[0])}, `
           + `towardY=${n(carried.toward[1])}, stripLevel=${n(carried.stripLevel)}, aperture=${n(carried.aperture)}, `
-          + `guess=${n(read ?? row.refit.gapPx)}, strip=${wide ? 'fit' : 'held'})`);
+          + `guess=${n(read ?? row.refit.gapPx)}, strip=${wide ? 'fit' : 'held'}`
+          + `${carried.profile !== 'box' ? `, profile=${carried.profile}` : ''})`);
       }
     }
   }

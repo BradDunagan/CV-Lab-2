@@ -743,6 +743,83 @@ test('at contact there is no strip to fit, and almost nothing is returned', () =
   assert.ok(r === null || r.gap === null || Math.abs(r.gap) < 0.05, `contact read as ${r && r.gap}`);
 });
 
+/* ---- the smooth profile --------------------------------------------- */
+
+/** The raster blurred by a Gaussian of `sigma` px, sampled on the grid, as a lens and a sensor do it. */
+function blurred(raster, sigma) {
+  const { width: w, height: h } = raster;
+  const r = Math.ceil(4 * sigma), k = [];
+  for (let i = -r; i <= r; i++) k.push(Math.exp(-(i * i) / (2 * sigma * sigma)));
+  const sum = k.reduce((a, b) => a + b, 0);
+  let cur = raster.data;
+  for (const [dx, dy] of [[1, 0], [0, 1]]) {
+    const out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let acc = 0;
+      for (let i = -r; i <= r; i++) {
+        const xx = Math.min(w - 1, Math.max(0, x + i * dx)), yy = Math.min(h - 1, Math.max(0, y + i * dy));
+        acc += cur[yy * w + xx] * k[i + r];
+      }
+      out[y * w + x] = acc / sum;
+    }
+    cur = out;
+  }
+  return { ...raster, data: cur };
+}
+
+test('the smooth profile at an aperture of 1 or less is the box, exactly', () => {
+  const { lo, hi, raster } = scene(2.3);
+  const segs = [segOn(1, lo, -50, 50, -0.6), segOn(2, hi, -40, 40, 0.6)];
+  for (const apertureWidth of [0.8, 1]) {
+    const [box] = fitPairs(segs, raster, { aperture: 'held', apertureWidth });
+    const [smooth] = fitPairs(segs, raster, { aperture: 'held', apertureWidth, profile: 'smooth' });
+    assert.equal(smooth.profile, 'smooth');
+    assert.equal(box.profile, undefined, 'a box record says nothing new');
+    assert.equal(smooth.gap, box.gap);
+    assert.deepEqual(smooth.levels, box.levels);
+  }
+});
+
+/*
+ * As the pipeline works: the aperture measured on a lone edge of the same
+ * image, under each profile, and each pair read at what its profile measured.
+ * The box reads a Gaussian edge narrow (2.63 for an edge of spread 2.95) and
+ * its gap error then changes with the gap, which a calibration cannot take
+ * out; the smooth profile is within 0.07 px of every gap here.
+ */
+test('through a lens\'s blur, the smooth profile reads the gap that the box misreads', () => {
+  const l = lineAt(80, 60, 11);
+  const worst = { box: 0, smooth: 0 };
+  for (const sigma of [0.8, 1]) {
+    const edge = blurred(strip(160, 120, lineAt(80, 60 - 500, 11), l, [0.2, 0.2, 0.7]), sigma);
+    for (const [gap, deg] of [[2, 20], [2.5, 7], [3, 30], [4, 7]]) {
+      const { lo, hi, raster } = scene(gap, { deg });
+      const image = blurred(raster, sigma);
+      const segs = [segOn(1, lo, -40, 40, -0.4), segOn(2, hi, -40, 40, 0.4)];
+      for (const profile of ['box', 'smooth']) {
+        const [found] = loneApertures([segOn(1, l, -40, 40, 0.3)], edge, new Set(), { ...DEFAULTS, profile });
+        const [p] = fitPairs(segs, image, { aperture: 'held', apertureWidth: found.aperture, ledge: 'none', profile });
+        assert.ok(p, `no ${profile} pair at ${gap} px, ${deg} deg, sigma ${sigma}`);
+        worst[profile] = Math.max(worst[profile], Math.abs(p.gap - gap));
+      }
+    }
+  }
+  assert.ok(worst.smooth <= 0.07, `smooth worst gap error ${worst.smooth}`);
+  assert.ok(worst.smooth < worst.box / 3, `smooth worst ${worst.smooth} against box worst ${worst.box}`);
+});
+
+test('a lone blurred edge reads wider under the smooth profile than under the box', () => {
+  // A quadratic B-spline is Gaussian-like, not Gaussian: it measures a true
+  // Gaussian's spread 3% short, and the box 11% short.
+  const sigma = 0.8, width = Math.sqrt(1 + 12 * sigma * sigma);
+  const l = lineAt(80, 60, 11);
+  const image = blurred(strip(160, 120, lineAt(80, 60 - 500, 11), l, [0.2, 0.2, 0.7]), sigma);
+  const [smooth] = loneApertures([segOn(1, l, -40, 40, 0.3)], image, new Set(), { ...DEFAULTS, profile: 'smooth' });
+  const [box] = loneApertures([segOn(1, l, -40, 40, 0.3)], image, new Set(), DEFAULTS);
+  near(smooth.aperture, width, 0.12, 'smooth aperture');
+  assert.ok(box.aperture < smooth.aperture - 0.15, `box ${box.aperture} against smooth ${smooth.aperture}`);
+});
+
 (async () => {
   // An ES module, so it is imported rather than required, and this is last.
   const { overlayRole, isDetection } = await import('../src/renderer/overlay-features.mjs');

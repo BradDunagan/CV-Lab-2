@@ -520,6 +520,7 @@ the 2.3 px gap from +1.2 px of error to about −0.1.
 | `inset` | 2 px | left off each end of the shared stretch |
 | `strip`, `stripLevel` | `fit`, 0 | `held` fixes the strip's level at `stripLevel` |
 | `aperture`, `apertureWidth` | `fit`, 1 | `held` fixes the aperture at `apertureWidth` |
+| `profile` | `box` | the shape of one step through the aperture: `box`, the pixel's square; `smooth`, a unit square blurred by a Gaussian-like kernel of the same total spread, as a lens blurs. The record says `profile` when it is not the box |
 | `minSigmas` | 3 | a gap under this many `gapSigma` produces no record |
 | `levelSlope` | `fit` | each level may brighten or darken along the pair; `none` holds them flat |
 | `ledge` | `detect` | also ask whether a shadow ramp lies inside the strip; `none` does not ask |
@@ -608,6 +609,7 @@ edge.
 | `pad`, `inset` | 4, 2 px | as for `fitPairs` |
 | `strip`, `stripLevel` | `fit`, 0 | as for `fitPairs` |
 | `aperture`, `apertureWidth` | `fit`, 1 | as for `fitPairs`, measured on the *other* lone segments |
+| `profile` | `box` | as for `fitPairs` |
 | `maxGap`, `maxAngle`, `minOverlap` | 6, 5°, 10 | which segments are already a pair and so not searched; leave them at `fitPairs`'s |
 
 The records are `edge-pair`, as `fitPairs` writes them, with **both edges
@@ -667,6 +669,7 @@ fitted, and nothing has to have been detected.
 | `towardX`, `towardY` | 0 | any point on the moving part's side of that line |
 | `stripLevel` | 0 | the strip's level from that record |
 | `aperture` | 1 | the aperture from that record |
+| `profile` | `box` | the profile from that record |
 | `guess` | 1 px | where the fit starts; it also starts at 0.25, 0.5, 1 and 2 and keeps the best |
 | `pad` | 4 px | plateau taken beyond each edge |
 | `levelSlope` | `fit` | as for `fitPairs` |
