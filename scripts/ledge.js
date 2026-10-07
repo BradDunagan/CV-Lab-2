@@ -42,7 +42,8 @@ CV-Lab ledge -- where a ledge ends and how soft its shadow is, per view and pair
   --flush <dir>     a gap-sweep --carry run's results directory (the one
                     holding gap-sweep.json), swept along y with nothing slid:
                     its tracked gap against the commanded lift is where each
-                    pair's ledge ends
+                    pair's ledge ends. Swept down (--axis 0,-1,0), the moving
+                    part is the one below, and the ledge its own top face
   --fits <dir>      gap-sweep --carry --ledge-fit runs whose free ledge fits
                     give the shadow's width (repeatable). Sharp images only;
                     without any, every width is zero, as good under blur
@@ -56,10 +57,20 @@ CV-Lab ledge -- where a ledge ends and how soft its shadow is, per view and pair
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[(s.length - 1) >> 1] : null; };
 const angleApart = (a, b) => Math.abs((((a - b + 90) % 180) + 180) % 180 - 90);
 
-/** The moving part's lift above contact for a row of a run: its pose's, or the sweep's step. */
+/**
+ * Whether a run's moving part is the one BELOW: moved down from contact, by
+ * its offset, its sweep, or every pose. The ledge is then its own top face, in
+ * the still part's shadow (design-lab-model.md §5, "A thirty-fifth").
+ */
+function movingBelow(run) {
+  if (run.poses?.length) return run.poses.every((p) => (p.mm ?? p)[1] <= 0) && run.poses.some((p) => (p.mm ?? p)[1] < 0);
+  return (run.offsetMm?.[1] ?? 0) < 0 || ((run.offsetMm?.[1] ?? 0) === 0 && (run.axis?.[1] ?? 0) < 0);
+}
+
+/** How far the upper part is above the lower for a row of a run, mm: the moving part's lift, or its drop. */
 function liftOf(run, r) {
-  if (r.poseMm) return r.poseMm[1];
-  return (run.offsetMm?.[1] ?? 0) + (run.axis?.[1] ?? 0) * r.gapMm;
+  const dy = r.poseMm ? r.poseMm[1] : (run.offsetMm?.[1] ?? 0) + (run.axis?.[1] ?? 0) * r.gapMm;
+  return movingBelow(run) ? -dy : dy;
 }
 
 /**
@@ -90,7 +101,8 @@ function flushLines(run) {
     const a = e.points.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / sxx;
     const b = my - a * mx;
     const rms = Math.sqrt(e.points.reduce((s, p) => s + (p[1] - a * p[0] - b) ** 2, 0) / n);
-    out.push({ yaw: e.yaw, elevation: e.elevation, pair: e.pair, pairAngle: median(e.angles), flush: [a, b], flushRms: rms, flushOf: n });
+    out.push({ yaw: e.yaw, elevation: e.elevation, pair: e.pair, pairAngle: median(e.angles), flush: [a, b], flushRms: rms, flushOf: n,
+      on: movingBelow(run) ? 'moving' : 'still' });
   }
   return out;
 }
@@ -99,6 +111,9 @@ function flushLines(run) {
 function widths(entries, runs, minGain, minLit) {
   const found = entries.map(() => []);
   for (const run of runs) {
+    if (entries.length && (movingBelow(run) ? 'moving' : 'still') !== entries[0].on) {
+      throw new Error('a --fits run has the moving part on the other side of the still one from --flush');
+    }
     for (const r of run.rows) {
       const f = r.ledgeFit;
       // A shadow within a pixel and a half of the still edge leaves too little
@@ -158,5 +173,5 @@ function main() {
   }
 }
 
-module.exports = { flushLines, ledgeTable, liftOf };
+module.exports = { flushLines, ledgeTable, liftOf, movingBelow };
 if (require.main === module) main();

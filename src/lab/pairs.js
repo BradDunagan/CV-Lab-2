@@ -1146,6 +1146,13 @@ function trackPair(raster, carried, options = {}) {
   // in the still part's next edge, and the two-edge fit failed on it.
   const samples = bandSamples(raster, { ...frame, edges: edgesAt(Math.max(opts.guess + 1.5, 3)) }, opts);
   const still = side > 0 ? 0 : 1;
+  /*
+   * Which part is in front where the two edges cross, and whose top face a
+   * ledge is: the moving part's, above the still one -- or, with
+   * `movingBelow`, the still part's (design-lab-model.md §5, "A
+   * thirty-fifth").
+   */
+  const below = opts.movingBelow === true;
   // The still and the moving edge of a fit, which has a shadow between them
   // when there is a ledge.
   const stillOf = (f) => (side > 0 ? f.edges[0] : f.edges[f.edges.length - 1]);
@@ -1165,7 +1172,7 @@ function trackPair(raster, carried, options = {}) {
   for (const [g, m] of starts) {
     const fit = fitBand(samples, { ...frame, edges: edgesAt(g, m) }, {
       aperture: carried.aperture, heldStrip: fitStrip ? null : carried.stripLevel,
-      slopedLevels: opts.levelSlope === 'fit', heldEdges: [still], profile: opts.profile, occluder: 1 - still,
+      slopedLevels: opts.levelSlope === 'fit', heldEdges: [still], profile: opts.profile, occluder: below ? still : 1 - still,
     });
     if (fit && open(fit) && (!best || fit.rms < best.rms)) best = fit;
   }
@@ -1182,27 +1189,41 @@ function trackPair(raster, carried, options = {}) {
    * it is, and its width is held: one more level, and nothing else. Either
    * way the ledge ends at the still edge, and a shadow that reaches past it
    * hides the ledge: that is the two-edge model, exactly.
+   *
+   * That is the moving part ABOVE: the ledge is the still part's top face.
+   * With `movingBelow` the moving part is the one below, and every role
+   * swaps: the ledge is the moving part's top face, lit against the MOVING
+   * edge, in the still part's shadow, which is tied to the still edge
+   * (`offset` px from it toward the moving one) and cannot pass the moving
+   * edge.
    */
   let shadowAt = -1, ledgeGain = null;
+  // The dark strip's level: next to the moving edge, unless a ledge on the
+  // moving part lies between them.
+  const stripOf = (f) => (f.edges.length === 3 && below ? f.levels[side > 0 ? 1 : 2] : f.levels[side > 0 ? f.levels.length - 2 : 1]);
   if (opts.ledge) {
     const plain = best;
     best = null;
     const spec = opts.ledge === 'fit' ? null : opts.ledge;
+    const [sIdx, mIdx] = side > 0 ? [0, 2] : [2, 0];
+    // The edge the shadow is cast from, and the one whose top face is lit.
+    const [caster, lit] = below ? [sIdx, mIdx] : [mIdx, sIdx];
     const ledgeEdges = (g, m, x) => {
       const [s0, m0] = [{ c: 0, m: 0 }, { c: side * g, m }];
       const shadow = spec
-        ? { c: 0, m: 0, soft: true, width: spec.width ?? 0.5, heldWidth: spec.width != null, anchor: side > 0 ? 2 : 0, offset: -side * spec.offset }
+        ? { c: 0, m: 0, soft: true, width: spec.width ?? 0.5, heldWidth: spec.width != null, anchor: caster, offset: (below ? side : -side) * spec.offset }
         : { c: side * g * x, m: m * x, soft: true, width: 0.5 };
-      shadow.bound = side > 0 ? 0 : 2;
-      shadow.within = side > 0 ? 2 : 0;
+      shadow.bound = lit;
+      shadow.within = caster;
       return side > 0 ? [s0, shadow, m0] : [m0, shadow, s0];
     };
-    const sIdx = side > 0 ? 0 : 2;
+    // The dark strip is the level between the shadow and the caster.
+    const stripAt = caster === 0 ? 1 : 2;
     for (const [g, m] of starts) {
       for (const x of spec ? [0] : [0.3, 0.6]) {
         const fit = fitBand(samples, { ...frame, edges: ledgeEdges(g, m, x) }, {
           aperture: carried.aperture, heldStrip: fitStrip ? null : carried.stripLevel,
-          slopedLevels: opts.levelSlope === 'fit', heldEdges: [sIdx], profile: opts.profile, stripAt: side > 0 ? 2 : 1,
+          slopedLevels: opts.levelSlope === 'fit', heldEdges: [sIdx], profile: opts.profile, stripAt,
         });
         if (fit && open(fit) && (!best || fit.rms < best.rms)) best = fit;
       }
@@ -1224,8 +1245,29 @@ function trackPair(raster, carried, options = {}) {
      * whole lit width.
      */
     ledgeGain = best && plain && best.rms > 0 ? plain.rms / best.rms : null;
-    const lit = best ? best.levels[side > 0 ? 1 : 2] > best.levels[side > 0 ? 2 : 1] : false;
-    if (best && (!plain || (ledgeGain >= (opts.ledgeGain ?? 1) && lit))) shadowAt = 1;
+    // The lit level and the shadowed strip's, on whichever part the ledge is.
+    const litAt = (side > 0) !== below ? 1 : 2;
+    const isLit = best ? best.levels[litAt] > best.levels[3 - litAt] : false;
+    /*
+     * And only when the moving edge stays among the pixels, an aperture short
+     * of the band's far end, so the moving face's level is measured. With the
+     * moving part below, the lit ledge is bounded by the free moving edge,
+     * and a ledge with no width in sight can take the moving face's level and
+     * carry that edge off the band: the front pair at 60/50 read 1.4 px as 22
+     * (design-lab-model.md §5, "A thirty-fifth").
+     */
+    const far = samples.h.reduce((m, h) => Math.max(m, side * h), -Infinity);
+    const inBand = best ? side * movingOf(best).c + Math.abs(movingOf(best).m) * frame.half <= far - carried.aperture : false;
+    /*
+     * With the moving part below, the ledge must fit clearly better, by 1.1:
+     * bounded by the free moving edge, a ledge that is not there still moves
+     * that edge. At or near flush, on the stack, ledges fitting 1.000 to 1.07
+     * times better moved it 0.3 to 1.8 px the wrong way (the moving face's
+     * level taken for the ledge's); real ones fitted 1.1 to 2.6 times better.
+     * Above, the held still edge bounds the ledge, and 1 is enough.
+     */
+    const minGain = opts.ledgeGain ?? (below ? 1.1 : 1);
+    if (best && (!plain || (ledgeGain >= minGain && isLit && inBand))) shadowAt = 1;
     else best = plain;
   }
   /*
@@ -1263,7 +1305,7 @@ function trackPair(raster, carried, options = {}) {
   for (const [g, m] of starts) {
     const f = fitBand(samples, { ...frame, edges: edgesAt(g, m) }, {
       aperture: carried.aperture, heldStrip: fitStrip ? null : carried.stripLevel,
-      slopedLevels: opts.levelSlope === 'fit', profile: opts.profile, occluder: 1 - still,
+      slopedLevels: opts.levelSlope === 'fit', profile: opts.profile, occluder: below ? still : 1 - still,
     });
     if (f && open(f) && (!free || f.rms < free.rms)) free = f;
   }
@@ -1276,6 +1318,13 @@ function trackPair(raster, carried, options = {}) {
   else if (lone && ratio !== null && ratio < TRACK_EDGE_RATIO && !(freeRatio >= TRACK_FREE_RATIO)) model = 'edge';
   else if (best && lone) model = 'ambiguous';
   else return null;
+  /*
+   * One edge, with the moving part below: the moving edge has gone behind the
+   * still part, and the edge in the picture is the still one. An overhang of
+   * the part above is not seen from above, and nothing is read; with the
+   * moving part above, the edge seen is its own and the overhang is read.
+   */
+  if (model === 'edge' && below) return null;
   const movingLine = (edge) => {
     const at = (t) => {
       const hh = edge.c + edge.m * t;
@@ -1318,16 +1367,16 @@ function trackPair(raster, carried, options = {}) {
       ratio,
       freeRatio,
       hypotheses: [hypothesis('strip', best, movingOf(best)), hypothesis('edge', lone, lone.edges[0])],
-      stripLevel: fitStrip ? best.levels[side > 0 ? best.levels.length - 2 : 1] : carried.stripLevel,
+      stripLevel: fitStrip ? stripOf(best) : carried.stripLevel,
       aperture: carried.aperture,
     };
   }
   const ledgeOf3 = (f) => {
     const [sh, mv, st] = [f.edges[1], movingOf(f), stillOf(f)];
-    return {
-      offset: side * (mv.c - sh.c), width: sh.width,
-      level: f.levels[side > 0 ? 1 : 2], seen: side * (sh.c - st.c) > 0, lit: side * (sh.c - st.c), gain: ledgeGain,
-    };
+    // Measured from the caster's edge, and lit up to the other's.
+    const [offset, lit] = below ? [side * (sh.c - st.c), side * (mv.c - sh.c)] : [side * (mv.c - sh.c), side * (sh.c - st.c)];
+    const litLevel = (side > 0) !== below ? 1 : 2;
+    return { offset, width: sh.width, level: f.levels[litLevel], seen: lit > 0, lit, gain: ledgeGain };
   };
   const fit = model === 'strip' ? best : lone;
   const moving = model === 'strip' ? movingOf(best) : lone.edges[0];
@@ -1348,7 +1397,7 @@ function trackPair(raster, carried, options = {}) {
     levels: fit.levels,
     levelSlopes: fit.levelSlopes,
     strip: model === 'edge' ? null : fitStrip ? 'fit' : 'held',
-    stripLevel: model === 'edge' ? null : fitStrip ? best.levels[side > 0 ? best.levels.length - 2 : 1] : carried.stripLevel,
+    stripLevel: model === 'edge' ? null : fitStrip ? stripOf(best) : carried.stripLevel,
     // The ledge as fitted: the shadow's middle, px from the moving edge toward
     // the still one, its width, the lit ledge's level, how far the shadow's
     // middle is from the still edge (`lit`) and so whether any of it is in

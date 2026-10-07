@@ -1,0 +1,211 @@
+Pixels per mm of x, mm of y, mm of z, deg of turn, from the truth:
+
+  reading                                           x       y       z    turn   at the reference
+  yaw 35, elev 20 / pair 1 / end 1              0.003  -1.228   0.654  -0.376   4.951 px
+  yaw 35, elev 20 / pair 1 / end 2              0.004  -1.129   0.599   0.336   4.538 px
+  yaw 35, elev 20 / pair 1 / mid                0.003  -1.178   0.627  -0.020   4.745 px
+  yaw 35, elev 20 / pair 2 / end 1              0.773  -0.952   0.005  -0.427   3.834 px
+  yaw 35, elev 20 / pair 2 / end 2              0.873  -1.064   0.002   0.494   4.325 px
+  yaw 35, elev 20 / pair 2 / mid                0.823  -1.008   0.003   0.034   4.079 px
+  yaw 35, elev 50 / pair 1 / end 1              0.001  -0.627   1.177  -0.673   2.543 px
+  yaw 35, elev 50 / pair 1 / end 2              0.001  -0.593   1.111   0.629   2.393 px
+  yaw 35, elev 50 / pair 1 / mid                0.001  -0.610   1.144  -0.022   2.468 px
+  yaw 35, elev 50 / pair 2 / end 1              1.162  -0.386   0.001  -0.650   1.554 px
+  yaw 35, elev 50 / pair 2 / end 2              1.259  -0.416   0.001   0.721   1.695 px
+  yaw 35, elev 50 / pair 2 / mid                1.211  -0.401   0.001   0.035   1.625 px
+  yaw 60, elev 20 / pair 1 / end 1              0.001  -0.977   0.958  -0.535   3.990 px
+  yaw 60, elev 20 / pair 1 / end 2              0.005  -0.873   0.843   0.465   3.516 px
+  yaw 60, elev 20 / pair 1 / mid                0.003  -0.925   0.901  -0.035   3.753 px
+  yaw 60, elev 20 / pair 2 / end 1              0.575  -1.155   0.003  -0.325   4.644 px
+  yaw 60, elev 20 / pair 2 / end 2              0.622  -1.244   0.002   0.357   5.012 px
+  yaw 60, elev 20 / pair 2 / mid                0.598  -1.200   0.003   0.016   4.828 px
+  yaw 60, elev 50 / pair 1 / end 1              0.001  -0.344   1.276  -0.730   1.406 px
+  yaw 60, elev 50 / pair 1 / end 2              0.001  -0.318   1.174   0.655   1.281 px
+  yaw 60, elev 50 / pair 1 / mid                0.001  -0.331   1.225  -0.038   1.343 px
+  yaw 60, elev 50 / pair 2 / end 1              1.101  -0.630   0.001  -0.624   2.542 px
+  yaw 60, elev 50 / pair 2 / end 2              1.158  -0.661   0.001   0.662   2.680 px
+  yaw 60, elev 50 / pair 2 / mid                1.129  -0.645   0.001   0.019   2.611 px
+
+Calibrated from what was read (--calibrate joint): each mode of reading against its own.
+
+yaw 35, elev 20   (6 readings)
+  per px of reading error:  x 335.71 mm   y 275.92 mm   z 517.18 mm   turn 1.26 deg
+  truth      0/25 solved   rms:  x -   y -   z -   turn -   <- is linear good enough?
+  detected   0/25 solved   rms:  x -   y -   z -   turn -
+  refit      0/25 solved   rms:  x -   y -   z -   turn -
+  carried    0/25 solved   rms:  x -   y -   z -   turn -
+  test poses, which the Jacobian was not measured on:
+  truth      0/10 solved   rms:  x -   y -   z -   turn -
+  detected   0/10 solved   rms:  x -   y -   z -   turn -
+  refit      0/10 solved   rms:  x -   y -   z -   turn -
+  carried    0/10 solved   rms:  x -   y -   z -   turn -
+
+yaw 35, elev 50   (6 readings)
+  per px of reading error:  x 287.87 mm   y 871.00 mm   z 464.09 mm   turn 0.75 deg
+  truth      0/25 solved   rms:  x -   y -   z -   turn -   <- is linear good enough?
+  detected   0/25 solved   rms:  x -   y -   z -   turn -
+  refit      0/25 solved   rms:  x -   y -   z -   turn -
+  carried    0/25 solved   rms:  x -   y -   z -   turn -
+  test poses, which the Jacobian was not measured on:
+  truth      0/10 solved   rms:  x -   y -   z -   turn -
+  detected   0/10 solved   rms:  x -   y -   z -   turn -
+  refit      0/10 solved   rms:  x -   y -   z -   turn -
+  carried    0/10 solved   rms:  x -   y -   z -   turn -
+
+yaw 60, elev 20   (6 readings)
+  per px of reading error:  x 545.64 mm   y 272.85 mm   z 278.38 mm   turn 1.30 deg
+  truth      0/25 solved   rms:  x -   y -   z -   turn -   <- is linear good enough?
+  detected   0/25 solved   rms:  x -   y -   z -   turn -
+  refit      0/25 solved   rms:  x -   y -   z -   turn -
+  carried    0/25 solved   rms:  x -   y -   z -   turn -
+  test poses, which the Jacobian was not measured on:
+  truth      0/10 solved   rms:  x -   y -   z -   turn -
+  detected   0/10 solved   rms:  x -   y -   z -   turn -
+  refit      0/10 solved   rms:  x -   y -   z -   turn -
+  carried    0/10 solved   rms:  x -   y -   z -   turn -
+
+yaw 60, elev 50   (6 readings)
+  per px of reading error:  x 573.00 mm   y 1002.75 mm   z 270.60 mm   turn 0.75 deg
+  truth      0/25 solved   rms:  x -   y -   z -   turn -   <- is linear good enough?
+  detected   0/25 solved   rms:  x -   y -   z -   turn -
+  refit      0/25 solved   rms:  x -   y -   z -   turn -
+  carried    0/25 solved   rms:  x -   y -   z -   turn -
+  test poses, which the Jacobian was not measured on:
+  truth      0/10 solved   rms:  x -   y -   z -   turn -
+  detected   0/10 solved   rms:  x -   y -   z -   turn -
+  refit      0/10 solved   rms:  x -   y -   z -   turn -
+  carried    0/10 solved   rms:  x -   y -   z -   turn -
+
+yaw 35, elev 20  +  yaw 35, elev 50   (12 readings)
+  per px of reading error:  x 0.54 mm   y 0.60 mm   z 0.67 mm   turn 0.64 deg
+  truth     25/25 solved   rms:  x 0.01   y 0.01   z 0.01   turn 0.01   worst: turn -3.0, off by 0.02, -0.03, -0.03, 0.04   <- is linear good enough?
+  detected  25/25 solved   rms:  x 0.51   y 0.19   z 0.39   turn 0.15   worst: x -4.0, off by 2.17, 0.06, -0.02, -0.06
+  refit     25/25 solved   rms:  x 0.04   y 0.02   z 0.03   turn 0.02   worst: x -4.0, off by -0.13, -0.02, -0.01, 0.01
+  carried   25/25 solved   rms:  x 0.04   y 0.03   z 0.05   turn 0.01   worst: z -2.0, off by 0.03, 0.07, 0.14, -0.02
+  test poses, which the Jacobian was not measured on:
+  truth     10/10 solved   rms:  x 0.01   y 0.01   z 0.03   turn 0.01   worst: pose 10, off by 0.00, -0.02, -0.07, 0.01
+  detected   9/10 solved   rms:  x 0.53   y 0.35   z 0.42   turn 0.53   worst: pose 7, off by -0.12, 0.16, 0.30, 1.30
+  refit      9/10 solved   rms:  x 0.33   y 0.24   z 0.13   turn 0.07   worst: pose 1, off by 0.97, 0.68, 0.31, -0.02
+  carried    9/10 solved   rms:  x 0.10   y 0.03   z 0.06   turn 0.04   worst: pose 1, off by 0.18, 0.03, -0.03, -0.03
+
+yaw 35, elev 20  +  yaw 60, elev 20   (12 readings)
+  per px of reading error:  x 1.59 mm   y 1.00 mm   z 1.40 mm   turn 0.85 deg
+  truth     25/25 solved   rms:  x 0.04   y 0.02   z 0.04   turn 0.01   worst: turn -3.0, off by 0.16, 0.07, 0.13, 0.01   <- is linear good enough?
+  detected  25/25 solved   rms:  x 0.63   y 0.21   z 0.41   turn 0.12   worst: x -4.0, off by 1.90, 0.28, 0.23, 0.14
+  refit     25/25 solved   rms:  x 0.15   y 0.06   z 0.11   turn 0.05   worst: x -4.0, off by -0.51, 0.04, 0.09, 0.13
+  carried   25/25 solved   rms:  x 0.12   y 0.05   z 0.09   turn 0.04   worst: turn 3.0, off by 0.26, 0.14, 0.27, 0.01
+  test poses, which the Jacobian was not measured on:
+  truth     10/10 solved   rms:  x 0.08   y 0.04   z 0.08   turn 0.02   worst: pose 7, off by 0.11, 0.05, 0.16, -0.05
+  detected  10/10 solved   rms:  x 0.87   y 0.22   z 0.80   turn 0.32   worst: pose 5, off by 2.23, -0.25, 0.95, 0.29
+  refit     10/10 solved   rms:  x 0.25   y 0.12   z 0.20   turn 0.07   worst: pose 10, off by 0.37, 0.23, 0.35, 0.17
+  carried   10/10 solved   rms:  x 0.20   y 0.10   z 0.16   turn 0.04   worst: pose 4, off by 0.40, 0.15, 0.21, 0.03
+
+yaw 35, elev 20  +  yaw 60, elev 50   (12 readings)
+  per px of reading error:  x 0.62 mm   y 0.58 mm   z 0.55 mm   turn 0.64 deg
+  truth     25/25 solved   rms:  x 0.01   y 0.01   z 0.01   turn 0.01   worst: z -4.0, off by 0.01, 0.01, 0.06, -0.01   <- is linear good enough?
+  detected  25/25 solved   rms:  x 0.58   y 0.20   z 0.32   turn 0.36   worst: x -4.0, off by 2.25, 0.11, 0.09, -0.04
+  refit     25/25 solved   rms:  x 0.05   y 0.03   z 0.05   turn 0.03   worst: y 2.0, off by 0.04, 0.07, 0.15, -0.00
+  carried   25/25 solved   rms:  x 0.07   y 0.03   z 0.03   turn 0.04   worst: turn -1.5, off by -0.09, -0.03, -0.01, 0.20
+  test poses, which the Jacobian was not measured on:
+  truth     10/10 solved   rms:  x 0.01   y 0.01   z 0.03   turn 0.01   worst: pose 7, off by 0.02, 0.00, 0.06, -0.03
+  detected   9/10 solved   rms:  x 0.50   y 0.28   z 0.56   turn 0.74   worst: pose 7, off by -0.11, -0.08, -0.56, 1.86
+  refit      9/10 solved   rms:  x 0.16   y 0.16   z 0.30   turn 0.10   worst: pose 9, off by -0.27, -0.39, -0.74, 0.09
+  carried    9/10 solved   rms:  x 0.14   y 0.05   z 0.09   turn 0.06   worst: pose 9, off by 0.29, 0.12, 0.22, -0.02
+
+yaw 35, elev 50  +  yaw 60, elev 20   (12 readings)
+  per px of reading error:  x 0.58 mm   y 0.60 mm   z 0.59 mm   turn 0.63 deg
+  truth     25/25 solved   rms:  x 0.01   y 0.01   z 0.01   turn 0.01   worst: x -4.0, off by 0.05, 0.01, 0.00, 0.01   <- is linear good enough?
+  detected  24/25 solved   rms:  x 0.40   y 0.18   z 0.31   turn 0.11   worst: x -4.0, off by 1.17, 0.22, 0.02, 0.01
+  refit     24/25 solved   rms:  x 0.12   y 0.05   z 0.05   turn 0.04   worst: x -4.0, off by -0.46, 0.07, 0.05, 0.08
+  carried   24/25 solved   rms:  x 0.08   y 0.05   z 0.04   turn 0.02   worst: x -2.0, off by 0.25, 0.06, 0.04, 0.00
+  test poses, which the Jacobian was not measured on:
+  truth     10/10 solved   rms:  x 0.02   y 0.02   z 0.02   turn 0.02   worst: pose 7, off by -0.01, -0.04, 0.05, -0.04
+  detected   9/10 solved   rms:  x 0.68   y 0.25   z 0.62   turn 0.35   worst: pose 2, off by -0.93, -0.38, 1.61, 0.13
+  refit     10/10 solved   rms:  x 0.13   y 0.11   z 0.08   turn 0.05   worst: pose 7, off by -0.17, -0.28, -0.07, -0.09
+  carried   10/10 solved   rms:  x 0.09   y 0.08   z 0.06   turn 0.03   worst: pose 9, off by 0.08, 0.17, 0.15, -0.02
+
+yaw 35, elev 50  +  yaw 60, elev 50   (12 readings)
+  per px of reading error:  x 0.93 mm   y 1.95 mm   z 0.84 mm   turn 0.53 deg
+  truth     23/25 solved   rms:  x 0.01   y 0.02   z 0.01   turn 0.00   worst: turn -3.0, off by 0.04, 0.08, 0.03, 0.01   <- is linear good enough?
+  detected  21/25 solved   rms:  x 0.31   y 0.61   z 0.35   turn 0.32   worst: x 4.0, off by 0.41, -1.94, -0.39, 0.91
+  refit     22/25 solved   rms:  x 0.13   y 0.12   z 0.06   turn 0.01   worst: x -2.0, off by 0.56, -0.01, 0.03, 0.02
+  carried   22/25 solved   rms:  x 0.04   y 0.12   z 0.06   turn 0.03   worst: z 1.0, off by 0.06, 0.22, 0.04, -0.01
+  test poses, which the Jacobian was not measured on:
+  truth     10/10 solved   rms:  x 0.02   y 0.02   z 0.03   turn 0.01   worst: pose 7, off by 0.01, 0.01, 0.05, -0.03
+  detected   8/10 solved   rms:  x 0.60   y 1.13   z 0.61   turn 0.86   worst: pose 7, off by -0.59, -1.91, -0.43, 2.22
+  refit      8/10 solved   rms:  x 0.18   y 0.19   z 0.09   turn 0.08   worst: pose 7, off by -0.21, -0.34, -0.19, 0.21
+  carried    8/10 solved   rms:  x 0.14   y 0.31   z 0.15   turn 0.05   worst: pose 9, off by -0.19, -0.78, -0.38, 0.01
+
+yaw 60, elev 20  +  yaw 60, elev 50   (12 readings)
+  per px of reading error:  x 0.71 mm   y 0.62 mm   z 0.50 mm   turn 0.63 deg
+  truth     25/25 solved   rms:  x 0.01   y 0.01   z 0.01   turn 0.01   worst: turn 3.0, off by -0.04, -0.03, 0.02, -0.05   <- is linear good enough?
+  detected  24/25 solved   rms:  x 0.48   y 0.20   z 0.28   turn 0.27   worst: x 4.0, off by 1.24, 0.21, 0.11, 1.13
+  refit     24/25 solved   rms:  x 0.12   y 0.04   z 0.05   turn 0.03   worst: x -4.0, off by -0.55, 0.04, 0.03, 0.08
+  carried   24/25 solved   rms:  x 0.08   y 0.03   z 0.03   turn 0.04   worst: turn -1.5, off by -0.08, -0.02, -0.00, 0.19
+  test poses, which the Jacobian was not measured on:
+  truth     10/10 solved   rms:  x 0.01   y 0.02   z 0.03   turn 0.02   worst: pose 7, off by -0.01, -0.04, 0.06, -0.06
+  detected   9/10 solved   rms:  x 0.56   y 0.23   z 0.63   turn 0.55   worst: pose 2, off by -0.65, -0.28, 1.76, 0.65
+  refit      9/10 solved   rms:  x 0.33   y 0.58   z 0.67   turn 0.06   worst: pose 7, off by 0.62, 1.26, 1.50, 0.16
+  carried    9/10 solved   rms:  x 0.16   y 0.13   z 0.15   turn 0.07   worst: pose 9, off by 0.42, 0.36, 0.44, -0.15
+
+yaw 35, elev 20  +  yaw 35, elev 50  +  yaw 60, elev 20   (18 readings)
+  per px of reading error:  x 0.53 mm   y 0.47 mm   z 0.56 mm   turn 0.56 deg
+  truth     25/25 solved   rms:  x 0.01   y 0.01   z 0.01   turn 0.01   worst: z -4.0, off by -0.00, 0.00, 0.04, -0.01   <- is linear good enough?
+  detected  25/25 solved   rms:  x 0.44   y 0.17   z 0.38   turn 0.10   worst: x -4.0, off by 1.74, 0.21, 0.08, 0.10
+  refit     25/25 solved   rms:  x 0.13   y 0.03   z 0.05   turn 0.03   worst: x -4.0, off by -0.61, 0.00, 0.01, 0.07
+  carried   25/25 solved   rms:  x 0.05   y 0.03   z 0.03   turn 0.02   worst: x -1.0, off by 0.12, 0.00, 0.01, -0.01
+  test poses, which the Jacobian was not measured on:
+  truth     10/10 solved   rms:  x 0.01   y 0.01   z 0.02   turn 0.01   worst: pose 7, off by -0.00, -0.02, 0.05, -0.03
+  detected  10/10 solved   rms:  x 0.84   y 0.22   z 0.59   turn 0.37   worst: pose 5, off by 2.23, -0.25, 0.95, 0.29
+  refit     10/10 solved   rms:  x 0.14   y 0.07   z 0.11   turn 0.04   worst: pose 5, off by -0.27, 0.05, 0.09, -0.00
+  carried   10/10 solved   rms:  x 0.10   y 0.04   z 0.05   turn 0.03   worst: pose 1, off by 0.18, 0.02, -0.03, -0.02
+
+yaw 35, elev 20  +  yaw 35, elev 50  +  yaw 60, elev 50   (18 readings)
+  per px of reading error:  x 0.45 mm   y 0.53 mm   z 0.44 mm   turn 0.49 deg
+  truth     25/25 solved   rms:  x 0.01   y 0.01   z 0.01   turn 0.01   worst: z -4.0, off by 0.00, 0.01, 0.05, -0.01   <- is linear good enough?
+  detected  25/25 solved   rms:  x 0.54   y 0.20   z 0.38   turn 0.25   worst: x -4.0, off by 2.21, 0.09, 0.03, -0.03
+  refit     25/25 solved   rms:  x 0.04   y 0.02   z 0.03   turn 0.02   worst: x -4.0, off by -0.12, -0.02, -0.01, -0.01
+  carried   25/25 solved   rms:  x 0.05   y 0.03   z 0.04   turn 0.02   worst: z -2.0, off by 0.03, 0.08, 0.16, -0.01
+  test poses, which the Jacobian was not measured on:
+  truth     10/10 solved   rms:  x 0.01   y 0.01   z 0.02   turn 0.01   worst: pose 7, off by 0.01, -0.00, 0.05, -0.02
+  detected   9/10 solved   rms:  x 0.53   y 0.35   z 0.40   turn 0.73   worst: pose 7, off by -0.11, 0.11, 0.20, 1.84
+  refit      9/10 solved   rms:  x 0.13   y 0.07   z 0.07   turn 0.08   worst: pose 1, off by 0.26, 0.11, 0.02, 0.01
+  carried    9/10 solved   rms:  x 0.11   y 0.03   z 0.05   turn 0.04   worst: pose 1, off by 0.18, 0.03, -0.02, -0.02
+
+yaw 35, elev 20  +  yaw 60, elev 20  +  yaw 60, elev 50   (18 readings)
+  per px of reading error:  x 0.60 mm   y 0.47 mm   z 0.49 mm   turn 0.56 deg
+  truth     25/25 solved   rms:  x 0.01   y 0.01   z 0.01   turn 0.01   worst: turn 3.0, off by -0.01, -0.01, 0.03, -0.03   <- is linear good enough?
+  detected  25/25 solved   rms:  x 0.51   y 0.19   z 0.33   turn 0.24   worst: x -4.0, off by 1.78, 0.23, 0.13, 0.13
+  refit     25/25 solved   rms:  x 0.13   y 0.03   z 0.05   turn 0.03   worst: x -4.0, off by -0.61, 0.00, 0.01, 0.07
+  carried   25/25 solved   rms:  x 0.07   y 0.02   z 0.02   turn 0.04   worst: turn -1.5, off by -0.08, -0.02, -0.01, 0.19
+  test poses, which the Jacobian was not measured on:
+  truth     10/10 solved   rms:  x 0.01   y 0.01   z 0.03   turn 0.02   worst: pose 7, off by 0.01, -0.01, 0.07, -0.05
+  detected  10/10 solved   rms:  x 0.81   y 0.18   z 0.63   turn 0.50   worst: pose 5, off by 2.23, -0.25, 0.95, 0.29
+  refit     10/10 solved   rms:  x 0.17   y 0.10   z 0.17   turn 0.05   worst: pose 7, off by 0.06, 0.16, 0.38, 0.11
+  carried   10/10 solved   rms:  x 0.15   y 0.09   z 0.15   turn 0.05   worst: pose 9, off by 0.33, 0.28, 0.44, -0.08
+
+yaw 35, elev 50  +  yaw 60, elev 20  +  yaw 60, elev 50   (18 readings)
+  per px of reading error:  x 0.47 mm   y 0.55 mm   z 0.42 mm   turn 0.48 deg
+  truth     25/25 solved   rms:  x 0.01   y 0.01   z 0.01   turn 0.01   worst: turn 3.0, off by -0.02, -0.02, 0.01, -0.03   <- is linear good enough?
+  detected  24/25 solved   rms:  x 0.44   y 0.19   z 0.31   turn 0.20   worst: x -4.0, off by 1.30, 0.26, 0.06, 0.02
+  refit     24/25 solved   rms:  x 0.12   y 0.04   z 0.04   turn 0.03   worst: x -4.0, off by -0.54, 0.04, 0.02, 0.05
+  carried   24/25 solved   rms:  x 0.06   y 0.04   z 0.02   turn 0.03   worst: x -4.0, off by 0.20, 0.03, 0.02, -0.00
+  test poses, which the Jacobian was not measured on:
+  truth     10/10 solved   rms:  x 0.01   y 0.02   z 0.02   turn 0.02   worst: pose 7, off by -0.01, -0.04, 0.05, -0.04
+  detected   9/10 solved   rms:  x 0.60   y 0.25   z 0.61   turn 0.54   worst: pose 2, off by -0.83, -0.36, 1.66, 0.42
+  refit     10/10 solved   rms:  x 0.16   y 0.15   z 0.10   turn 0.04   worst: pose 7, off by -0.21, -0.36, -0.14, 0.10
+  carried   10/10 solved   rms:  x 0.09   y 0.08   z 0.06   turn 0.03   worst: pose 9, off by 0.16, 0.20, 0.16, -0.03
+
+yaw 35, elev 20  +  yaw 35, elev 50  +  yaw 60, elev 20  +  yaw 60, elev 50   (24 readings)
+  per px of reading error:  x 0.42 mm   y 0.41 mm   z 0.40 mm   turn 0.45 deg
+  truth     25/25 solved   rms:  x 0.01   y 0.01   z 0.01   turn 0.01   worst: z -4.0, off by 0.00, 0.00, 0.04, -0.01   <- is linear good enough?
+  detected  25/25 solved   rms:  x 0.46   y 0.18   z 0.36   turn 0.19   worst: x -4.0, off by 1.74, 0.21, 0.08, 0.10
+  refit     25/25 solved   rms:  x 0.13   y 0.03   z 0.04   turn 0.02   worst: x -4.0, off by -0.62, -0.00, 0.00, 0.04
+  carried   25/25 solved   rms:  x 0.05   y 0.02   z 0.02   turn 0.02   worst: x -4.0, off by 0.13, -0.01, 0.00, 0.00
+  test poses, which the Jacobian was not measured on:
+  truth     10/10 solved   rms:  x 0.01   y 0.01   z 0.02   turn 0.01   worst: pose 7, off by 0.00, -0.02, 0.05, -0.04
+  detected  10/10 solved   rms:  x 0.84   y 0.22   z 0.59   turn 0.52   worst: pose 5, off by 2.23, -0.25, 0.95, 0.29
+  refit     10/10 solved   rms:  x 0.16   y 0.07   z 0.11   turn 0.04   worst: pose 10, off by 0.22, 0.12, 0.11, 0.09
+  carried   10/10 solved   rms:  x 0.10   y 0.05   z 0.05   turn 0.03   worst: pose 9, off by 0.11, 0.13, 0.14, -0.02
+
+results/below/test-ledge-joint.json

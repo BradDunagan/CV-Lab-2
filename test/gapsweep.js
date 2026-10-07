@@ -226,6 +226,25 @@ test('a ledge table: where it ends is the flush sweep\'s gap in the lift, its sh
   assert.throws(() => flushLines({ ...run, offsetMm: [1, 4, 0] }), /nothing slid/);
 });
 
+test('a ledge table with the moving part below: the lift is its drop, and the ledge its own', () => {
+  const { flushLines, ledgeTable, movingBelow } = require('../scripts/ledge');
+  // The same sweep mirrored: the moving part 4 mm below, swept further down.
+  const run = { axis: [0, -1, 0], offsetMm: [0, -4, 0], rows: [-2, -1, 0, 1, 2].map((g) => (
+    { yaw: 35, elevation: 20, pair: 2, pairAngle: 15, gapMm: g, tracked: { gapPx: 1.04 * (4 + g) - 0.15 } })) };
+  const [line] = flushLines(run);
+  assert.ok(Math.abs(line.flush[0] - 1.04) < 1e-9 && Math.abs(line.flush[1] + 0.15) < 1e-9, `flush ${line.flush}`);
+  assert.equal(line.on, 'moving');
+  const fit = (gapMm, width) => ({ yaw: 35, elevation: 20, pair: 2, pairAngle: 16, gapMm, ledgeFit: { width, gain: 2, lit: 3, seen: true } });
+  const below = { axis: [-1, 0, 0], offsetMm: [0, -4, 0], rows: [fit(-4, 0.4), fit(-2, 0.4)] };
+  assert.ok(Math.abs(ledgeTable(run, [below])[0].widthPerMm - 0.1) < 1e-12);
+  // Fits made with the moving part above are another ledge.
+  const above = { ...below, offsetMm: [0, 4, 0] };
+  assert.throws(() => ledgeTable(run, [above]), /other side/);
+  // Posed: below when every pose is at or under contact.
+  assert.equal(movingBelow({ poses: [{ mm: [1, -2, 0] }, { mm: [0, -0.5, 1] }] }), true);
+  assert.equal(movingBelow({ poses: [{ mm: [1, 2, 0] }] }), false);
+});
+
 test('where the truth has no facing pair a track is still a row, and at contact its gap is its error', () => {
   // Only the table's edge in the truth: nothing faces it.
   const truth = [gt(2, ['Table'], 50, 110, 250, 110)];
@@ -482,6 +501,29 @@ test('two edges with nothing nearer are not a pair of this gap if they are far f
   // a slide closes one pair's gap and leaves the other's where it was.
   const slid = STACK.map((e) => (e.id === 1 ? gt(1, ['Top'], 50, 79.5, 150, 99.5) : e));
   assert.equal(truthPairs(slid, 'Top', 'Base', 0.005, DEFAULTS).length, 2);
+});
+
+test('a moving part BELOW, seen from above: its gap is positive though its middle projects above the gap', () => {
+  // The top cube still, its bottom-front edge at y=50; the base lowered 4 px,
+  // its near top edge at y=54. From high up the base's far top edge is at
+  // y=10 and its foreshortened front face short, so the mean of its edges'
+  // midpoints (y 40) is ABOVE its own near top edge: signed toward that
+  // middle, the gap read -4, an overhang (design-lab-model.md §5, "A
+  // thirty-fifth"). The still part's middle is higher still (y 0).
+  const high = [
+    gt(1, ['Top'], 50, 50, 150, 50), gt(2, ['Top'], 50, 0, 150, 0),
+    gt(3, ['Top'], 50, -30, 150, -30, { visible: 0 }), gt(4, ['Top'], 50, -20, 150, -20, { visible: 0 }),
+    gt(5, ['Base'], 50, 54, 150, 54), gt(6, ['Base'], 50, 70, 150, 70),
+    // The base's back edges, behind the top cube: unseen, but part of its middle.
+    gt(7, ['Base'], 50, 10, 150, 10, { visible: 0 }), gt(8, ['Base'], 50, 26, 150, 26, { visible: 0 }),
+  ];
+  const [p] = truthPairs(high, 'Base', 'Top', 0.005, DEFAULTS);
+  assert.deepEqual([p.a.id, p.b.id], [5, 1]);
+  assert.ok(Math.abs(p.facing.gap - 4) < 1e-9, `apart, not overhanging: ${p.facing.gap}`);
+  // The same pair with the base slid past the top cube's edge is negative.
+  const over = high.map((e) => (e.id === 5 ? gt(5, ['Base'], 50, 47, 150, 47) : e));
+  const o = truthPairs(over, 'Base', 'Top', 0.005, DEFAULTS)[0].facing.gap;
+  assert.ok(Math.abs(o + 3) < 1e-9, `overhang: ${o}`);
 });
 
 test('the closest pair of all is one of the pairs, so the one-pair reading has not moved', () => {

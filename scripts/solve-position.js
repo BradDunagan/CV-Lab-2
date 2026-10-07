@@ -31,6 +31,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { solvePosition, solveLifted } = require('../src/lab/position');
+const { movingBelow } = require('./ledge');
+const AXES = ['x', 'y', 'z'];
 
 const ROOT = path.join(__dirname, '..');
 
@@ -246,7 +248,17 @@ function main() {
    * Each row of each sweep is a pose: its displacement from the reference,
    * and the step that the sweep moved along.
    */
-  const stepOf = (u, r) => (ANGLES.includes(u) ? angleOf(u, r) : r.gapMm);
+  // A step along the sweep's own axis, which may run either way: a part below
+  // the still one is swept down, and slid along -x and -z to mirror one above.
+  const stepOf = (u, r) => (ANGLES.includes(u) ? angleOf(u, r) : r.gapMm * (sweeps[u].axis?.[AXES.indexOf(u)] ?? 1));
+  /*
+   * Which side a hinge is on: where the ledge is in sight. Slid back (x or z
+   * below zero) with the moving part above; slid out the other way with it
+   * below, when the ledge is its own top face (design-lab-model.md §5, "A
+   * thirty-fifth").
+   */
+  const below = movingBelow(sweeps[unknowns.find((u) => !ANGLES.includes(u))]);
+  const hingeOf = (x) => (below ? Math.max(x, 0) : Math.min(x, 0));
   const displacementOf = (u, r) => unknowns.map((v) => (v === u ? stepOf(u, r) : 0));
   const rowsOf = (u) => sweeps[u].rows.filter((r) => r.pair !== null && r.pair !== undefined);
   /*
@@ -269,8 +281,8 @@ function main() {
    * k/|r| of its weight. Five rounds from the plain solve.
    */
   const modelAt = (o, d) => o.reference + o.jacobian.reduce((acc, j, a) => acc + j * d[a]
-    + (o.hinge?.[a] ?? 0) * Math.min(d[a], 0) + (o.lift?.[a] ?? 0) * d[LIFT] * d[a]
-    + (o.liftHinge?.[a] ?? 0) * d[LIFT] * Math.min(d[a], 0), 0);
+    + (o.hinge?.[a] ?? 0) * hingeOf(d[a]) + (o.lift?.[a] ?? 0) * d[LIFT] * d[a]
+    + (o.liftHinge?.[a] ?? 0) * d[LIFT] * hingeOf(d[a]), 0);
   /*
    * A prior on the tips alone: zero, to --tip-prior degrees; every other
    * unknown free (a variance far past anything solved).
@@ -365,9 +377,9 @@ function main() {
         // Lifted: one more column per other axis, its displacement times the lift's.
         const liftOn = unknowns.map((u, a) => lifted && a !== LIFT);
         // And the hinges' own lift terms, when both.
-        const columns = (d) => [1, ...d, ...d.filter((_, a) => hinged[a]).map((x) => Math.min(x, 0)),
+        const columns = (d) => [1, ...d, ...d.filter((_, a) => hinged[a]).map(hingeOf),
           ...d.filter((_, a) => liftOn[a]).map((x) => x * d[LIFT]),
-          ...d.filter((_, a) => lifted && hinged[a]).map((x) => Math.min(x, 0) * d[LIFT])];
+          ...d.filter((_, a) => lifted && hinged[a]).map((x) => hingeOf(x) * d[LIFT])];
         const fit = (pts) => solvePosition(pts.map(([d, v]) => ({ jacobian: columns(d), reference: 0, measured: v })));
         let f = fit(points);
         /*

@@ -99,7 +99,7 @@ function toSegment(l, p) {
  * The overlap of two near-parallel segments along b's direction, and the
  * signed gap at its middle. Null if they are not parallel or do not overlap.
  */
-function facing(a, b, { maxAngle, minOverlap }, toward = null) {
+function facing(a, b, { maxAngle, minOverlap }, toward = null, away = null) {
   if (angleBetween(a, b) > maxAngle) return null;
   const ta0 = dot(sub(a.p0, b.p0), b.u);
   const ta1 = dot(sub(a.p1, b.p0), b.u);
@@ -118,7 +118,7 @@ function facing(a, b, { maxAngle, minOverlap }, toward = null) {
    * is on the wrong side of the target's and the gap is negative, which is
    * what an overhang is.
    */
-  const side = dot(sub(toward ?? add(a.p0, a.u, a.len / 2), at), b.n);
+  const side = away ? dot(away, b.n) : dot(sub(toward ?? add(a.p0, a.u, a.len / 2), at), b.n);
   const normal = side >= 0 ? b.n : [-b.n[0], -b.n[1]];
   const gap = crossing(a, at, normal);
   if (gap === null) return null;
@@ -157,6 +157,22 @@ function facingCandidates(truth, moving, target, gapM, opts) {
     whole.reduce((s, e) => s + (e.x0 + e.x1) / 2, 0) / whole.length,
     whole.reduce((s, e) => s + (e.y0 + e.y1) / 2, 0) / whole.length,
   ];
+  /*
+   * Which side of the gap the moving part is on, for the sign. The part's
+   * middle was enough with the moving part above: seen from above, a part
+   * BELOW the gap has its middle projected above its own near top edge -- its
+   * depth carries it up the picture further than its half height carries it
+   * down -- and from 50 degrees up every gap of a base cube lowered from the
+   * one above it read as an overhang (design-lab-model.md §5, "A
+   * thirty-fifth"). The still part's middle is displaced the same way, so the
+   * direction from it to the moving part's is the side, above or below.
+   */
+  const still = truth.filter((e) => e.type === 'gt-edge' && only(e, target, moving));
+  const stillMiddle = still.length === 0 ? null : [
+    still.reduce((s, e) => s + (e.x0 + e.x1) / 2, 0) / still.length,
+    still.reduce((s, e) => s + (e.y0 + e.y1) / 2, 0) / still.length,
+  ];
+  const away = middle && stillMiddle ? [middle[0] - stillMiddle[0], middle[1] - stillMiddle[1]] : null;
   const out = [];
   for (const ea of movingEdges) {
     const a = line(ea);
@@ -164,7 +180,7 @@ function facingCandidates(truth, moving, target, gapM, opts) {
     for (const eb of targetEdges) {
       const b = line(eb);
       if (!b) continue;
-      const f = facing(a, b, opts, middle);
+      const f = facing(a, b, opts, middle, away);
       if (!f) continue;
       // Depth where the gap is measured, not each edge's average. A table's
       // edge a metre long, seen at 45 degrees, has a mean depth nowhere near

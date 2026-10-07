@@ -816,13 +816,16 @@ test('an ambiguous pair narrow at both ends stays ambiguous: the level is not fi
  * `offset` px short of the moving edge and which falls linearly to the
  * strip's level over `ramp` px. Each pixel is the mean of 8 x 8 points.
  */
-function ledge(gap, offset, ramp, lit = 0.25) {
+function ledge(gap, offset, ramp, lit = 0.25, on = 'still') {
   const { lo, hi } = scene(gap);
   const at = (x, y) => {
     const h = (x - lo.px) * lo.nx + (y - lo.py) * lo.ny;
     if (h < 0) return LEVELS[0];
     if (h >= gap) return LEVELS[2];
-    const s = (h - (gap - offset)) / ramp + 0.5; // 0 lit, 1 in shadow
+    // 0 lit, 1 in shadow. On the moving part (`on: 'moving'`, the part below)
+    // the shadow is the still part's, `offset` px from the still edge, and
+    // the ledge is lit up to the moving edge.
+    const s = (on === 'moving' ? offset - h : h - (gap - offset)) / ramp + 0.5;
     const f = Math.min(1, Math.max(0, s));
     return lit + (LEVELS[1] - lit) * f;
   };
@@ -872,6 +875,42 @@ test('a "ledge" no brighter than its strip is no lit ledge: refused, the record 
   const held = trackPair(raster, carriedFrom(lo, hi), { ...opts, ledge: { offset: 3, width: 0.3 } });
   near(held.gap, plain.gap, 1e-9, 'refused');
   assert.equal('ledge' in held, false);
+});
+
+test('a ledge on the moving part, below the still one, is read the same way, mirrored', () => {
+  // Lit 2 px and more. Narrower, the shadow's held width (0.3 against the
+  // fixture's 0.6 ramp) is taken up by the free moving edge rather than the
+  // held still one: lit 1.5 px reads 0.11 to 0.15 short, where the ledge on
+  // the still part reads within 0.05.
+  for (const [gap, offset] of [[6, 3], [5, 2.5], [4, 2]]) {
+    // The ledge now meets the moving face, not the still one: at the
+    // fixture's 0.25 against the moving face's 0.31 that edge has next to no
+    // contrast, so the ledge is lit brighter than either face.
+    const { lo, hi, raster } = ledge(gap, offset, 0.6, 0.45, 'moving');
+    const opts = { strip: 'fit', guess: gap };
+    const plain = trackPair(raster, carriedFrom(lo, hi), opts);
+    assert.ok(gap - plain.gap > 0.05, `${gap} px: plain should read short, the lit ledge taken for the moving face; read ${plain.gap}`);
+    const held = trackPair(raster, carriedFrom(lo, hi), { ...opts, ledge: { offset, width: 0.3 }, movingBelow: true });
+    near(held.gap, gap, 0.05, `${gap} px, ledge on the moving part held`);
+    near(held.ledge.offset, offset, 1e-6, 'offset, from the still edge');
+    near(held.ledge.lit, gap - offset, 0.05, 'lit up to the moving edge');
+    near(held.ledge.level, 0.45, 0.03, 'the lit ledge\'s level');
+    near(held.stripLevel, LEVELS[1], 0.03, 'the strip is the dark, not the ledge');
+    // Held on the wrong part, it does not fit.
+    const wrong = trackPair(raster, carriedFrom(lo, hi), { ...opts, ledge: { offset, width: 0.3 } });
+    assert.ok(held.rms < wrong.rms / 2, `on the moving part ${held.rms}, on the still one ${wrong.rms}`);
+  }
+});
+
+test('with the moving part below, an overhang is not seen: one edge in the picture is the still one, and no gap is read', () => {
+  // The upper, still part's face meets the moving face at the still line:
+  // the lower part's edge is somewhere behind it.
+  const lo = lineAt(80, 60, 8);
+  const far = lineAt(80 + lo.nx * 50, 60 + lo.ny * 50, 8);
+  const raster = strip(160, 120, lo, far, [LEVELS[0], LEVELS[2], LEVELS[2]]);
+  const c = carriedFrom(lo, { ...lo, px: lo.px + lo.nx, py: lo.py + lo.ny });
+  near(trackPair(raster, c).gap, 0, 0.02, 'above: its own edge, at the line');
+  assert.equal(trackPair(raster, c, { movingBelow: true }), null);
 });
 
 test('a ledge held behind the still edge is no ledge: the record is the plain one', () => {
