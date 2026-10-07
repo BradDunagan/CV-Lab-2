@@ -779,6 +779,34 @@ test('a moving edge that crosses the still one is read along its whole length', 
   }
 });
 
+/*
+ * The level fitted when a held fit is ambiguous and wide at an end
+ * (design-lab-model.md §5, "A thirty-fourth"). The one frame that needs it
+ * is a render's -- an 8-degree pair at 35/50 -- and no synthetic turned pair
+ * tried (6 to 10 degrees, 0.1 to 1.5 px in the middle, levels carried 0.03
+ * to 0.2, noise to 0.01) is ambiguous held: what is pinned here is that
+ * nothing else changes.
+ */
+test('a turned pair that reads with its level held is read exactly as before', () => {
+  for (const level of [0.06, 0.2]) {
+    const still = lineAt(80, 60, 8);
+    const moving = lineAt(80 + still.nx, 60 + still.ny, 16);
+    const raster = crossing(160, 120, still, moving, LEVELS);
+    const c = carriedFrom(still, moving, { level });
+    const off = trackPair(raster, c, { guess: 1, wideEnd: 0 });
+    assert.equal(off.model, 'strip');
+    assert.deepEqual(trackPair(raster, c, { guess: 1 }), off);
+  }
+});
+
+test('an ambiguous pair narrow at both ends stays ambiguous: the level is not fitted', () => {
+  const { lo, hi, raster } = scene(0.1, { noise: 0.01, aperture: 1.35 });
+  const r = trackPair(raster, { ...carriedFrom(lo, hi), aperture: 1.35 });
+  assert.equal(r.model, 'ambiguous');
+  assert.equal(r.strip, undefined);
+  assert.equal(r.stripFrom, undefined);
+});
+
 /* ---- a ledge, held -------------------------------------------------- */
 
 /**

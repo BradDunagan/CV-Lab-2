@@ -2627,6 +2627,39 @@ reading in a hundred moves a fit of hundreds of frames very little.
 the lit guard `run-la.log`, `lit-*.log`; the shift guard `run-ga.log`,
 `guard-*.log`.)
 
+#### A thirty-fourth: a turned pair's strip level
+
+The twenty-ninth left one reading of `stack-2g-large` out: the 8-degree
+pose's side pair at 35/50, ambiguous, both hypotheses wrong. It reads 2.98
+px in the middle, so gap-sweep holds its strip level at the 0.084 carried
+from a parallel frame, though it is open about 6 px at one end; held there,
+the strip hypothesis settles 0.8 px short. Its own level is 0.119. Fitting
+the level wherever an end was wide brought it back and doubled the turn's
+error on the test poses (0.019 -> 0.037 degrees), because every turned
+frame then fitted its level.
+
+So the level is fitted only where holding it gives no reading: `trackPair`
+held, ambiguous, and open at least `wideEnd` px (3, gap-sweep's `carryMin`)
+at one end, tries again with the level fitted and keeps that if it is a
+strip. Nothing that reads now can change. Over every stack run (the four
+calibration sweeps, the three test renders, the low poses, the large ones)
+the one reading changes and no other moves 0.05 px; it reads 1.035 for a
+true 1.09. Four views, no truth, hinged, x / y / z mm and turn degrees:
+
+| `stack-2g-large`, twelve poses | four views | ten sets | the 8-degree pose |
+|---|---|---|---|
+| before | 0.164 / 0.072 / 0.107 / 0.093 | 0.214 / 0.111 / 0.184 / 0.119 | -0.35 / -0.06 / 0.12 / -0.18 |
+| level fitted where ambiguous and wide | 0.147 / 0.072 / 0.108 / 0.090 | 0.184 / 0.109 / 0.184 / 0.117 | -0.25 / -0.05 / 0.13 / -0.16 |
+
+No synthetic turned pair tried, 6 to 10 degrees with the level carried in
+wrong and noise added, is ambiguous held -- a wrong level reads 0.1 to 0.2
+px off instead -- so the tests pin what must not change, and the frame that
+needs it is a render's. (The re-reads must score as the run did: `retrack.js`
+takes `MAX_ANGLE=12`, which the large poses were analysed with; without it
+the 8-degree rows have no truth to match and keep their old reading.)
+
+(`notes/brads-notes/2026-10-07-ledge/`: `one.js`, `retrack.js`.)
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

@@ -1285,6 +1285,25 @@ function trackPair(raster, carried, options = {}) {
     return { x0, y0, x1, y1 };
   };
   const stillLine = { x0: carried.line.x0, y0: carried.line.y0, x1: carried.line.x1, y1: carried.line.y1 };
+  /*
+   * Ambiguous with the strip's level held, and yet wide at one end: a turned
+   * pair, under carryMin in the middle and open by pixels at an end. The
+   * level carried in from a frame where the pair was wide and parallel may
+   * not be this strip's, and held there both hypotheses can be wrong -- at
+   * 8 degrees, 35/50, the strip one 0.8 px short with the level held at
+   * 0.084 where the strip's own is 0.119. Fitting the level is then the only
+   * reading. Only here: fitting it in every turned frame with a wide end
+   * doubled the turn's error on the test poses (design-lab-model.md §5,
+   * "A thirty-fourth").
+   */
+  if (model === 'ambiguous' && !fitStrip && opts.wideEnd !== 0) {
+    const [mv, st] = [movingOf(best), stillOf(best)];
+    const widest = side * (mv.c - st.c) + Math.abs(mv.m - st.m) * frame.half;
+    if (widest >= (opts.wideEnd ?? 3)) {
+      const again = trackPair(raster, carried, { ...opts, strip: 'fit' });
+      if (again?.model === 'strip') return { ...again, stripFrom: 'wide end' };
+    }
+  }
   if (model === 'ambiguous') {
     const hypothesis = (m, f, edge) => ({ model: m, gap: side * edge.c, gapSigma: f.gapSigma, moving: movingLine(edge), rms: f.rms });
     return {

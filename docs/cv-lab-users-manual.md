@@ -674,6 +674,7 @@ fitted, and nothing has to have been detected.
 | `pad` | 4 px | plateau taken beyond each edge |
 | `levelSlope` | `fit` | as for `fitPairs` |
 | `strip` | `held` | `held`: the strip level carried in, for a strip too narrow to show its own. `fit`: only the line is carried |
+| `wideEnd` | 3 px | held, and ambiguous between a strip and one edge, yet this far open at one end (a turned pair): the level is fitted instead. 0: never |
 | `ledge` | `none` | a lit ledge inside the strip, up to the moving part's shadow. `held`: the shadow's middle `ledgeOffset` px from the moving edge toward the still one, `ledgeWidth` px wide; `fit`: placed freely, to measure it |
 | `ledgeOffset`, `ledgeWidth` | 0 | for `ledge=held`; `gap-sweep --ledge` writes them in |
 
