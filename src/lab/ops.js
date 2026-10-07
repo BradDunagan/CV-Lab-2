@@ -177,7 +177,11 @@ function trackKernel(inputs, params) {
     toward: [params.towardX, params.towardY],
     stripLevel: params.stripLevel,
     aperture: params.aperture,
-  }, { guess: params.guess, pad: params.pad, levelSlope: params.levelSlope, strip: params.strip, profile: params.profile });
+  }, {
+    guess: params.guess, pad: params.pad, levelSlope: params.levelSlope, strip: params.strip, profile: params.profile,
+    ledge: params.ledge === 'fit' ? 'fit'
+      : params.ledge === 'held' ? { offset: params.ledgeOffset, width: params.ledgeWidth } : null,
+  });
   return { kind: 'features', features: record ? [record] : [], width: info.width, height: info.height };
 }
 
@@ -722,6 +726,16 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         // its own. `fit`: only the line is carried -- a wide strip, read
         // beside an edge a ledge would otherwise hide.
         { name: 'strip', type: 'enum', values: ['held', 'fit'], default: 'held' },
+        // A ledge inside the strip: the still part's top face, uncovered as
+        // the moving part slides back, lit up to the moving part's shadow
+        // (design-lab-model.md §5, "A thirty-second"). `held`: the shadow's
+        // middle ledgeOffset px from the moving edge toward the still one,
+        // ledgeWidth px wide; one more level is fitted, and a ledge the
+        // offset puts behind the still edge is not in the model at all.
+        // `fit`: the shadow placed freely -- to measure it, not to read a gap.
+        { name: 'ledge', type: 'enum', values: ['none', 'held', 'fit'], default: 'none' },
+        { name: 'ledgeOffset', type: 'number', default: 0 },
+        { name: 'ledgeWidth', type: 'number', default: 0, min: 0, max: 8 },
       ],
       output: { kind: 'features' },
       kernel: ({ inputs, params }) => trackKernel(inputs, params),

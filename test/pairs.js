@@ -779,6 +779,75 @@ test('a moving edge that crosses the still one is read along its whole length', 
   }
 });
 
+/* ---- a ledge, held -------------------------------------------------- */
+
+/**
+ * A ledge inside the strip (design-lab-model.md §5, "A thirty-second"): the
+ * still edge `lo`, the moving one `gap` px beyond it, and between them the
+ * still part's lit top face up to the moving part's shadow, whose middle is
+ * `offset` px short of the moving edge and which falls linearly to the
+ * strip's level over `ramp` px. Each pixel is the mean of 8 x 8 points.
+ */
+function ledge(gap, offset, ramp, lit = 0.25) {
+  const { lo, hi } = scene(gap);
+  const at = (x, y) => {
+    const h = (x - lo.px) * lo.nx + (y - lo.py) * lo.ny;
+    if (h < 0) return LEVELS[0];
+    if (h >= gap) return LEVELS[2];
+    const s = (h - (gap - offset)) / ramp + 0.5; // 0 lit, 1 in shadow
+    const f = Math.min(1, Math.max(0, s));
+    return lit + (LEVELS[1] - lit) * f;
+  };
+  const data = new Float32Array(160 * 120);
+  for (let y = 0; y < 120; y++) {
+    for (let x = 0; x < 160; x++) {
+      let sum = 0;
+      for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) sum += at(x - 0.5 + (i + 0.5) / 8, y - 0.5 + (j + 0.5) / 8);
+      data[y * 160 + x] = sum / 64;
+    }
+  }
+  return { lo, hi, raster: { width: 160, height: 120, channels: 1, data } };
+}
+
+test('a lit ledge read as one strip puts the moving edge out; held, it is read where it is', () => {
+  for (const [gap, offset] of [[6, 3], [5, 1.5], [4, 2.5]]) {
+    const { lo, hi, raster } = ledge(gap, offset, 0.6);
+    const opts = { strip: 'fit', guess: gap };
+    const plain = trackPair(raster, carriedFrom(lo, hi), opts);
+    assert.ok(plain.gap - gap > 0.05, `${gap} px, the ledge ${gap - offset} px wide: plain should read wide, read ${plain.gap}`);
+    const held = trackPair(raster, carriedFrom(lo, hi), { ...opts, ledge: { offset, width: 0.3 } });
+    near(held.gap, gap, 0.03, `${gap} px, ledge held`);
+    assert.ok(held.ledge.seen, 'the ledge should be in sight');
+    near(held.ledge.level, 0.25, 0.03, 'the lit ledge\'s level');
+    assert.ok(held.rms < plain.rms / 2, `the held ledge should fit the pixels: ${held.rms} against ${plain.rms}`);
+  }
+});
+
+test('a ledge held behind the still edge is no ledge: the record is the plain one', () => {
+  for (const gap of [0.6, 2, 4]) {
+    const { lo, hi, raster } = scene(gap);
+    const plain = trackPair(raster, carriedFrom(lo, hi), { guess: gap });
+    const held = trackPair(raster, carriedFrom(lo, hi), { guess: gap, ledge: { offset: gap + 0.5, width: 0.3 } });
+    near(held.gap, plain.gap, 1e-9, `${gap} px`);
+    assert.equal(held.ledge?.seen ?? false, false);
+  }
+});
+
+test('a free ledge fit places the shadow, and finds none on a plain strip', () => {
+  const { lo, hi, raster } = ledge(6, 3, 0.6);
+  const r = trackPair(raster, carriedFrom(lo, hi), { strip: 'fit', guess: 6, ledge: 'fit' });
+  near(r.ledge.offset, 3, 0.15, 'offset');
+  near(r.gap, 6, 0.03, 'gap');
+  assert.ok(r.ledge.gain > 1.5, `gain ${r.ledge.gain}`);
+  const plain = scene(6);
+  const q = trackPair(plain.raster, carriedFrom(plain.lo, plain.hi), { strip: 'fit', guess: 6, ledge: 'fit' });
+  const p = trackPair(plain.raster, carriedFrom(plain.lo, plain.hi), { strip: 'fit', guess: 6 });
+  // Its gain there is a ratio of two residuals that are both nearly nothing;
+  // what matters is that it explains nothing more, and moves nothing.
+  assert.ok(p.rms - q.rms < 1e-4, `the free ledge explained ${p.rms - q.rms} of a plain strip`);
+  near(q.gap, 6, 1e-3, 'plain gap');
+});
+
 /* ---- the smooth profile --------------------------------------------- */
 
 /** The raster blurred by a Gaussian of `sigma` px, sampled on the grid, as a lens and a sensor do it. */

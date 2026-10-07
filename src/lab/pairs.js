@@ -382,7 +382,7 @@ function bandSamples(raster, frame, opts) {
  * be said about how well the rest are known.
  */
 function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = null, slopedLevels = false,
-  heldEdges = [], maxIterations = MAX_ITERATIONS, profile = 'box', occluder = null }) {
+  heldEdges = [], maxIterations = MAX_ITERATIONS, profile = 'box', occluder = null, stripAt = 1 }) {
   const { t, h, v } = samples;
   const n = v.length;
   const E = frame.edges.length;
@@ -392,20 +392,37 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
   // Where each level lives in the parameter vector; -1 for the held strip.
   const levelAt = [];
   let k = 2 * E;
-  for (let j = 0; j <= E; j++) levelAt.push(heldStrip !== null && j === 1 ? -1 : k++);
+  for (let j = 0; j <= E; j++) levelAt.push(heldStrip !== null && j === stripAt ? -1 : k++);
   const slopeAt = [];
   for (let j = 0; j <= E; j++) slopeAt.push(slopedLevels && levelAt[j] >= 0 ? k++ : -1);
   const APERTURE = fitAperture ? k++ : -1;
   // A soft edge -- a shadow's, inside a strip -- has a width of its own, added
-  // to what the aperture gives every edge.
-  const softAt = frame.edges.map((e) => (e.soft ? k++ : -1));
+  // to what the aperture gives every edge; `heldWidth` holds it at `width`.
+  const softAt = frame.edges.map((e) => (e.soft && !e.heldWidth ? k++ : -1));
   /*
    * An ANCHORED soft edge starts its ramp at another edge: a penumbra that
    * begins at the crease that casts or bounds it. Its line is that edge's,
    * moved by its own half-width toward `side`, so its position is not a
-   * parameter of its own; its two slots are held like a held edge's.
+   * parameter of its own; its two slots are held like a held edge's. With an
+   * `offset` instead, its middle is that far from the anchor's line, along
+   * the normal, whatever its width: a shadow that moves with the edge that
+   * casts it.
    */
   const anchorOf = frame.edges.map((e) => (e.soft && e.anchor !== undefined ? e.anchor : -1));
+  /*
+   * A BOUNDED soft edge cannot pass the adjacent edge `bound`: a shadow on a
+   * ledge, where the ledge ends at the still part's edge and the shadow
+   * beyond it falls on nothing the camera sees. Where it would pass, its
+   * coverage is clamped to the bound's, and the level between the two is
+   * seen by no pixel -- the ledge hidden, the two-edge model exactly. So that
+   * level, and the edge's width and position, may have no pixel at all, and
+   * are then held where they are rather than refusing the fit. `within`
+   * names the edge on its other side, which it cannot pass either: a shadow
+   * on the ledge is between the two edges, or not in sight.
+   */
+  const boundOf = frame.edges.map((e) => (e.soft && e.bound !== undefined ? e.bound : -1));
+  const withinOf = frame.edges.map((e) => (e.soft && e.within !== undefined ? e.within : -1));
+  const ledgeLevelAt = boundOf.map((b, e) => (b < 0 ? -1 : b < e ? e : e + 1));
   const still = [...heldEdges, ...anchorOf.map((a, e) => (a >= 0 ? e : -1)).filter((e) => e >= 0)];
   // A held edge keeps its two slots, with columns of zero: the solve below
   // holds still any parameter no pixel responds to.
@@ -422,9 +439,11 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
   const shapeFor = (w) => { if (w !== shapeW) { shapeW = w; shape = shapeOf(w, profile); } return shape; };
   const lowOf = (w) => shapeFor(w).p * nMin;
   const blurOf = (w) => shapeFor(w).s;
-  const reachOf = (q, e, w) => shapeFor(w).p * nMax + (softAt[e] >= 0 ? q[softAt[e]] : 0);
+  const softOf = (q, e) => (softAt[e] >= 0 ? q[softAt[e]] : frame.edges[e].soft ? frame.edges[e].width : 0);
+  const reachOf = (q, e, w) => shapeFor(w).p * nMax + softOf(q, e);
   const cOf = (q, e, w) => (anchorOf[e] < 0 ? q[2 * e]
-    : q[2 * anchorOf[e]] + frame.edges[e].side * reachOf(q, e, w));
+    : frame.edges[e].offset !== undefined ? q[2 * anchorOf[e]] + frame.edges[e].offset
+      : q[2 * anchorOf[e]] + frame.edges[e].side * reachOf(q, e, w));
   const mOf = (q, e) => (anchorOf[e] < 0 ? q[2 * e + 1] : q[2 * anchorOf[e] + 1]);
 
   /*
@@ -448,6 +467,21 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
     if (clamped) cover[other] = cover[occluder];
   };
 
+  // Whether each bounded edge's coverage was clamped to its bound's, per pixel.
+  const bounded = new Array(E).fill(false);
+  // The bound an edge was clamped to, or -1.
+  const boundAt = new Array(E).fill(-1);
+  const clampBound = () => {
+    for (let e = 0; e < E; e++) {
+      boundAt[e] = -1;
+      for (const b of [boundOf[e], withinOf[e]]) {
+        if (b < 0) continue;
+        if (b < e ? cover[e] > cover[b] : cover[e] < cover[b]) { cover[e] = cover[b]; boundAt[e] = b; }
+      }
+      bounded[e] = boundAt[e] >= 0;
+    }
+  };
+
   /** One pixel's value under q, and the coverages that made it. */
   const cover = new Array(E);
   const predict = (q, i, w) => {
@@ -456,6 +490,7 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
       cover[e] = smoothCoverage(h[i] - cOf(q, e, w) - mOf(q, e) * t[i], lowOf(w), reachOf(q, e, w), blurOf(w));
     }
     if (occluding) clampCover();
+    clampBound();
     for (let e = 0; e < E; e++) value += (level(q, e + 1, t[i]) - level(q, e, t[i])) * cover[e];
     return value;
   };
@@ -471,16 +506,19 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
       if (!JtJ) continue;
       for (let e = 0; e < E; e++) { row[2 * e] = 0; row[2 * e + 1] = 0; }
       for (let e = 0; e < E; e++) {
-        // A clamped edge's term follows the occluder's line, and so does its derivative.
-        const at = occluding && clamped && e === other ? occluder : e;
+        // A clamped edge's term follows the occluder's line, and so does its
+        // derivative; a bounded one's, its bound's.
+        const at = occluding && clamped && e === other ? occluder : bounded[e] ? boundAt[e] : e;
         const d = h[i] - cOf(q, at, w) - mOf(q, at) * t[i];
         const step = level(q, e + 1, t[i]) - level(q, e, t[i]);
         const b = reachOf(q, at, w);
         const lo = lowOf(w), s = blurOf(w);
         const g = -step * smoothDensity(d, lo, b, s);
-        if (softAt[e] >= 0) {
-          // Its width widens the ramp, and an anchored one's also moves it.
-          const shift = anchorOf[e] >= 0 ? frame.edges[e].side : 0;
+        if (softAt[e] >= 0 && bounded[e]) row[softAt[e]] = 0;
+        else if (softAt[e] >= 0) {
+          // Its width widens the ramp, and an anchored one's also moves it --
+          // unless it is anchored by an offset, which fixes its middle.
+          const shift = anchorOf[e] >= 0 && frame.edges[e].offset === undefined ? frame.edges[e].side : 0;
           row[softAt[e]] = step * (smoothCoverage(d - shift * 1e-4, lo, b + 1e-4, s)
             - smoothCoverage(d + shift * 1e-4, lo, b - 1e-4, s)) / 2e-4;
         }
@@ -532,6 +570,14 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
     for (let j = 0; j <= E; j++) {
       if (levelAt[j] >= 0) p[levelAt[j]] = count[j] > 0 ? sum[j] / count[j] : 0;
     }
+    // A ledge no pixel centre falls on starts between its neighbours, or
+    // where the caller says it is.
+    frame.edges.forEach((e, j) => {
+      const at = ledgeLevelAt[j];
+      if (at < 0 || levelAt[at] < 0) return;
+      if (e.level !== undefined) p[levelAt[at]] = e.level;
+      else if (count[at] === 0) p[levelAt[at]] = (level(p, at - 1) + level(p, at + 1)) / 2;
+    });
   }
 
   /*
@@ -542,6 +588,23 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
    * for the step, and the fit as a whole is then not one to report.
    */
   const scaleOf = (JtJ) => JtJ.map((row, c) => (row[c] > 0 ? Math.sqrt(row[c]) : 0));
+  // What a hidden ledge leaves without a pixel: held where it is, not refused.
+  const mayVanish = new Set();
+  boundOf.forEach((b, e) => {
+    if (b < 0) return;
+    const at = ledgeLevelAt[e];
+    if (levelAt[at] >= 0) mayVanish.add(levelAt[at]);
+    if (slopeAt[at] >= 0) mayVanish.add(slopeAt[at]);
+    if (softAt[e] >= 0) mayVanish.add(softAt[e]);
+    if (anchorOf[e] < 0) { mayVanish.add(2 * e); mayVanish.add(2 * e + 1); }
+    // And the level on its other side, when it is pressed against `within`.
+    const wi = withinOf[e];
+    if (wi >= 0) {
+      const other = wi > e ? e + 1 : e;
+      if (levelAt[other] >= 0) mayVanish.add(levelAt[other]);
+      if (slopeAt[other] >= 0) mayVanish.add(slopeAt[other]);
+    }
+  });
 
   let state = normal(p);
   let lambda = 1e-3;
@@ -580,9 +643,12 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
   }
 
   // Edges in the order they were given, at both ends of the band -- unless
-  // one occludes the other, when crossing is what the model is for.
-  for (let e = 1; e < E && !occluding; e++) {
-    const gap = p[2 * e] - p[2 * e - 2], tilt = Math.abs(p[2 * e + 1] - p[2 * e - 1]) * frame.half;
+  // one occludes the other, when crossing is what the model is for. A
+  // bounded edge may lie anywhere: past its bound it is simply not seen.
+  const ordered = frame.edges.map((_, e) => e).filter((e) => boundOf[e] < 0);
+  for (let i = 1; i < ordered.length && !occluding; i++) {
+    const [e0, e1] = [ordered[i - 1], ordered[i]];
+    const gap = p[2 * e1] - p[2 * e0], tilt = Math.abs(p[2 * e1 + 1] - p[2 * e0 + 1]) * frame.half;
     if (!(gap - tilt > 0)) return null;
   }
 
@@ -594,14 +660,16 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
    * under a sigma of 0.015 and 0.027.
    */
   const d = scaleOf(state.JtJ);
-  if (d.some((x, c) => x === 0 && !held(c))) return null;
-  // Over the free parameters; a held one is an identity row, and known exactly.
+  if (d.some((x, c) => x === 0 && !held(c) && !mayVanish.has(c))) return null;
+  // Over the free parameters; a held one is an identity row, and known
+  // exactly, and so is one a hidden ledge left without a pixel.
+  const idle = (c) => held(c) || (d[c] === 0 && mayVanish.has(c));
   const inverseColumn = (col) => {
-    if (held(col)) return new Array(k).fill(0);
-    const A = state.JtJ.map((row, c) => row.map((x, e) => (held(c) || held(e)
+    if (idle(col)) return new Array(k).fill(0);
+    const A = state.JtJ.map((row, c) => row.map((x, e) => (idle(c) || idle(e)
       ? (c === e ? 1 : 0) : x / (d[c] * d[e]))));
     const e = new Array(k).fill(0); e[col] = 1;
-    return solve(A, e, 1e-14) ? e.map((x, c) => (held(c) ? 0 : x / (d[c] * d[col]))) : null;
+    return solve(A, e, 1e-14) ? e.map((x, c) => (idle(c) ? 0 : x / (d[c] * d[col]))) : null;
   };
   const s2 = state.sse / (n - free);
   let gapSigma = null;
@@ -621,7 +689,7 @@ function fitBand(samples, frame, { aperture, fitAperture = false, heldStrip = nu
   }
 
   return {
-    edges: frame.edges.map((_, e) => ({ c: p[2 * e], m: p[2 * e + 1], ...(softAt[e] >= 0 ? { width: p[softAt[e]] } : {}) })),
+    edges: frame.edges.map((f, e) => ({ c: p[2 * e], m: p[2 * e + 1], ...(f.soft ? { width: softOf(p, e) } : {}) })),
     levels: levelAt.map((_, j) => level(p, j)),
     levelSlopes: slopeAt.some((at) => at >= 0) ? slopeAt.map((at) => (at < 0 ? 0 : p[at])) : null,
     aperture: widthOf(p),
@@ -1078,6 +1146,10 @@ function trackPair(raster, carried, options = {}) {
   // in the still part's next edge, and the two-edge fit failed on it.
   const samples = bandSamples(raster, { ...frame, edges: edgesAt(Math.max(opts.guess + 1.5, 3)) }, opts);
   const still = side > 0 ? 0 : 1;
+  // The still and the moving edge of a fit, which has a shadow between them
+  // when there is a ledge.
+  const stillOf = (f) => (side > 0 ? f.edges[0] : f.edges[f.edges.length - 1]);
+  const movingOf = (f) => (side > 0 ? f.edges[f.edges.length - 1] : f.edges[0]);
   /*
    * A two-edge fit whose moving edge is past the still one along the whole
    * band has a strip nowhere: under occlusion that IS the one-edge model,
@@ -1085,7 +1157,7 @@ function trackPair(raster, carried, options = {}) {
    * reading of a strip, and is left to the one-edge fit below.
    */
   const open = (f) => {
-    const [ms, ss] = [f.edges[1 - still], f.edges[still]];
+    const [ms, ss] = [movingOf(f), stillOf(f)];
     const gap = side * (ms.c - ss.c), tilt = Math.abs(ms.m - ss.m) * frame.half;
     return gap + tilt > 0;
   };
@@ -1096,6 +1168,52 @@ function trackPair(raster, carried, options = {}) {
       slopedLevels: opts.levelSlope === 'fit', heldEdges: [still], profile: opts.profile, occluder: 1 - still,
     });
     if (fit && open(fit) && (!best || fit.rms < best.rms)) best = fit;
+  }
+  /*
+   * A LEDGE (design-lab-model.md §5, "A thirty-second"). Slid back, the
+   * moving part uncovers a strip of the still part's top face inside the
+   * gap, lit, with the moving part's own shadow across it. The strip is then
+   * three levels -- the lit ledge against the still edge, the shadow's soft
+   * edge, the dark beyond it -- and fitted as one, the dark level comes out
+   * too light and the moving edge too far out. `ledge: 'fit'` places the
+   * shadow's edge freely, its width and the ledge's level too. Given
+   * `{ offset, width }`, the shadow's middle is `offset` px from the moving
+   * edge toward the still one, as a shadow that moves with the part casting
+   * it is, and its width is held: one more level, and nothing else. Either
+   * way the ledge ends at the still edge, and a shadow that reaches past it
+   * hides the ledge: that is the two-edge model, exactly.
+   */
+  let shadowAt = -1, ledgeGain = null;
+  if (opts.ledge) {
+    const plain = best;
+    best = null;
+    const spec = opts.ledge === 'fit' ? null : opts.ledge;
+    const ledgeEdges = (g, m, x) => {
+      const [s0, m0] = [{ c: 0, m: 0 }, { c: side * g, m }];
+      const shadow = spec
+        ? { c: 0, m: 0, soft: true, width: spec.width ?? 0.5, heldWidth: spec.width != null, anchor: side > 0 ? 2 : 0, offset: -side * spec.offset }
+        : { c: side * g * x, m: m * x, soft: true, width: 0.5 };
+      shadow.bound = side > 0 ? 0 : 2;
+      shadow.within = side > 0 ? 2 : 0;
+      return side > 0 ? [s0, shadow, m0] : [m0, shadow, s0];
+    };
+    const sIdx = side > 0 ? 0 : 2;
+    for (const [g, m] of starts) {
+      for (const x of spec ? [0] : [0.3, 0.6]) {
+        const fit = fitBand(samples, { ...frame, edges: ledgeEdges(g, m, x) }, {
+          aperture: carried.aperture, heldStrip: fitStrip ? null : carried.stripLevel,
+          slopedLevels: opts.levelSlope === 'fit', heldEdges: [sIdx], profile: opts.profile, stripAt: side > 0 ? 2 : 1,
+        });
+        if (fit && open(fit) && (!best || fit.rms < best.rms)) best = fit;
+      }
+    }
+    /*
+     * The ledge is kept only when it fits better than the strip alone by
+     * `ledgeGain`: one more level, or four, always fit a little better.
+     */
+    ledgeGain = best && plain && best.rms > 0 ? plain.rms / best.rms : null;
+    if (best && (!plain || ledgeGain >= (opts.ledgeGain ?? 1))) shadowAt = 1;
+    else best = plain;
   }
   /*
    * The same pixels as ONE edge beside the line, free. Where the two parts'
@@ -1167,13 +1285,20 @@ function trackPair(raster, carried, options = {}) {
       model,
       ratio,
       freeRatio,
-      hypotheses: [hypothesis('strip', best, best.edges[1 - still]), hypothesis('edge', lone, lone.edges[0])],
-      stripLevel: fitStrip ? best.levels[1] : carried.stripLevel,
+      hypotheses: [hypothesis('strip', best, movingOf(best)), hypothesis('edge', lone, lone.edges[0])],
+      stripLevel: fitStrip ? best.levels[side > 0 ? best.levels.length - 2 : 1] : carried.stripLevel,
       aperture: carried.aperture,
     };
   }
+  const ledgeOf3 = (f) => {
+    const [sh, mv, st] = [f.edges[1], movingOf(f), stillOf(f)];
+    return {
+      offset: side * (mv.c - sh.c), width: sh.width,
+      level: f.levels[side > 0 ? 1 : 2], seen: side * (sh.c - st.c) > 0, lit: side * (sh.c - st.c), gain: ledgeGain,
+    };
+  };
   const fit = model === 'strip' ? best : lone;
-  const moving = model === 'strip' ? best.edges[1 - still] : lone.edges[0];
+  const moving = model === 'strip' ? movingOf(best) : lone.edges[0];
   const { x0, y0, x1, y1 } = movingLine(moving);
   return {
     type: 'edge-track',
@@ -1191,7 +1316,12 @@ function trackPair(raster, carried, options = {}) {
     levels: fit.levels,
     levelSlopes: fit.levelSlopes,
     strip: model === 'edge' ? null : fitStrip ? 'fit' : 'held',
-    stripLevel: model === 'edge' ? null : fitStrip ? best.levels[1] : carried.stripLevel,
+    stripLevel: model === 'edge' ? null : fitStrip ? best.levels[side > 0 ? best.levels.length - 2 : 1] : carried.stripLevel,
+    // The ledge as fitted: the shadow's middle, px from the moving edge toward
+    // the still one, its width, the lit ledge's level, how far the shadow's
+    // middle is from the still edge (`lit`) and so whether any of it is in
+    // sight, and how much better than the strip alone it fits.
+    ...(model === 'strip' && shadowAt >= 0 ? { ledge: ledgeOf3(best) } : {}),
     aperture: carried.aperture,
     rms: fit.rms,
     samples: fit.samples,

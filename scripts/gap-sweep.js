@@ -113,6 +113,16 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
                      own strip level                      (default 3)
   --ledge-max <x>    a frame whose fitPairs ledge gain reaches this is not
                      carried from                         (default 1.2)
+  --ledge-fit        also fit each carried pair with its ledge free
+                     (L<pair> = trackPair(..., ledge=fit)), for npm run ledge
+                     to measure the shadow's width from. Slow; sharp images
+  --ledge <file>     hold a ledge in every carried pair: npm run ledge's
+                     table, matched by view and the angle a pair runs at.
+                     Where it ends follows the frame's COMMANDED lift, so the
+                     moving part must be the one above
+  --ledge-lift <mm>  the lift to place the ledge at, for every shot, instead
+                     of the shot's own: a closed loop renders the part where
+                     it really is and knows only where it believes it is
   --skip-render      reuse generated/<run>/, re-run the lab and the analysis
   --overwrite        render into generated/<run>/ even though it holds a sweep
   --dry-run          print the shots and stop
@@ -140,7 +150,7 @@ function parseArgs(argv) {
     gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], carryFrom: [], size: 512, samples: 96, skipRender: false, overwrite: false,
     script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
     yaw: null, elevation: null, offset: null, poses: null,
-    carry: false, carryMin: 3, ledgeMax: 1.2, dryRun: false,
+    carry: false, carryMin: 3, ledgeMax: 1.2, ledgeFit: false, ledge: null, ledgeLift: null, dryRun: false,
   };
   const list = (s, what) => {
     const v = String(s).split(',').map(Number);
@@ -191,6 +201,9 @@ function parseArgs(argv) {
       case '--max-angle': opts.maxAngle = list(argv[++i], '--max-angle')[0]; break;
       case '--carry-min': opts.carryMin = list(argv[++i], '--carry-min')[0]; break;
       case '--ledge-max': opts.ledgeMax = list(argv[++i], '--ledge-max')[0]; break;
+      case '--ledge-fit': opts.ledgeFit = true; break;
+      case '--ledge': opts.ledge = argv[++i]; break;
+      case '--ledge-lift': opts.ledgeLift = list(argv[++i], '--ledge-lift')[0]; break;
       case '--overwrite': opts.overwrite = true; break;
       case '--script': opts.script = argv[++i]; break;
       case '--tone-mapping': opts.toneMapping = argv[++i]; break;
@@ -202,6 +215,8 @@ function parseArgs(argv) {
   }
   // Checked once every option is in, since they depend on each other.
   if (opts.carryFrom.length && !opts.carry) throw new Error('--carry-from needs --carry');
+  if ((opts.ledgeFit || opts.ledge) && !opts.carry) throw new Error('--ledge and --ledge-fit need --carry: they are read beside the carried edge');
+  if (opts.ledgeLift !== null && !opts.ledge) throw new Error('--ledge-lift needs --ledge');
   if (opts.poses && opts.offset) throw new Error('--poses are displacements from contact; --offset does not apply');
   if (!opts.poses && !opts.offset && opts.gaps.some((v) => v < 0)) {
     throw new Error('--gaps cannot be negative without --offset: that is the part inside the other');
@@ -302,7 +317,10 @@ function slots(file) {
   // speaks for which pair is decided by where its line lies (gapsweep.js).
   const tracked = Object.keys(by).filter((k) => /^K\d+$/.test(k));
   const tracks = tracked.length ? tracked.flatMap((k) => by[k]) : null;
-  return { truth: by.T, segments: by.F, explained: by.EF, matches: by.MF, pairs, fitted: by.P ?? null, tracks };
+  // L1, L2, ...: the free ledge fits --ledge-fit asks for, beside them.
+  const fits = Object.keys(by).filter((k) => /^L\d+$/.test(k));
+  const ledgeFits = fits.length ? fits.flatMap((k) => by[k]) : null;
+  return { truth: by.T, segments: by.F, explained: by.EF, matches: by.MF, pairs, fitted: by.P ?? null, tracks, ledgeFits };
 }
 
 /**
@@ -466,13 +484,14 @@ function pooledCandidates(dir, opts) {
 /** trackPair's starting width from a frame's own reading, which may be an overhang's negative one. */
 const guessFrom = (read) => (read > 0 ? read : 0.5);
 
-function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, ownRun = '') {
+function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, ownRun = '', ledgeTable = null) {
   const viewOf = (x) => `${x.view?.yaw ?? x.yaw ?? ''},${x.view?.elevation ?? x.elevation ?? ''}`;
   const n = (v) => v.toFixed(6);
   const shotOf = (s) => (r) => r.gapMm === s.gapMm && (s.pose === undefined || r.pose === s.pose);
   const commands = {};
   const sources = [];
   const missing = [];
+  const ledges = [];
   for (const view of new Set(shots.map(viewOf))) {
     const frames = shots.filter((s) => viewOf(s) === view);
     const pairs = [...new Set(rows.filter((r) => viewOf(r) === view && r.pair).map((r) => r.pair))].sort((a, b) => a - b);
@@ -521,20 +540,47 @@ function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, 
         stripLevel: record.levels[1], aperture: record.aperture, profile: record.profile ?? 'box' };
       sources.push({ ...(from.view ?? {}), pair, ...(from.run ? { run: from.run } : {}), from: from.name, fromMm: from.gapMm, gapPx: row.refit.gapPx,
         ledgeGain: row.refit.ledge?.gain ?? null, of: placed.length, stripLevel: carried.stripLevel, aperture: carried.aperture });
+      // The ledge this view-pair has, from --ledge's file, matched like the
+      // pooled edges by the angle the pair runs at.
+      const ledge = (ledgeTable?.entries ?? []).find((e) => `${e.yaw},${e.elevation}` === view
+        && angle !== null && angleApart(e.pairAngle, angle) <= 10) ?? null;
+      if (ledgeTable) ledges.push({ view, pair, ...(ledge ? { flush: ledge.flush, widthPerMm: ledge.widthPerMm } : { none: true }) });
       for (const s of frames) {
         const own = rowIn(s);
         const read = own?.refit?.gapPx ?? own?.measuredGapPx ?? null;
         const wide = read !== null && read >= opts.carryMin;
-        (commands[s.name.replace(/\.png$/, '')] ??= []).push(`K${pair} = trackPair(G, x0=${n(carried.line.x0)}, y0=${n(carried.line.y0)}, `
+        const common = `x0=${n(carried.line.x0)}, y0=${n(carried.line.y0)}, `
           + `x1=${n(carried.line.x1)}, y1=${n(carried.line.y1)}, towardX=${n(carried.toward[0])}, `
           + `towardY=${n(carried.toward[1])}, stripLevel=${n(carried.stripLevel)}, aperture=${n(carried.aperture)}, `
           // A start, not a reading: an overhang's negative refit starts at half a pixel.
           + `guess=${n(guessFrom(read ?? row.refit.gapPx))}, strip=${wide ? 'fit' : 'held'}`
-          + `${carried.profile !== 'box' ? `, profile=${carried.profile}` : ''})`);
+          + `${carried.profile !== 'box' ? `, profile=${carried.profile}` : ''}`;
+        /*
+         * The ledge, held: it ends where the still edge would be were the
+         * moving part flush at this frame's lift -- the y sweep's gap at
+         * that lift -- so a frame at flush has none, and one slid back has
+         * as much as it slid. The shadow's width grows with the lift as a
+         * penumbra does. The lift is the commanded one: what the robot was
+         * told, not where the part is (design-lab-model.md §5, "A
+         * thirty-second").
+         */
+        const lift = opts.ledgeLift ?? displacementOf(s, opts)[1];
+        const offset = ledge ? ledge.flush[0] * lift + ledge.flush[1] : null;
+        const held = offset > 0
+          ? `, ledge=held, ledgeOffset=${n(offset)}, ledgeWidth=${n(Math.max(0, ledge.widthPerMm * lift))}` : '';
+        const list = (commands[s.name.replace(/\.png$/, '')] ??= []);
+        list.push(`K${pair} = trackPair(G, ${common}${held})`);
+        if (opts.ledgeFit) list.push(`L${pair} = trackPair(G, ${common}, ledge=fit)`);
       }
     }
   }
-  return { minPx: opts.carryMin, ledgeMax: opts.ledgeMax, sources, missing, commands };
+  return { minPx: opts.carryMin, ledgeMax: opts.ledgeMax, sources, missing, commands, ...(ledgeTable ? { ledges } : {}) };
+}
+
+/** The moving part's displacement from contact for a shot, mm: its pose, or the sweep's step. */
+function displacementOf(s, opts) {
+  if (s.poseMm) return s.poseMm;
+  return [0, 1, 2].map((k) => (opts.offset?.[k] ?? 0) + opts.axis[k] * s.gapMm);
 }
 
 function main() {
@@ -646,14 +692,16 @@ function main() {
     // This run's own directory among --carry-from is its own frames, read
     // fresh; the others are read from their records.
     const own = (d) => path.resolve(ROOT, d) === path.resolve(ROOT, res);
+    const ledgeTable = opts.ledge ? JSON.parse(fs.readFileSync(path.resolve(ROOT, opts.ledge), 'utf8')) : null;
     carry = opts.carryFrom.length
       ? carryPlan(rows, shots, featuresOf, opts, opts.carryFrom.filter((d) => !own(d)).flatMap((d) => pooledCandidates(d, opts)),
-        opts.carryFrom.some(own), res)
-      : carryPlan(rows, shots, featuresOf, opts);
+        opts.carryFrom.some(own), res, ledgeTable)
+      : carryPlan(rows, shots, featuresOf, opts, null, true, '', ledgeTable);
     // What was carried from where, and the commands it became: the latter in
     // the form lab-cli's --extra reads.
     fs.writeFileSync(path.join(ROOT, res, 'carry.json'),
-      `${JSON.stringify({ minPx: carry.minPx, ledgeMax: carry.ledgeMax, sources: carry.sources, missing: carry.missing }, null, 2)}\n`);
+      `${JSON.stringify({ minPx: carry.minPx, ledgeMax: carry.ledgeMax, sources: carry.sources, missing: carry.missing,
+        ...(carry.ledges ? { ledge: { file: opts.ledge, sha256: crypto.createHash('sha256').update(fs.readFileSync(path.resolve(ROOT, opts.ledge))).digest('hex'), pairs: carry.ledges } } : {}) }, null, 2)}\n`);
     if (carry.missing.length) console.log(`--carry: nothing to carry from for ${carry.missing.map((m) => `${m.view} pair ${m.pair}`).join('; ')}`);
     const commandsFile = path.join(res, 'carry-commands.json');
     fs.writeFileSync(path.join(ROOT, commandsFile), `${JSON.stringify(carry.commands, null, 2)}\n`);
@@ -724,7 +772,8 @@ function main() {
     ...(gridded ? { views: { yaw: opts.yaw, elevation: opts.elevation } } : {}),
     ...(opts.offset ? { offsetMm: opts.offset } : {}),
     ...(posed ? { poses: opts.poses } : {}),
-    ...(carry ? { carry: { minPx: carry.minPx, ledgeMax: carry.ledgeMax, sources: carry.sources, missing: carry.missing } } : {}),
+    ...(carry ? { carry: { minPx: carry.minPx, ledgeMax: carry.ledgeMax, sources: carry.sources, missing: carry.missing,
+      ...(carry.ledges ? { ledge: { file: opts.ledge, pairs: carry.ledges } } : {}), ...(opts.ledgeFit ? { ledgeFit: true } : {}) } } : {}),
     analysedAt: new Date().toISOString(), script, inputs, rows,
   };
   fs.writeFileSync(recordFile, JSON.stringify(record, null, 2));
