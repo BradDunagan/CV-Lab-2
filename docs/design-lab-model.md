@@ -2519,7 +2519,9 @@ line in the lift (1.04 px per mm at 35/20, 1.23 at 60/20, residuals 0.004 to
 gate, and a frame slid back has exactly as much as it slid. The free fits'
 offsets, 0.95 and 1.15 px per mm, were this less the shadow's half-width.
 
-**The shadow's width must be measured on sharp images.** Held at zero, the
+**The shadow's width must be measured on sharp images.** (Wrong: one bad
+fit, see "A thirty-third". With that fit refused, zero does as well under
+blur.) Held at zero, the
 blurred test poses came out 1 mm off. Fitted in every frame with the offset
 held, the clean ones went to 0.12 to 0.15 mm in x. Measured by free fits on
 the blurred frames themselves, 1.2 mm. Measured on the clean frames where
@@ -2572,6 +2574,46 @@ back -- the low test poses -- which a different policy, or an assembly
 that slides into place, would meet.
 
 (`notes/brads-notes/2026-10-07-ledge/`.)
+
+#### A thirty-third: the shadow's width under blur was one bad fit
+
+The thirty-second left open that a blurring camera cannot measure the
+shadow's width, and said it needs one: held at zero the blurred test poses
+came out 1 mm off, and with widths from blur's own free fits 1.2 mm. Both are
+**one reading**. At 35/20, pose 3, the side pair with its ledge held and a
+width of zero read 11.67 px where the strip alone reads 5.52, fitting 1.003
+times better. A shadow with no width is a sharp step, and a sharp step can
+pass for the moving edge: the fit put the shadow where the moving edge is and
+the "moving edge" out on the moving part's face. Blur's own fits measured
+zero width at that view, hence the same reading. Every width from 0.05 px up
+to the sharp table's gave the same 1 mm: it is not sensitivity to the width.
+
+Over every stack run, clean and blurred, a held ledge moved the moving edge
+-0.59 to +0.39 px from the strip alone's reading (612 readings). So
+`trackPair` now keeps a held ledge only if it moves the edge by at most
+`ledgeShift` px (1). That refuses the one reading and changes no other. Four
+views, no truth, `joint`, x / y / z mm and turn degrees:
+
+| blur 0.8 px | four views | ten sets |
+|---|---|---|
+| widths from sharp images | 0.080 / 0.039 / 0.029 / 0.022 | 0.137 / 0.061 / 0.065 / 0.038 |
+| widths zero | 0.082 / 0.040 / 0.028 / 0.023 | 0.143 / 0.062 / 0.065 / 0.039 |
+| widths from blur's own free fits | 0.096 / 0.048 / 0.054 / 0.033 | 0.152 / 0.070 / 0.087 / 0.042 |
+
+Clean, every run reads as before to the third decimal. **A blurring camera
+needs no sharper capture: hold the width at zero** (`npm run ledge` without
+`--fits`). Measured under blur the widths come out too wide, about twice the
+sharp ones at the 50-degree views, and that costs a little. Scaling the sharp
+widths by 0.5 or 2 changed the blurred result by at most 0.01 mm. The blur's
+own aperture, measured on lone segments, already carries the softness.
+
+Whether the calibration could pick the width with no truth was tried first,
+and it could not: its residual was 0.0387 px at zero width, when the test
+poses were 1 mm off, against 0.0375 to 0.0386 at the good widths. One wild
+reading in a hundred moves a fit of hundreds of frames very little.
+
+(`notes/brads-notes/2026-10-07-ledge/`: `widths.sh`, `scale.sh`, `shift.js`,
+`run-ga.log`, `guard-*.log`.)
 
 #### What twenty-four views measured
 

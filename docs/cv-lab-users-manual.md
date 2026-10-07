@@ -676,6 +676,7 @@ fitted, and nothing has to have been detected.
 | `strip` | `held` | `held`: the strip level carried in, for a strip too narrow to show its own. `fit`: only the line is carried |
 | `ledge` | `none` | a lit ledge inside the strip, up to the moving part's shadow. `held`: the shadow's middle `ledgeOffset` px from the moving edge toward the still one, `ledgeWidth` px wide; `fit`: placed freely, to measure it |
 | `ledgeOffset`, `ledgeWidth` | 0 | for `ledge=held`; `gap-sweep --ledge` writes them in |
+| `ledgeShift` | 1 px | a held ledge is refused if it moves the moving edge more than this from the strip alone's reading |
 
 The carried values are **parameters**, numbers in the command, so they are
 in this frame's log and the frame replays on its own. Nothing in the
@@ -719,12 +720,15 @@ is tied to the moving edge, so one more level is fitted and nothing else. A
 shadow placed behind the still edge (no ledge in sight) leaves the plain
 model exactly. The record gains `ledge`: the `offset`, `width`, the lit
 `level`, `lit` (the shadow's distance from the still edge; `seen` when
-positive) and `gain` (the plain fit's rms over this one's). `ledge=fit`
+positive) and `gain` (the plain fit's rms over this one's). A held ledge
+that moves the moving edge more than `ledgeShift` px from the plain fit's is
+refused and the plain record returned: a real one moved it under 0.6 px on
+every stack run, and a sharp shadow can pass for the moving edge ("A
+thirty-third"). `ledge=fit`
 places the shadow freely as well. That is for measuring a scene's shadow on
 sharp images (`npm run ledge`), not for reading gaps: freed per frame it
-wanders where there is no ledge, and through a lens's blur it cannot tell
-the shadow's width from the blur (`design-lab-model.md` §5, "A
-thirty-second").
+wanders where there is no ledge, and through a lens's blur it overstates
+the shadow's width (`design-lab-model.md` §5, "A thirty-second").
 
 #### `match(src features, truth features, …)` → features (`edge-match`)
 
@@ -1712,8 +1716,10 @@ slid) gives the tracked gap as a line in the lift. **How soft the shadow is**:
 the free fits in `--fits` runs where the shadow is at least `--min-lit` px
 (1.5) from the still edge and fits `--min-gain` (1.5) times better than the
 strip alone, as a width per millimetre of lift, the median; zero for a pair
-with none. Take the widths from **sharp** images. Under blur the free fit
-cannot measure them, and widths measured there made every reading worse. On
+with none. Take the widths from **sharp** images, or leave out `--fits`
+and hold them at zero: under blur zero does as well as sharp widths, and
+widths measured on the blurred frames themselves come out too wide and cost a
+little (`design-lab-model.md` §5, "A thirty-third"). On
 the stack the table takes the test poses near contact (0.6 to 2.5 mm up) from
 0.114 to 0.049 mm in x. Under a lens's blur, calibrated `joint`, it takes them
 from 0.120 / 0.053 / 0.074 mm to 0.079 / 0.039 / 0.029, and with it `joint`
