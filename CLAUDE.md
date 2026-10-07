@@ -287,3 +287,28 @@ The aperture was the lower quartile of the lone segments' for a day and is the
 median now: over sixteen frames from one renderer the quartile ranged 1.06 to
 1.31 and the median 1.31 to 1.39. The claim and the correction are both in
 `design-lab-model.md` §5.
+
+**The second cube list** (2026-10-06, §5 "A twenty-fifth" to "A
+thirty-first") closed what the first left open, mostly by measuring where an
+error really comes from. With no truth, four views, over two calibration
+renders and three test renders: **0.055 / 0.025 / 0.026 mm and 0.019°**.
+- **`trackPair` occludes**: the moving part is in front, so its edge may
+  cross the still one. That read turns past 7° and improved ordinary poses.
+- **Blur's cost is the ledge, not the pixel's shape.** A Gaussian-like
+  profile (`profile=smooth`) is right on synthetic images and no help on the
+  stack; it is an option.
+- **A mild lens is absorbed by the calibration** (k1 to −0.08 with the parts
+  near the middle); k1 −0.3 is not.
+- **Near contact the readings, not the Jacobian, were off**: lift terms
+  (`--lift`) halve the model's own error and do not help the loop.
+- **A tip needs its own unknowns** (`--tipx`, `--tipz`, `--tip-prior`):
+  ignored, it costs half a millimetre per degree.
+- **Only a light about 45° round and at most 10° up works**, and two of six
+  bad lights leave the calibration straight: a light is chosen by test poses
+  the robot commands, the calibration's warning being only a first screen.
+- **A calibration carries its own render's noise**: two renders of the same
+  sweeps move x by 0.03 mm.
+
+Still open: the side pair over the ledge, under blur and near contact, which
+is now the largest single error everywhere; and a cheaper way to choose a
+light than sweeps under each.
