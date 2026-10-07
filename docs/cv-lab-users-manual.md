@@ -677,6 +677,7 @@ fitted, and nothing has to have been detected.
 | `wideEnd` | 3 px | held, and ambiguous between a strip and one edge, yet this far open at one end (a turned pair): the level is fitted instead. 0: never |
 | `ledge` | `none` | a lit ledge inside the strip, up to the moving part's shadow. `held`: the shadow's middle `ledgeOffset` px from the moving edge toward the still one, `ledgeWidth` px wide; `fit`: placed freely, to measure it |
 | `ledgeOffset`, `ledgeWidth` | 0 | for `ledge=held`; `gap-sweep --ledge` writes them in |
+| `moving` | `above` | which part is the upper one. `below`: the still part hides the moving one where they cross, an overhang is not seen (no reading), and a ledge is the moving part's own top face in the still part's shadow; it must then fit 1.1 times better than the strip alone. `gap-sweep` writes it when the moving part is below contact |
 
 The carried values are **parameters**, numbers in the command, so they are
 in this frame's log and the frame replays on its own. Nothing in the
@@ -1696,7 +1697,9 @@ flush at that frame's **commanded** lift, so a frame at flush has none and
 one slid back has as much as it slid; the shadow's width grows with the
 lift. `--ledge-lift <mm>` places it at one lift for every shot instead, which
 is what a closed loop knows (`npm run servo -- --ledge` passes its prior's).
-It assumes the moving part is the one above. `--ledge-fit` adds a free ledge
+With the moving part below contact (a downward offset, axis or poses) the
+ledge is its own top face; the table must then be made from a downward
+flush sweep, and a table made the other way is refused. `--ledge-fit` adds a free ledge
 fit beside each carried pair (`L<pair> = trackPair(..., ledge=fit)`), which
 `npm run ledge` measures the shadow from; it is slow.
 

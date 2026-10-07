@@ -325,5 +325,12 @@ Under blur the width needs no sharper capture: zero does as well, once a
 held ledge whose lit ledge is no brighter than its strip is refused (one
 such fit, the roles inverted, was the whole millimetre, "A thirty-third").
 
-Still open: the ledge assumes the moving part is the one above; and a
-cheaper way to choose a light than sweeps under each.
+The moving part may be the lower one ("A thirty-fifth"): the truth's
+sign, the solve's axes, who hides whom, and the ledge all assumed it was
+above, and now follow which side of contact it is on. Its x is 0.10 mm where
+above it is 0.03, unexplained. A light search costs 14 positions a
+candidate, not 35, and nothing in one frame tells the lights apart (the
+thirtieth).
+
+Still open: the moving-below x; and a camera's response curve, undone on
+load.
