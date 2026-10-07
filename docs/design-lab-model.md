@@ -2379,6 +2379,36 @@ from the far side one read an overhang, -0.60 px, which trackPair refuses;
 the frame and its run failed. A reading that is not positive now starts the
 fit at half a pixel.
 
+**Cheaper, measured (2026-10-07).** Nothing in one frame tells the lights
+apart. At the reference pose the two straight-but-wrong lights look like the
+good ones by every measure that needs no truth -- each pair's `gapSigma`,
+strip level, and ledge gain -- and differ only in the truth error, 0.15 to
+0.23 px on the side pair (`cheap.js`). What does cost less is fewer frames
+of the same search: the calibration from nine positions (the reference, and
+one step either way along x, y and z and in the turn: +-2 mm, +-1.5
+degrees) instead of 25, and the verdict from five commanded test poses
+instead of ten, 14 positions in place of 35 (`subset.sh`, the full runs'
+rows subset). No truth, hinged, x mm:
+
+| light | full: four views / every set | 9 + 5: four views / every set | 9 + 3: every set |
+|---|---|---|---|
+| 45 / 5 | 0.026 / 0.049 | 0.023 / 0.077 | 0.037 |
+| 45 / 10 | 0.026 / 0.068 | 0.148 / 0.160 | 0.094 |
+| 60 / 5 | 0.244 / 0.242 | 0.336 / 0.341 | 0.221 |
+| 70 / 6 | 0.325 / 0.346 | 0.416 / 0.351 | 0.136 |
+| the four warned | 0.9 to 1.7 / 1.9 to 5.6 | 0.9 to 3.8 / 1.2 to 5.3 | 1.6 to 4.1 |
+
+The same light is chosen, at 40% of the renders, and the margin from the
+runner-up to the first straight-but-wrong light is 2.1x where the full
+search had 3.5x. With only three test poses it is 1.4x, and from four views
+alone 60/5 then reads 0.042 mm and passes: the verdict must be scored over
+every set of views, where a bad light's damage shows in the pairs of views
+that lean on its side pair. The second-best light loses most to the smaller
+calibration (45/10: 0.026 -> 0.148 from four views): with one step either
+side the hinge has one slid-back frame. So a search is the nine positions
+and five test poses per candidate, and the full calibration only under the
+light chosen.
+
 #### A thirty-first: loose ends -- outliers, the weak pair, a calibration's own noise
 
 **Outliers.** A solve that dropped the worst reading made things worse (the
