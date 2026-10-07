@@ -43,6 +43,9 @@ CV-Lab servo -- estimate, correct, render, repeat, down to contact
                         Cube, 35,60, 20,50, pipelines/pairs.lab)
   --carry-from <dir>    passed to gap-sweep, repeatable: the runs the still
                         edges are held from
+  --ledge <file>        passed to gap-sweep (npm run ledge's table), with the
+                        lift the robot believes the part is at -- the prior's
+                        -- for where each pair's ledge ends
   --max-angle <deg>     passed to gap-sweep: how far from parallel a pair
                         may be and still give a reading. A part turned 5
                         degrees is past gap-sweep's own default  (default 12)
@@ -95,6 +98,7 @@ function parseArgs(argv) {
       case '--elevation': opts.elevation = argv[++i]; break;
       case '--script': opts.script = argv[++i]; break;
       case '--carry-from': opts.carryFrom.push(argv[++i]); break;
+      case '--ledge': opts.ledge = argv[++i]; break;
       case '--max-angle': opts.maxAngle = num(); break;
       case '--hover': opts.hover = num(); break;
       case '--descend': opts.descend = num(); break;
@@ -194,11 +198,14 @@ function readingsOf(rows, angles) {
   return out;
 }
 
-function gapSweep(opts, stepName, pose) {
+function gapSweep(opts, stepName, pose, believedLift) {
   const args = [path.join(ROOT, 'scripts/gap-sweep.js'), '--name', stepName, '--scene', opts.scene,
     '--moving', opts.moving, '--target', opts.target, '--poses', pose.map((v) => +v.toFixed(4)).join(','),
     '--yaw', opts.yaw, '--elevation', opts.elevation, '--script', opts.script, '--carry', '--max-angle', String(opts.maxAngle),
-    ...opts.carryFrom.flatMap((d) => ['--carry-from', d])];
+    ...opts.carryFrom.flatMap((d) => ['--carry-from', d]),
+    // The pose is where the part really is, which the render needs and the
+    // reading must not: the ledge is placed at the lift the robot believes.
+    ...(opts.ledge ? ['--ledge', opts.ledge, '--ledge-lift', String(+believedLift.toFixed(4))] : [])];
   const gen = path.join(ROOT, 'generated', stepName);
   if (fs.existsSync(path.join(gen, 'shots.json'))) args.push('--skip-render');
   const r = spawnSync(process.execPath, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' });
@@ -240,19 +247,19 @@ function main() {
   console.log(`${'step'.padEnd(5)} ${'true pose x y z turn'.padEnd(29)} ${'estimate'.padEnd(29)} ${'error'.padEnd(29)} reads  command`);
   for (let k = 0; k < opts.maxSteps; k++) {
     const stepName = `servo/${opts.name}/step-${String(k).padStart(2, '0')}`;
-    const reads = opts.dryRun
-      ? new Map(used.map((p) => [p.key, [modelOf(p)(truth.map((v, a) => v - reference[a])) + g() * opts.dryNoise, null]]))
-      : readingsOf(gapSweep(opts, stepName, truth), angles);
-    const obs = used.map((p) => {
-      const v = reads.get(p.key);
-      return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, liftHinge: p.liftHinge, reference: p.reference, measured: v ? v[0] : null, weight: weightOf(v?.[1]) };
-    });
-    const n = () => obs.filter((o) => Number.isFinite(o.measured)).length;
     // The prior: the last estimate moved by the move commanded since, or the
     // believed start, in displacement from the reference.
     const prior = state
       ? { d: state.d.map((v, a) => v + lastMove[a]), covariance: state.covariance.map((row, a) => row.map((x, b) => x + (a === b ? motion[a] : 0))) }
       : { d: believed.map((v, a) => v - reference[a]), covariance: [0, 1, 2, 3].map((a) => [0, 1, 2, 3].map((b) => (a === b ? opts.startSigma ** 2 : 0))) };
+    const reads = opts.dryRun
+      ? new Map(used.map((p) => [p.key, [modelOf(p)(truth.map((v, a) => v - reference[a])) + g() * opts.dryNoise, null]]))
+      : readingsOf(gapSweep(opts, stepName, truth, prior.d[1] + reference[1]), angles);
+    const obs = used.map((p) => {
+      const v = reads.get(p.key);
+      return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, liftHinge: p.liftHinge, reference: p.reference, measured: v ? v[0] : null, weight: weightOf(v?.[1]) };
+    });
+    const n = () => obs.filter((o) => Number.isFinite(o.measured)).length;
     /*
      * A reading given as two hypotheses is taken where the prior predicts one
      * of them: the prediction (with its own uncertainty, through the

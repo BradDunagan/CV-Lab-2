@@ -420,7 +420,7 @@ function rowBase({ truth, segments, matches }, shot, { moving, target }, opts) {
   return row;
 }
 
-function rowFor(row, pair, { segments, explained, matches, pairs, tracks }, { moving, target }, opts) {
+function rowFor(row, pair, { segments, explained, matches, pairs, tracks, ledgeFits }, { moving, target }, opts) {
   row.trueGapPx = pair.facing.gap;
   // How much edge there is to measure it on: the stretch the two truth edges
   // share, which a view from the side foreshortens.
@@ -444,6 +444,9 @@ function rowFor(row, pair, { segments, explained, matches, pairs, tracks }, { mo
   row.refit = refitReading(pairs ?? [], pair, da, db, opts);
   // And a reading carried from an earlier frame, which needs no detection.
   row.tracked = trackedReading(tracks ?? [], pair, opts);
+  // And the ledge a free fit placed in this frame, where one was asked for
+  // (gap-sweep --ledge-fit): what scripts/ledge.js measures a scene's from.
+  if (ledgeFits) row.ledgeFit = ledgeFitReading(ledgeFits, pair, opts);
 
   if (!da) return { ...row, reason: `no detection matched ${moving}'s edge` };
   if (!db) return { ...row, reason: `no detection matched ${target}'s edge` };
@@ -567,21 +570,9 @@ function refitReading(pairs, pair, da, db, opts) {
  */
 const TRACK_MATCH = 3;
 function trackedReading(tracks, pair, opts) {
-  const T = pair.facing;
-  const tb = line(pair.b);
-  let best = null;
-  for (const record of tracks) {
-    if (record.type !== 'edge-track') continue;
-    const still = line(record.still);
-    // An ambiguous record has no moving line of its own, only its hypotheses'.
-    const moving = line(record.moving ?? record.hypotheses?.[0]?.moving);
-    if (!still || !moving || angleBetween(still, tb) > opts.maxAngle) continue;
-    const off = Math.abs(dot(sub(T.at, still.p0), still.n));
-    const along = dot(sub(T.at, still.p0), still.u);
-    if (off > TRACK_MATCH || Math.max(0, -along, along - still.len) > opts.reach) continue;
-    if (!best || off < best.off) best = { off, record, still, moving };
-  }
+  const best = trackFor(tracks, pair, opts);
   if (!best) return null;
+  const T = pair.facing;
   if (best.record.model === 'ambiguous') {
     /*
      * No gap: a strip and one edge fit about as well. Both are read as a gap
@@ -608,7 +599,38 @@ function trackedReading(tracks, pair, opts) {
     rms: best.record.rms,
     strip: best.record.strip,
     stripLevel: best.record.stripLevel,
+    ...(best.record.ledge ? { ledge: best.record.ledge } : {}),
   };
+}
+
+/** The track record speaking for a truth pair: see trackedReading. */
+function trackFor(tracks, pair, opts) {
+  const T = pair.facing;
+  const tb = line(pair.b);
+  let best = null;
+  for (const record of tracks) {
+    if (record.type !== 'edge-track') continue;
+    const still = line(record.still);
+    // An ambiguous record has no moving line of its own, only its hypotheses'.
+    const moving = line(record.moving ?? record.hypotheses?.[0]?.moving);
+    if (!still || !moving || angleBetween(still, tb) > opts.maxAngle) continue;
+    const off = Math.abs(dot(sub(T.at, still.p0), still.n));
+    const along = dot(sub(T.at, still.p0), still.u);
+    if (off > TRACK_MATCH || Math.max(0, -along, along - still.len) > opts.reach) continue;
+    if (!best || off < best.off) best = { off, record, still, moving };
+  }
+  return best;
+}
+
+/**
+ * A free ledge fit's record for a truth pair (trackPair with ledge=fit): the
+ * shadow it placed, px from the moving edge, its width, how much better it
+ * fitted than the strip alone, and whether it was in sight at all. Null
+ * where the fit read no strip.
+ */
+function ledgeFitReading(fits, pair, opts) {
+  const best = trackFor(fits, pair, opts);
+  return best?.record.ledge ? { ...best.record.ledge } : null;
 }
 
 /**

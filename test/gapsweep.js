@@ -191,6 +191,41 @@ test('a track is matched to a pair by where its still line lies, not by order', 
   assert.equal(gapRow(input(two), { gapMm: 8 }, PARTS).tracked.gapSigma, 0.03);
 });
 
+test('a free ledge fit reaches the row beside the track, and a held ledge rides on the tracked reading', () => {
+  const ledge = { offset: 3.1, width: 0.2, level: 0.17, seen: true, gain: 2.4 };
+  const fits = [trackRecord([60, 110, 240, 110], [60, 100, 240, 100], [150, 90], { ledge })];
+  const tracks = [trackRecord([60, 110, 240, 110], [60, 100, 240, 100], [150, 90], { ledge: { ...ledge, gain: 2.2 } })];
+  const row = gapRow({ truth: TRUTH, segments: [], explained: [], matches: [miss(1), miss(2)], tracks, ledgeFits: fits },
+    { gapMm: 8 }, PARTS);
+  assert.deepEqual(row.ledgeFit, ledge);
+  assert.equal(row.tracked.ledge.gain, 2.2);
+  // Without fits asked for, the row says nothing about them.
+  const none = gapRow({ truth: TRUTH, segments: [], explained: [], matches: [miss(1), miss(2)], tracks }, { gapMm: 8 }, PARTS);
+  assert.equal('ledgeFit' in none, false);
+});
+
+test('a ledge table: where it ends is the flush sweep\'s gap in the lift, its shadow the sharp fits\' width per mm', () => {
+  const { flushLines, ledgeTable } = require('../scripts/ledge');
+  // A y sweep from 4 mm: the gap 1.04 px per mm of lift, less 0.15, read with noise.
+  const noise = [0.01, -0.02, 0.015, -0.005, 0];
+  const run = { axis: [0, 1, 0], offsetMm: [0, 4, 0], rows: [-2, -1, 0, 1, 2].map((g, k) => (
+    { yaw: 35, elevation: 20, pair: 2, pairAngle: 15, gapMm: g, tracked: { gapPx: 1.04 * (4 + g) - 0.15 + noise[k] } })) };
+  const [line] = flushLines(run);
+  assert.ok(Math.abs(line.flush[0] - 1.04) < 0.02 && Math.abs(line.flush[1] + 0.15) < 0.1, `flush ${line.flush}`);
+  // Only fits with lit ledge to see the shadow against, and clearly better
+  // than the strip, count; widths per mm of lift.
+  const fit = (gapMm, width, gain, lit = 3) => ({ yaw: 35, elevation: 20, pair: 2, pairAngle: 16, gapMm, ledgeFit: { width, gain, lit, seen: lit > 0 } });
+  const x = { axis: [1, 0, 0], offsetMm: [0, 4, 0], rows: [fit(-4, 0.4, 2.1), fit(-2, 0.8, 1.7), fit(-1, 9, 1.1), fit(1, 9, 3, -1),
+    fit(-1.5, 9, 1.6, 0.4), fit(-3, 0.6, 1.9)] };
+  const [entry] = ledgeTable(run, [x]);
+  assert.equal(entry.widthsOf, 3);
+  assert.ok(Math.abs(entry.widthPerMm - 0.15) < 1e-12, `width per mm ${entry.widthPerMm}`);
+  // A pair the fits never saw has no shadow width, not none at all.
+  assert.equal(ledgeTable(run, []).at(0).widthPerMm, 0);
+  // Slid, or a list of poses, is not a flush sweep.
+  assert.throws(() => flushLines({ ...run, offsetMm: [1, 4, 0] }), /nothing slid/);
+});
+
 test('where the truth has no facing pair a track is still a row, and at contact its gap is its error', () => {
   // Only the table's edge in the truth: nothing faces it.
   const truth = [gt(2, ['Table'], 50, 110, 250, 110)];

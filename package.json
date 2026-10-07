@@ -30,6 +30,7 @@
     "overlay": "node scripts/overlay.js",
     "gap-sweep": "node scripts/gap-sweep.js",
     "position": "node scripts/solve-position.js",
+    "ledge": "node scripts/ledge.js",
     "servo": "node scripts/servo.js",
     "degrade": "node scripts/degrade.js",
     "generate": "electron scripts/generate-cli.js",
