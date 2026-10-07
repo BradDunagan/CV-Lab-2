@@ -823,16 +823,27 @@ test('a lit ledge read as one strip puts the moving edge out; held, it is read w
   }
 });
 
-test('a ledge that moves the moving edge further than `ledgeShift` is refused: the record is the plain one', () => {
-  const { lo, hi, raster } = ledge(6, 3, 0.6);
+test('a ledge lit brighter than the moving face is read: the plain fit takes its shadow for the moving edge', () => {
+  for (const [gap, offset] of [[4, 2.5], [5, 2.5]]) {
+    const { lo, hi, raster } = ledge(gap, offset, 0.6, 0.45);
+    const opts = { strip: 'fit', guess: gap };
+    const plain = trackPair(raster, carriedFrom(lo, hi), opts);
+    assert.ok(gap - plain.gap > 1, `${gap} px: plain should read far short, read ${plain.gap}`);
+    const held = trackPair(raster, carriedFrom(lo, hi), { ...opts, ledge: { offset, width: 0.3 } });
+    near(held.gap, gap, 0.03, `${gap} px, ledge held`);
+    near(held.ledge.level, 0.45, 0.03, 'the lit ledge\'s level');
+  }
+});
+
+test('a "ledge" no brighter than its strip is no lit ledge: refused, the record is the plain one', () => {
+  // Darker than the strip (0.12) beside it: whatever this is, it is not a lit
+  // face in the moving part's shadow.
+  const { lo, hi, raster } = ledge(6, 3, 0.6, 0.05);
   const opts = { strip: 'fit', guess: 6 };
   const plain = trackPair(raster, carriedFrom(lo, hi), opts);
   const held = trackPair(raster, carriedFrom(lo, hi), { ...opts, ledge: { offset: 3, width: 0.3 } });
-  const shift = Math.abs(held.gap - plain.gap);
-  assert.ok(shift > 0.05 && shift < 1, `the ledge should move the edge, by less than the default: ${shift}`);
-  const refused = trackPair(raster, carriedFrom(lo, hi), { ...opts, ledge: { offset: 3, width: 0.3 }, ledgeShift: shift / 2 });
-  near(refused.gap, plain.gap, 1e-9, 'refused');
-  assert.equal('ledge' in refused, false);
+  near(held.gap, plain.gap, 1e-9, 'refused');
+  assert.equal('ledge' in held, false);
 });
 
 test('a ledge held behind the still edge is no ledge: the record is the plain one', () => {

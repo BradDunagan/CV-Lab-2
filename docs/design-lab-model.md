@@ -2558,19 +2558,30 @@ the "moving edge" out on the moving part's face. Blur's own fits measured
 zero width at that view, hence the same reading. Every width from 0.05 px up
 to the sharp table's gave the same 1 mm: it is not sensitivity to the width.
 
-Over every stack run, clean and blurred, a held ledge moved the moving edge
--0.59 to +0.39 px from the strip alone's reading (612 readings). So
-`trackPair` now keeps a held ledge only if it moves the edge by at most
-`ledgeShift` px (1). That refuses the one reading and changes no other. Four
-views, no truth, `joint`, x / y / z mm and turn degrees:
+The bad fit's levels say what happened: its "lit ledge" is 0.070, the dark
+strip's level, and its "strip" 0.234, the moving face's. The roles inverted.
+So `trackPair` now keeps a held ledge only if its lit ledge is brighter than
+the strip beside it, which is what lit means; every other ledge seen on the
+stack was. That refuses the one reading and moves three others by at most
+0.09 px. Four views, no truth, `joint`, x / y / z mm and turn degrees:
 
 | blur 0.8 px | four views | ten sets |
 |---|---|---|
-| widths from sharp images | 0.080 / 0.039 / 0.029 / 0.022 | 0.137 / 0.061 / 0.065 / 0.038 |
-| widths zero | 0.082 / 0.040 / 0.028 / 0.023 | 0.143 / 0.062 / 0.065 / 0.039 |
-| widths from blur's own free fits | 0.096 / 0.048 / 0.054 / 0.033 | 0.152 / 0.070 / 0.087 / 0.042 |
+| widths from sharp images | 0.084 / 0.041 / 0.031 / 0.023 | 0.141 / 0.065 / 0.072 / 0.039 |
+| widths zero | 0.085 / 0.044 / 0.030 / 0.023 | 0.145 / 0.067 / 0.071 / 0.038 |
+| widths from blur's own free fits | 0.092 / 0.046 / 0.042 / 0.034 | 0.150 / 0.070 / 0.084 / 0.043 |
 
-Clean, every run reads as before to the third decimal. **A blurring camera
+A limit on how far the ledge may move the moving edge from the plain fit's
+was the first guard: a held ledge moved it -0.59 to +0.39 px over 612 stack
+readings, so 1 px refused the bad one and nothing else, and gave 0.080 /
+0.039 / 0.029 / 0.022 above. It was replaced before merging, because it
+depends on the scene. With the ledge lit brighter than the moving face, the
+plain fit takes the shadow for the moving edge and reads a 4 px gap as 1.23;
+a real ledge then moves the edge by its whole lit width, and the limit
+refuses the right answer (`test/pairs.js`). On the stack the ledge (0.175)
+is darker than the moving face (0.23), which is why no run met it.
+
+Clean, every run reads as before. **A blurring camera
 needs no sharper capture: hold the width at zero** (`npm run ledge` without
 `--fits`). Measured under blur the widths come out too wide, about twice the
 sharp ones at the 50-degree views, and that costs a little. Scaling the sharp
@@ -2582,8 +2593,9 @@ and it could not: its residual was 0.0387 px at zero width, when the test
 poses were 1 mm off, against 0.0375 to 0.0386 at the good widths. One wild
 reading in a hundred moves a fit of hundreds of frames very little.
 
-(`notes/brads-notes/2026-10-07-ledge/`: `widths.sh`, `scale.sh`, `shift.js`,
-`run-ga.log`, `guard-*.log`.)
+(`notes/brads-notes/2026-10-07-ledge/`: `widths.sh`, `scale.sh`, `shift.js`;
+the lit guard `run-la.log`, `lit-*.log`; the shift guard `run-ga.log`,
+`guard-*.log`.)
 
 #### What twenty-four views measured
 
