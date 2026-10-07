@@ -2329,6 +2329,56 @@ holding something brighter than the still face -- the turned cube's corner,
 by the levels; `fitPairs` still pairs nothing past `maxAngle`, which the
 carried readings make matter less.
 
+#### A thirtieth: choosing a light
+
+The twenty-fourth detects a bad light from the calibration; nothing chose
+one. A light is scored here as a cell could score it, with no truth in the
+images: each reading's RMS about its own calibration fit (is it following
+the pose in a straight line?), and the error on test poses the robot
+commands, which a cell knows. Each candidate is the stack-2 sweeps and test
+poses rendered under it, analysed with its own pooled still edge and solved
+hinged (`notes/brads-notes/2026-10-06-light/light.sh`, `score.js`): about an
+hour of rendering a light. Eight lights, all the same area light at the same
+distance from the stack, placed by how far round from the front (the
+cameras are at 35 and 60 degrees) and how far up:
+
+| light: round / up | calibration RMS, max / median px | four views, no truth | ten sets |
+|---|---|---|---|
+| 45 / 5 (stack-2) | 0.033 / 0.018 | 0.026 / 0.019 / 0.023 / 0.019 | 0.049 / 0.034 / 0.052 / 0.026 |
+| 45 / 10 | 0.075 / 0.026 | 0.026 / 0.031 / 0.059 / 0.022 | 0.068 / 0.042 / 0.067 / 0.036 |
+| 45 / 20 | 0.64 / 0.051 | 0.94 / 0.29 / 0.19 / 0.08 | 1.9 / 0.49 / 0.71 / 0.09 |
+| 42 / 45 (stack-4) | 0.115 / 0.068 | 1.2 / 0.94 / 1.1 / 0.10 | 2.1 / 0.95 / 1.1 / 0.16 |
+| 60 / 5 | 0.040 / 0.022 | 0.24 / 0.11 / 0.08 / 0.03 | 0.24 / 0.11 / 0.11 / 0.04 |
+| 70 / 6 (stack-3) | 0.059 / 0.025 | 0.33 / 0.15 / 0.20 / 0.06 | 0.35 / 0.17 / 0.21 / 0.07 |
+| 15 / 10 | 98 / 0.031 | 1.6 / 1.0 / 1.3 / 0.79 | 2.1 / 1.1 / 1.3 / 0.59 |
+| -30 / 10 | 42 / 0.031 | 1.7 / 1.1 / 1.4 / 1.1 | 5.6 / 1.0 / 1.3 / 0.93 |
+
+- **Only a small region is good**: about 45 degrees round, between the two
+  camera azimuths, and no more than 10 up. Raised to 20 it fails; moved 15
+  degrees round either way it costs ten times or more.
+- **Every failure is the side pair, and nearly always at 35/50.** Higher,
+  the top cube's shadow falls where that pair is read; more frontal or from
+  the far side, its faces lose their contrast and it reads something else
+  (calibration RMS of tens of px: it is not following the gap at all).
+- **Two kinds of bad light, and the calibration sees only one.** Lights that
+  make a reading follow a shadow are caught by the calibration's RMS (the
+  worst reading over 0.2 px, or the median over 0.05: four of the six bad
+  lights). Lights that leave every reading straight but reading the wrong
+  edge -- 60 and 70 degrees round, the eighth's crease with no contrast --
+  are not: their readings follow the pose in a straight line, offset and
+  scaled, and the calibration cannot tell that line from the right one. Only
+  the commanded test poses can, and a cell can command them.
+- So choosing a light is: candidate positions, a calibration under each,
+  the warning as a first screen, and the commanded test poses as the
+  verdict. Done here by rendering; in a cell, by moving the light. What it
+  costs is the sweeps per candidate, and nothing here makes it cheaper.
+
+The search also found a defect: gap-sweep --carry wrote a frame's own refit
+gap into its trackPair command as the starting width, and under the light
+from the far side one read an overhang, -0.60 px, which trackPair refuses;
+the frame and its run failed. A reading that is not positive now starts the
+fit at half a pixel.
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
