@@ -674,6 +674,8 @@ fitted, and nothing has to have been detected.
 | `pad` | 4 px | plateau taken beyond each edge |
 | `levelSlope` | `fit` | as for `fitPairs` |
 | `strip` | `held` | `held`: the strip level carried in, for a strip too narrow to show its own. `fit`: only the line is carried |
+| `ledge` | `none` | a lit ledge inside the strip, up to the moving part's shadow. `held`: the shadow's middle `ledgeOffset` px from the moving edge toward the still one, `ledgeWidth` px wide; `fit`: placed freely, to measure it |
+| `ledgeOffset`, `ledgeWidth` | 0 | for `ledge=held`; `gap-sweep --ledge` writes them in |
 
 The carried values are **parameters**, numbers in the command, so they are
 in this frame's log and the frame replays on its own. Nothing in the
@@ -696,7 +698,8 @@ One record, or none: `still` (the line as given), `toward`, `moving` (the
 fitted edge over the same stretch), `gap` at the line's middle (positive
 toward `toward`, negative for an overhang), `gapSigma`, `model`, `ratio`,
 `freeRatio`, `levels`, `levelSlopes`, `strip` and `stripLevel` (null for one
-edge), `aperture`, `rms`, `samples`, `iterations`, `converged`.
+edge), `aperture`, `rms`, `samples`, `iterations`, `converged`, and `ledge`
+with `ledge=held` or `fit` (below).
 
 - **An error in the carried line**: over a pixel it is an error in the gap,
   one for one. Under one, the strip's darkness sets the width and the moving
@@ -705,6 +708,23 @@ edge), `aperture`, `rms`, `samples`, `iterations`, `converged`.
 - **Contact is not refused in every view.** Most return nothing; a few return
   0.02 to 0.10 px with a `gapSigma` small enough to pass a 3-sigma test.
   Whether the parts can be touching is the caller's to decide.
+
+**A ledge.** When the part above has slid back, the strip is not one level.
+Next to the still edge is a strip of the still part's top face, lit, and
+then the moving part's shadow across it; the dark gap is only beyond that.
+Read as one flat strip it puts the moving edge too far out, by more the
+further the part slid. With `ledge=held` the strip is three levels, still
+edge, lit ledge, a soft shadow edge and the dark, and the shadow's position
+is tied to the moving edge, so one more level is fitted and nothing else. A
+shadow placed behind the still edge (no ledge in sight) leaves the plain
+model exactly. The record gains `ledge`: the `offset`, `width`, the lit
+`level`, `lit` (the shadow's distance from the still edge; `seen` when
+positive) and `gain` (the plain fit's rms over this one's). `ledge=fit`
+places the shadow freely as well. That is for measuring a scene's shadow on
+sharp images (`npm run ledge`), not for reading gaps: freed per frame it
+wanders where there is no ledge, and through a lens's blur it cannot tell
+the shadow's width from the blur (`design-lab-model.md` §5, "A
+thirty-second").
 
 #### `match(src features, truth features, …)` → features (`edge-match`)
 
@@ -1665,6 +1685,39 @@ says which.
 npm run gap-sweep -- --name stack-2g-approach --scene saved:stack-2 --moving Cube2 --target Cube \
     --axis 0,1,0 --gaps 5,2,1,0.5,0 --yaw 35,60 --elevation 20,50 --script pipelines/pairs.lab --carry
 ```
+
+**`--ledge <file>` holds a ledge in every carried pair**, from `npm run
+ledge`'s table (below), matched by view and the angle a pair runs at. In
+each frame the ledge ends where the still edge would be were the moving part
+flush at that frame's **commanded** lift, so a frame at flush has none and
+one slid back has as much as it slid; the shadow's width grows with the
+lift. `--ledge-lift <mm>` places it at one lift for every shot instead, which
+is what a closed loop knows (`npm run servo -- --ledge` passes its prior's).
+It assumes the moving part is the one above. `--ledge-fit` adds a free ledge
+fit beside each carried pair (`L<pair> = trackPair(..., ledge=fit)`), which
+`npm run ledge` measures the shadow from; it is slow.
+
+```bash
+# Sweeps analysed once with free ledge fits; then the table; then every run
+# re-analysed with the ledge held.
+npm run gap-sweep -- --name stack-2g-x ... --carry --ledge-fit
+npm run ledge -- --flush results/stack-2g-y/pairs --fits results/stack-2g-x/pairs \
+    --fits results/stack-2g-z/pairs --out results/ledge/stack-2g-ledge.json
+npm run gap-sweep -- --name stack-2g-test ... --carry --ledge results/ledge/stack-2g-ledge.json
+```
+
+`npm run ledge` reads two things per view and pair, with no truth. **Where
+the ledge ends**: the `--flush` run (a `--carry` sweep along y with nothing
+slid) gives the tracked gap as a line in the lift. **How soft the shadow is**:
+the free fits in `--fits` runs where the shadow is at least `--min-lit` px
+(1.5) from the still edge and fits `--min-gain` (1.5) times better than the
+strip alone, as a width per millimetre of lift, the median; zero for a pair
+with none. Take the widths from **sharp** images. Under blur the free fit
+cannot measure them, and widths measured there made every reading worse. On
+the stack the table takes the test poses near contact (0.6 to 2.5 mm up) from
+0.114 to 0.049 mm in x. Under a lens's blur, calibrated `joint`, it takes them
+from 0.120 / 0.053 / 0.074 mm to 0.079 / 0.039 / 0.029, and with it `joint`
+does what `hinged` did on clean images.
 
 The table gains the tracked columns and `gap-grid.txt` a map per gap.
 `carry.json` says what was carried from where, and which pairs had nothing to

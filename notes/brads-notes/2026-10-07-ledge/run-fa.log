@@ -1,0 +1,23 @@
+stack-2g-x-fa: 52 of 54 rows changed
+stack-2g-y-fa: 48 of 48 rows changed
+stack-2g-z-fa: 51 of 54 rows changed
+stack-2g-turn-fa: 40 of 40 rows changed
+stack-2g-test-fa: 74 of 78 rows changed
+stack-2g-test-r2-fa: 76 of 78 rows changed
+stack-2g-test-r3-fa: 75 of 78 rows changed
+stack-2g-test-low-fa: 53 of 60 rows changed
+stack-2g-x-blur-fa: 53 of 54 rows changed
+stack-2g-y-blur-fa: 48 of 48 rows changed
+stack-2g-z-blur-fa: 51 of 54 rows changed
+stack-2g-turn-blur-fa: 40 of 40 rows changed
+stack-2g-test-blur-fa: 77 of 78 rows changed
+test-fa-hinged.json                      10 sets 0.051 / 0.032 / 0.053 / 0.024   4 views 0.025 / 0.018 / 0.024 / 0.018  (10/10)
+test-r2-fa-hinged.json                   10 sets 0.058 / 0.030 / 0.038 / 0.024   4 views 0.037 / 0.022 / 0.023 / 0.016  (10/10)
+test-r3-fa-hinged.json                   10 sets 0.091 / 0.043 / 0.059 / 0.023   4 views 0.051 / 0.020 / 0.024 / 0.016  (10/10)
+test-low-fa-hinged.json                  10 sets 0.075 / 0.061 / 0.074 / 0.063   4 views 0.049 / 0.050 / 0.047 / 0.060  (8/8)
+blur-fa-hinged.json                      10 sets 0.152 / 0.065 / 0.081 / 0.043   4 views 0.122 / 0.049 / 0.066 / 0.018  (10/10)
+test-fa-joint.json                       10 sets 0.055 / 0.036 / 0.063 / 0.026   4 views 0.026 / 0.020 / 0.029 / 0.019  (10/10)
+test-r2-fa-joint.json                    10 sets 0.061 / 0.033 / 0.048 / 0.024   4 views 0.036 / 0.023 / 0.027 / 0.016  (10/10)
+test-r3-fa-joint.json                    10 sets 0.094 / 0.046 / 0.067 / 0.024   4 views 0.053 / 0.023 / 0.026 / 0.017  (10/10)
+test-low-fa-joint.json                   10 sets 0.085 / 0.067 / 0.083 / 0.061   4 views 0.051 / 0.053 / 0.056 / 0.058  (8/8)
+blur-fa-joint.json                       10 sets 0.137 / 0.061 / 0.065 / 0.038   4 views 0.079 / 0.039 / 0.029 / 0.022  (10/10)

@@ -2426,6 +2426,123 @@ What is left in x is the side pair's render-to-render scatter, the same
 thing the eighteenth found in the test poses.
 (`notes/brads-notes/2026-10-06-repeat/`.)
 
+#### A thirty-second: the ledge, modelled
+
+The side pair over the ledge was the largest error left everywhere: slid
+back, under blur, near contact, under a bad light (the second cube list).
+Holding the still edge (the sixteenth) and a one-sided calibration (the
+nineteenth's hinge) had kept it out of the clean test poses at the lift the
+sweeps were made at. Neither reaches near contact or blur. Here it is modelled
+instead.
+
+**The brightness across a slid-back gap is three levels, not one.** Binned
+from the still edge (`2026-10-05-profile/profile.js`), slid 4 mm back at
+35/20: the still face 0.325, then a plateau at 0.175 for about 3 px, a ramp
+down over 1.5 px, the dark 0.07 and the moving face 0.23. The plateau is the
+still part's top face, uncovered and lit; the ramp is where it passes into
+the moving part's shadow. Fitted as one flat strip, the dark level comes out
+too light and the moving edge too far out, the nineteenth's +0.2 to +0.36 px
+at 4 mm back. The ramp's middle sits the same distance from the MOVING edge
+at 2 mm back as at 4 (3.6 px at 35/20): the shadow moves with the part that
+casts it.
+
+`fitBand` takes a third, soft edge between the two for it (pairs.js): BOUNDED
+by the still edge and the moving one, because a ledge ends at the still edge
+and a shadow cannot pass the edge that casts it. Where it would, its coverage
+is clamped and the lit level has no pixel, which is the plain model exactly.
+`trackPair` reads with it as `ledge=fit`, placed freely, or `ledge=held`,
+its middle `ledgeOffset` px from the moving edge and `ledgeWidth` wide, which
+adds one level and nothing else.
+
+**Freed per frame it fixes clean ledge frames and fails elsewhere.** On the x
+sweep it takes the slid-back frames from +0.08 to +0.23 px to within 0.04 to
+0.07 of each view's flush value. But where there is no ledge the free shadow
+has nothing to pin it; before the second bound it ran past the moving edge
+and read gaps 3 to 4 px short. Under blur, frames with no ledge fit 1.5 to 2
+times better with it than without, so no gain threshold tells a real ledge
+from blur. Not used to read gaps.
+
+**Carried, it needs the lift.** Free fits on the test poses put the shadow
+0.93 to 1.39 px from the moving edge per millimetre of lift (0.95 and 1.15 on
+the x sweep at 35/20 and 60/20): a shadow's offset grows with the height of
+what casts it. Held at that times each frame's commanded lift, every slid-back
+test pose read near its flush value, and the solve got worse: clean x 0.026
+-> 0.040 mm, blur three times worse. A shadow placed at a fixed fraction of
+the lift also puts a sliver of "ledge" into frames that have none (the y
+sweep, the 50-degree views), whose free level soaks up other shading. Not
+kept. Even applied only to the frames slid back (an oracle, by the commanded
+x) the clean test poses did not improve: at the lift the sweeps were made at,
+the hinge had already absorbed the ledge's error.
+
+**Near contact is where a model is worth having.** The hinge is a slope
+measured at 4 mm; the ledge's error depends on the lift, and the eight low
+test poses (0.6 to 2.5 mm up) are where the twenty-seventh found the side
+pair 0.2 to 0.44 px short. With the ledge carried there, x falls from 0.114
+to 0.05 mm.
+
+**Where the ledge ends is where the still edge would be at flush.** The lit
+ledge is the top face the moving part has slid off, so it ends where the
+moving part's footprint is. In the image that is the moving edge less the
+gap the pair would have at flush at that lift: the y sweep's gap, a straight
+line in the lift (1.04 px per mm at 35/20, 1.23 at 60/20, residuals 0.004 to
+0.05 px). Placed there, a frame at flush has no ledge at all and needs no
+gate, and a frame slid back has exactly as much as it slid. The free fits'
+offsets, 0.95 and 1.15 px per mm, were this less the shadow's half-width.
+
+**The shadow's width must be measured on sharp images.** Held at zero, the
+blurred test poses came out 1 mm off. Fitted in every frame with the offset
+held, the clean ones went to 0.12 to 0.15 mm in x. Measured by free fits on
+the blurred frames themselves, 1.2 mm. Measured on the clean frames where
+the lit ledge is wide (the shadow at least 1.5 px from the still edge and
+fitting 1.5 times better than the strip alone), it is 0.008 to 0.18 px per
+mm of lift on the side pair and none is found on the front pair's milder
+ledge. It is a penumbra, set by the light's size and the lift, a property of
+the scene; under a lens's blur the free fit cannot tell it from the blur. A
+camera that blurs needs it from somewhere sharper.
+
+So: `npm run ledge` measures both with no truth, the line from a flush y
+sweep and the widths from `gap-sweep --ledge-fit` runs on sharp images, and
+`gap-sweep --ledge <file>` holds them in every frame of every view-pair,
+placed at the frame's commanded lift. Four views, no truth, x / y / z mm and
+turn degrees (three renders' RMS for the clean test poses):
+
+| | before, hinged | ledge, hinged | ledge, joint |
+|---|---|---|---|
+| test poses, three renders | 0.044 / 0.021 / 0.022 / 0.019 | 0.039 / 0.020 / 0.024 / 0.017 | 0.040 / 0.022 / 0.027 / 0.017 |
+| low poses, 0.6-2.5 mm up | 0.114 / 0.059 / 0.049 / 0.049 | **0.049** / 0.050 / 0.047 / 0.060 | 0.051 / 0.053 / 0.056 / 0.058 |
+| blur 0.8 px | 0.120 / 0.053 / 0.074 / 0.030 | 0.122 / 0.049 / 0.066 / 0.018 | **0.079 / 0.039 / 0.029 / 0.022** |
+| blur, ten sets | 0.155 / 0.072 / 0.093 / 0.066 | 0.152 / 0.065 / 0.081 / 0.043 | 0.137 / 0.061 / 0.065 / 0.038 |
+
+(Before, joint: 0.065-0.080 mm in x on the clean renders, 0.133 / 0.043 /
+0.070 / 0.037 under blur. The ledge does what the hinge did, and more.)
+
+- **Near contact x halves**, whichever calibration.
+- **Under blur, `joint` with the ledge is the best of everything tried**: z
+  0.074 -> 0.029 mm. The hinge on top of the ledge fits something else.
+- **On clean test poses nothing changes beyond render noise.** The hinge had
+  that case.
+- **The front pair** is in the table too, with no shadow width. Left out, the
+  clean z is 0.020 mm and blur's 0.065; in, 0.027 and 0.029.
+- **The commanded lift is an input.** Every lift off by 0.3 mm moves the clean
+  test poses to at most 0.036 / 0.046 mm in y and z; off by 1 mm, the turn
+  goes to 0.13 degrees. A carried pose knows the lift to about a tenth of a
+  millimetre. In a closed loop the render is where the part is and the lift
+  is where the robot believes it is: `servo --ledge` passes its prior's
+  (`gap-sweep --ledge-lift`).
+
+**In the loop it changes nothing, and should not.** From the twenty-seventh's
+two starts, hinged, `--lateral-floor 0`: start A estimated x 0.09 mm off at
+1 mm up and ended 0.10 / 0.01 / 0.02 mm and 0.03 degrees off; start B went
+from 2.5 mm to contact and ended 0.01 / 0.03 / 0.00 and 0.02 (without the
+ledge: 0.04 / 0.01 / 0.04 / 0.01 and 0.05 / 0.00 / 0.02 / 0.00). The loop
+aligns x at the hover height before it descends, so near contact the part
+is flush and there is no ledge to read; what is left is the robot's last
+move and render noise. The ledge matters to a part that is low AND slid
+back -- the low test poses -- which a different policy, or an assembly
+that slides into place, would meet.
+
+(`notes/brads-notes/2026-10-07-ledge/`.)
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

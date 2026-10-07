@@ -1,0 +1,23 @@
+stack-2g-x-f0: 52 of 54 rows changed
+stack-2g-y-f0: 48 of 48 rows changed
+stack-2g-z-f0: 51 of 54 rows changed
+stack-2g-turn-f0: 40 of 40 rows changed
+stack-2g-test-f0: 74 of 78 rows changed
+stack-2g-test-r2-f0: 76 of 78 rows changed
+stack-2g-test-r3-f0: 75 of 78 rows changed
+stack-2g-test-low-f0: 53 of 60 rows changed
+stack-2g-x-blur-f0: 53 of 54 rows changed
+stack-2g-y-blur-f0: 48 of 48 rows changed
+stack-2g-z-blur-f0: 51 of 54 rows changed
+stack-2g-turn-blur-f0: 40 of 40 rows changed
+stack-2g-test-blur-f0: 77 of 78 rows changed
+test-f0-hinged.json                      10 sets 0.051 / 0.031 / 0.051 / 0.024   4 views 0.027 / 0.017 / 0.023 / 0.015  (10/10)
+test-r2-f0-hinged.json                   10 sets 0.059 / 0.030 / 0.038 / 0.026   4 views 0.038 / 0.021 / 0.022 / 0.015  (10/10)
+test-r3-f0-hinged.json                   10 sets 0.092 / 0.043 / 0.057 / 0.024   4 views 0.054 / 0.022 / 0.024 / 0.015  (10/10)
+test-low-f0-hinged.json                  10 sets 0.080 / 0.062 / 0.084 / 0.058   4 views 0.047 / 0.043 / 0.049 / 0.053  (8/8)
+blur-f0-hinged.json                      10 sets 1.005 / 0.507 / 0.492 / 0.061   4 views 0.199 / 0.314 / 0.243 / 0.034  (10/10)
+test-f0-joint.json                       10 sets 0.055 / 0.034 / 0.054 / 0.025   4 views 0.026 / 0.018 / 0.019 / 0.014  (10/10)
+test-r2-f0-joint.json                    10 sets 0.063 / 0.032 / 0.041 / 0.025   4 views 0.036 / 0.019 / 0.013 / 0.013  (10/10)
+test-r3-f0-joint.json                    10 sets 0.097 / 0.046 / 0.062 / 0.023   4 views 0.057 / 0.024 / 0.026 / 0.011  (10/10)
+test-low-f0-joint.json                   10 sets 0.088 / 0.065 / 0.085 / 0.057   4 views 0.048 / 0.045 / 0.048 / 0.049  (8/8)
+blur-f0-joint.json                       10 sets 0.990 / 0.509 / 0.475 / 0.056   4 views 0.163 / 0.315 / 0.204 / 0.040  (10/10)

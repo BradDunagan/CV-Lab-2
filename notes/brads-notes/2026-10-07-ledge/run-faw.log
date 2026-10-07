@@ -1,0 +1,23 @@
+stack-2g-x-faw: 52 of 54 rows changed
+stack-2g-y-faw: 48 of 48 rows changed
+stack-2g-z-faw: 51 of 54 rows changed
+stack-2g-turn-faw: 40 of 40 rows changed
+stack-2g-test-faw: 74 of 78 rows changed
+stack-2g-test-r2-faw: 76 of 78 rows changed
+stack-2g-test-r3-faw: 75 of 78 rows changed
+stack-2g-test-low-faw: 53 of 60 rows changed
+stack-2g-x-blur-faw: 53 of 54 rows changed
+stack-2g-y-blur-faw: 48 of 48 rows changed
+stack-2g-z-blur-faw: 51 of 54 rows changed
+stack-2g-turn-blur-faw: 40 of 40 rows changed
+stack-2g-test-blur-faw: 77 of 78 rows changed
+test-faw-hinged.json                     10 sets 0.239 / 0.143 / 0.249 / 0.036   4 views 0.122 / 0.036 / 0.036 / 0.022  (10/10)
+test-r2-faw-hinged.json                  10 sets 0.132 / 0.061 / 0.068 / 0.032   4 views 0.118 / 0.044 / 0.040 / 0.025  (10/10)
+test-r3-faw-hinged.json                  10 sets 0.183 / 0.097 / 0.121 / 0.023   4 views 0.149 / 0.079 / 0.108 / 0.020  (10/10)
+test-low-faw-hinged.json                 10 sets 0.196 / 0.138 / 0.193 / 0.062   4 views 0.177 / 0.090 / 0.125 / 0.052  (8/8)
+blur-faw-hinged.json                     10 sets 0.369 / 0.278 / 0.413 / 0.059   4 views 0.279 / 0.177 / 0.269 / 0.030  (10/10)
+test-faw-joint.json                      10 sets 0.257 / 0.202 / 0.373 / 0.035   4 views 0.039 / 0.061 / 0.063 / 0.015  (10/10)
+test-r2-faw-joint.json                   10 sets 0.104 / 0.062 / 0.077 / 0.030   4 views 0.050 / 0.040 / 0.050 / 0.020  (10/10)
+test-r3-faw-joint.json                   10 sets 0.157 / 0.103 / 0.146 / 0.020   4 views 0.085 / 0.062 / 0.054 / 0.010  (10/10)
+test-low-faw-joint.json                  10 sets 0.196 / 0.136 / 0.179 / 0.069   4 views 0.184 / 0.093 / 0.099 / 0.059  (8/8)
+blur-faw-joint.json                      10 sets 0.275 / 0.163 / 0.186 / 0.060   4 views 0.136 / 0.081 / 0.069 / 0.039  (10/10)
