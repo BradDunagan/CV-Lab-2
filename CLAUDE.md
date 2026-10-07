@@ -321,7 +321,9 @@ contact x falls 0.114 -> 0.049 mm; under blur, calibrated `joint`, 0.120 /
 0.053 / 0.074 -> 0.079 / 0.039 / 0.029 mm; clean test poses as before. Freed
 per frame, or placed at a fixed fraction of the lift, it made things worse.
 
-Still open: the shadow's width cannot be measured through a lens's blur, so
-a blurring camera needs it from a sharper capture; the ledge assumes the
-moving part is the one above; and a cheaper way to choose a light than
-sweeps under each.
+Under blur the width needs no sharper capture: zero does as well, once a
+held ledge that moves the moving edge more than a pixel from the plain fit is
+refused (one such fit was the whole millimetre, "A thirty-third").
+
+Still open: the ledge assumes the moving part is the one above; and a
+cheaper way to choose a light than sweeps under each.
