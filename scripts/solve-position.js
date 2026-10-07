@@ -39,7 +39,9 @@ CV-Lab relative position -- several gap readings solved for one displacement
 
   npm run position -- --x <dir> --y <dir> --z <dir> [options]
 
-  --x, --y, --z <dir>   the results directory of a gap sweep along that axis
+  --x, --y, --z <dir>   the results directory of a gap sweep along that axis, or
+                        several renders of it, comma-separated, calibrated from
+                        together
                         (the one holding gap-sweep.json). All three must share
                         a reference pose (--offset) and their views
   --turn <dir>          a gap-sweep --poses run of turns about the vertical,
@@ -220,7 +222,16 @@ function main() {
   // A row's angles, for the angular unknowns this solve has.
   const angleOf = (u, r) => (u === 'turn' ? r.turnDeg ?? 0 : r.tipDeg?.[u === 'tipx' ? 0 : 1] ?? 0);
   const anglesOf = (r) => unknowns.filter((u) => ANGLES.includes(u)).map((u) => angleOf(u, r));
-  const sweeps = Object.fromEntries(unknowns.map((u) => [u, load(opts.dirs[u])]));
+  /*
+   * A sweep may be several runs of the same poses, comma-separated: their
+   * frames are calibrated from together. One render's path-tracer noise is in
+   * its calibration and so in every solve made with it (the thirty-first).
+   */
+  const loadAll = (dirs) => {
+    const runs = String(dirs).split(',').map(load);
+    return { ...runs[0], rows: runs.flatMap((r) => r.rows) };
+  };
+  const sweeps = Object.fromEntries(unknowns.map((u) => [u, loadAll(opts.dirs[u])]));
   const offsets = ['x', 'y', 'z'].map((a) => JSON.stringify(sweeps[a].offsetMm ?? null));
   if (new Set(offsets).size !== 1) {
     throw new Error(`the three sweeps were made from different reference poses: --offset ${offsets.join(', ')}`);

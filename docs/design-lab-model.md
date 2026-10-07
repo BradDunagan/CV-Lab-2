@@ -2379,6 +2379,53 @@ from the far side one read an overhang, -0.60 px, which trackPair refuses;
 the frame and its run failed. A reading that is not positive now starts the
 fit at half a pixel.
 
+#### A thirty-first: loose ends -- outliers, the weak pair, a calibration's own noise
+
+**Outliers.** A solve that dropped the worst reading made things worse (the
+twenty-fourth). `position --robust <px>` reweights instead, by Huber's rule:
+a reading further than k px from its pose's solution keeps k/|r| of its
+weight, for five rounds. Four views, no truth (ten sets):
+
+| | off | k = 0.1 px |
+|---|---|---|
+| clean | 0.026 / 0.019 / 0.023 / 0.019 (0.049 / 0.034 / 0.052 / 0.026) | 0.026 / 0.019 / 0.024 / 0.021 (0.050 / 0.034 / 0.053 / 0.027) |
+| noise | 0.058 / 0.029 / 0.028 / 0.018 (0.100 / 0.049 / 0.058 / 0.026) | 0.029 / 0.021 / 0.025 / 0.021 (0.082 / 0.044 / 0.056 / 0.028) |
+| blur 0.8 | 0.120 / 0.053 / 0.074 / 0.030 (0.155 / 0.072 / 0.093 / 0.066) | 0.091 / 0.046 / 0.072 / 0.043 (0.153 / 0.077 / 0.117 / 0.079) |
+| all four | 0.165 / 0.132 / 0.174 / 0.055 (0.317 / 0.218 / 0.344 / 0.079) | 0.146 / 0.101 / 0.162 / 0.040 (0.296 / 0.201 / 0.331 / 0.065) |
+
+It helps where images are camera-like and changes nothing on clean renders;
+under blur the ten-set z gets worse. An option, for real images, not a
+default. On the turned large poses it fixes the turn of the one pose with a
+bad reading (0.30 -> 0.12 degrees) and not its position.
+
+**The weak pair of views, 35/50 + 60/50**, is geometry, and the design
+sigma says so before anything is read: y gets 1.86 mm per px of reading
+error from it, against 0.56 to 0.96 from every other pair. Two steep views
+see height and sideways motion in nearly the same proportions. The two
+20-degree views are weak the other way (x 1.61, z 1.42 mm/px). Pairs mixing
+a low and a high view are the strong ones.
+
+**A calibration's own noise.** Only the test poses had been rendered more
+than once (the eighteenth). The four calibration sweeps were rendered a
+second time, and each calibration (hinged, no truth) used on all three
+renders of the test poses, four views:
+
+| calibrated from | test render 1 | 2 | 3 |
+|---|---|---|---|
+| sweeps, render 1 | 0.026 / 0.019 / 0.023 / 0.019 | 0.039 / 0.020 / 0.021 / 0.022 | 0.059 / 0.023 / 0.023 / 0.016 |
+| sweeps, render 2 | 0.062 / 0.025 / 0.030 / 0.021 | 0.051 / 0.030 / 0.027 / 0.020 | 0.079 / 0.032 / 0.031 / 0.015 |
+| both (`--x a,b` ...) | 0.049 / 0.024 / 0.025 / 0.020 | 0.043 / 0.028 / 0.023 / 0.020 | 0.072 / 0.030 / 0.026 / 0.016 |
+
+The two calibrations differ by 0.009 px in their references and about 1% in
+their slopes (4% in x), and that is enough to move x by 0.03 mm. So the
+number to quote is not the best cell: over both calibrations and all three
+test renders, **0.055 / 0.025 / 0.026 mm and 0.019 degrees** RMS, x ranging
+0.026 to 0.079. Calibrating from both renders together lands between them,
+not below: more calibration frames do not obviously help at two renders.
+What is left in x is the side pair's render-to-render scatter, the same
+thing the eighteenth found in the test poses.
+(`notes/brads-notes/2026-10-06-repeat/`.)
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
