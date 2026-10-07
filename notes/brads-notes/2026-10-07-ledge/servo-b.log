@@ -1,0 +1,9 @@
+servo ledge-b-f0: start  -2.00   7.00   1.80  -2.50 (true), believed  -2.37   7.65   2.06  -3.67; robot scale 0.967 0.998 1.012 0.965
+step  true pose x y z turn          estimate                      error                         reads  command
+0      -2.00   7.00   1.80  -2.50   -2.00   7.05   1.93  -2.52    0.00   0.05   0.13  -0.02    24     2.00  -3.05  -1.93   2.52
+1      -0.10   3.95  -0.16  -0.08   -0.10   3.97  -0.14  -0.06    0.00   0.02   0.02   0.01    24     0.10  -1.50   0.14   0.06
+2       0.01   2.48  -0.05  -0.03   -0.00   2.50  -0.03   0.01   -0.01   0.02   0.02   0.03    24     0.00  -2.50   0.03  -0.01   -> contact
+
+final pose  -0.01  -0.03  -0.00  -0.02: off by  -0.01  -0.03  -0.00  -0.02 (x y z mm, turn deg) after 3 renders
+  y < 0: the robot pushed past contact by that much; a real one would be stopped by it
+results/servo/ledge-b-f0/servo.json

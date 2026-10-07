@@ -1,0 +1,23 @@
+stack-2g-x-gate: 52 of 54 rows changed
+stack-2g-y-gate: 48 of 48 rows changed
+stack-2g-z-gate: 51 of 54 rows changed
+stack-2g-turn-gate: 40 of 40 rows changed
+stack-2g-test-gate: 74 of 78 rows changed
+stack-2g-test-r2-gate: 76 of 78 rows changed
+stack-2g-test-r3-gate: 75 of 78 rows changed
+stack-2g-test-low-gate: 53 of 60 rows changed
+stack-2g-x-blur-gate: 53 of 54 rows changed
+stack-2g-y-blur-gate: 48 of 48 rows changed
+stack-2g-z-blur-gate: 51 of 54 rows changed
+stack-2g-turn-blur-gate: 40 of 40 rows changed
+stack-2g-test-blur-gate: 77 of 78 rows changed
+test-gate-hinged.json                    10 sets 0.052 / 0.034 / 0.057 / 0.030   4 views 0.032 / 0.019 / 0.029 / 0.018  (10/10)
+test-r2-gate-hinged.json                 10 sets 0.058 / 0.033 / 0.041 / 0.033   4 views 0.041 / 0.024 / 0.029 / 0.020  (10/10)
+test-r3-gate-hinged.json                 10 sets 0.097 / 0.045 / 0.063 / 0.029   4 views 0.060 / 0.024 / 0.030 / 0.017  (10/10)
+test-low-gate-hinged.json                10 sets 0.083 / 0.057 / 0.080 / 0.054   4 views 0.050 / 0.037 / 0.047 / 0.048  (8/8)
+blur-gate-hinged.json                    10 sets 0.380 / 0.179 / 0.151 / 0.061   4 views 0.246 / 0.128 / 0.111 / 0.030  (10/10)
+test-gate-joint.json                     10 sets 0.056 / 0.034 / 0.055 / 0.035   4 views 0.032 / 0.015 / 0.018 / 0.021  (10/10)
+test-r2-gate-joint.json                  10 sets 0.061 / 0.032 / 0.039 / 0.036   4 views 0.039 / 0.017 / 0.015 / 0.024  (10/10)
+test-r3-gate-joint.json                  10 sets 0.104 / 0.048 / 0.064 / 0.032   4 views 0.065 / 0.025 / 0.029 / 0.019  (10/10)
+test-low-gate-joint.json                 10 sets 0.093 / 0.060 / 0.081 / 0.054   4 views 0.053 / 0.038 / 0.046 / 0.047  (8/8)
+blur-gate-joint.json                     10 sets 0.381 / 0.186 / 0.170 / 0.055   4 views 0.247 / 0.137 / 0.140 / 0.032  (10/10)

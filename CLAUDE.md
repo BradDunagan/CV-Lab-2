@@ -100,7 +100,9 @@ npm run gap-sweep -- --name gap-1   # a part closing on another, down to contact
                                     # (--yaw, --elevation: from a grid of views;
                                     #  --offset: across a gap already open;
                                     #  --carry: each pair tracked down its approach;
-                                    #  --carry-from <dir>: the still edge from other runs)
+                                    #  --carry-from <dir>: the still edge from other runs;
+                                    #  --ledge <file>: a lit ledge held in each pair)
+npm run ledge -- --flush <dir> --fits <dir> --out <file>   # where a ledge ends, how soft
 npm run position -- --x <dir> --y <dir> --z <dir>   # where the part is, from several
                                     # (--sequence <dir>: frame by frame, the pose carried;
                                     #  --calibrate hinged: no truth, the ledge one-sided)
@@ -309,6 +311,17 @@ renders and three test renders: **0.055 / 0.025 / 0.026 mm and 0.019°**.
 - **A calibration carries its own render's noise**: two renders of the same
   sweeps move x by 0.03 mm.
 
-Still open: the side pair over the ledge, under blur and near contact, which
-is now the largest single error everywhere; and a cheaper way to choose a
-light than sweeps under each.
+**The ledge is modelled** (2026-10-07, §5 "A thirty-second"). Slid back, the
+gap is three levels -- the still part's lit top face, the moving part's
+shadow across it, the dark -- and `trackPair` with `ledge=held` fits them,
+the ledge ending where the still edge would be at flush for the frame's
+commanded lift (`npm run ledge` reads that line off a y sweep, and the
+shadow's width off free fits on sharp images; `gap-sweep --ledge`). Near
+contact x falls 0.114 -> 0.049 mm; under blur, calibrated `joint`, 0.120 /
+0.053 / 0.074 -> 0.079 / 0.039 / 0.029 mm; clean test poses as before. Freed
+per frame, or placed at a fixed fraction of the lift, it made things worse.
+
+Still open: the shadow's width cannot be measured through a lens's blur, so
+a blurring camera needs it from a sharper capture; the ledge assumes the
+moving part is the one above; and a cheaper way to choose a light than
+sweeps under each.

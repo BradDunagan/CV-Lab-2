@@ -1,0 +1,23 @@
+stack-2g-x-flush: 52 of 54 rows changed
+stack-2g-y-flush: 48 of 48 rows changed
+stack-2g-z-flush: 51 of 54 rows changed
+stack-2g-turn-flush: 40 of 40 rows changed
+stack-2g-test-flush: 74 of 78 rows changed
+stack-2g-test-r2-flush: 76 of 78 rows changed
+stack-2g-test-r3-flush: 75 of 78 rows changed
+stack-2g-test-low-flush: 53 of 60 rows changed
+stack-2g-x-blur-flush: 53 of 54 rows changed
+stack-2g-y-blur-flush: 48 of 48 rows changed
+stack-2g-z-blur-flush: 51 of 54 rows changed
+stack-2g-turn-blur-flush: 40 of 40 rows changed
+stack-2g-test-blur-flush: 77 of 78 rows changed
+test-flush-hinged.json                   10 sets 0.050 / 0.032 / 0.053 / 0.025   4 views 0.025 / 0.018 / 0.026 / 0.019  (10/10)
+test-r2-flush-hinged.json                10 sets 0.057 / 0.030 / 0.038 / 0.026   4 views 0.035 / 0.021 / 0.025 / 0.016  (10/10)
+test-r3-flush-hinged.json                10 sets 0.092 / 0.044 / 0.059 / 0.023   4 views 0.052 / 0.021 / 0.026 / 0.015  (10/10)
+test-low-flush-hinged.json               10 sets 0.078 / 0.059 / 0.077 / 0.059   4 views 0.048 / 0.043 / 0.048 / 0.054  (8/8)
+blur-flush-hinged.json                   10 sets 0.157 / 0.067 / 0.083 / 0.051   4 views 0.124 / 0.048 / 0.066 / 0.029  (10/10)
+test-flush-joint.json                    10 sets 0.055 / 0.035 / 0.056 / 0.027   4 views 0.025 / 0.018 / 0.019 / 0.020  (10/10)
+test-r2-flush-joint.json                 10 sets 0.061 / 0.032 / 0.041 / 0.026   4 views 0.034 / 0.018 / 0.014 / 0.017  (10/10)
+test-r3-flush-joint.json                 10 sets 0.096 / 0.047 / 0.065 / 0.024   4 views 0.054 / 0.023 / 0.026 / 0.015  (10/10)
+test-low-flush-joint.json                10 sets 0.087 / 0.063 / 0.080 / 0.061   4 views 0.050 / 0.045 / 0.046 / 0.055  (8/8)
+blur-flush-joint.json                    10 sets 0.148 / 0.066 / 0.082 / 0.046   4 views 0.078 / 0.036 / 0.065 / 0.031  (10/10)
