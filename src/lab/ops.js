@@ -181,7 +181,6 @@ function trackKernel(inputs, params) {
     guess: params.guess, pad: params.pad, levelSlope: params.levelSlope, strip: params.strip, profile: params.profile,
     ledge: params.ledge === 'fit' ? 'fit'
       : params.ledge === 'held' ? { offset: params.ledgeOffset, width: params.ledgeWidth } : null,
-    ledgeShift: params.ledgeShift,
   });
   return { kind: 'features', features: record ? [record] : [], width: info.width, height: info.height };
 }
@@ -685,9 +684,8 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
 
     defineOp({
       name: 'trackPair',
-      // v2: a held ledge that moves the moving edge more than `ledgeShift` px
-      // from the strip alone's reading is refused (a sharp shadow can pass for
-      // the moving edge).
+      // v2: a held ledge whose lit ledge is no brighter than its strip is
+      // refused (a sharp shadow can pass for the moving edge).
       version: 2,
       summary: 'Read a pair again beside a line carried from an earlier frame: one edge fitted, nothing detected.',
       /*
@@ -740,10 +738,6 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'ledge', type: 'enum', values: ['none', 'held', 'fit'], default: 'none' },
         { name: 'ledgeOffset', type: 'number', default: 0 },
         { name: 'ledgeWidth', type: 'number', default: 0, min: 0, max: 8 },
-        // A ledge is kept only if it moves the moving edge less than this,
-        // px, from where the strip alone puts it: a real one moved it under
-        // 0.6 px on every stack run.
-        { name: 'ledgeShift', type: 'number', default: 1, min: 0 },
       ],
       output: { kind: 'features' },
       kernel: ({ inputs, params }) => trackKernel(inputs, params),

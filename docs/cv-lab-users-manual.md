@@ -676,7 +676,6 @@ fitted, and nothing has to have been detected.
 | `strip` | `held` | `held`: the strip level carried in, for a strip too narrow to show its own. `fit`: only the line is carried |
 | `ledge` | `none` | a lit ledge inside the strip, up to the moving part's shadow. `held`: the shadow's middle `ledgeOffset` px from the moving edge toward the still one, `ledgeWidth` px wide; `fit`: placed freely, to measure it |
 | `ledgeOffset`, `ledgeWidth` | 0 | for `ledge=held`; `gap-sweep --ledge` writes them in |
-| `ledgeShift` | 1 px | a held ledge is refused if it moves the moving edge more than this from the strip alone's reading |
 
 The carried values are **parameters**, numbers in the command, so they are
 in this frame's log and the frame replays on its own. Nothing in the
@@ -721,10 +720,9 @@ shadow placed behind the still edge (no ledge in sight) leaves the plain
 model exactly. The record gains `ledge`: the `offset`, `width`, the lit
 `level`, `lit` (the shadow's distance from the still edge; `seen` when
 positive) and `gain` (the plain fit's rms over this one's). A held ledge
-that moves the moving edge more than `ledgeShift` px from the plain fit's is
-refused and the plain record returned: a real one moved it under 0.6 px on
-every stack run, and a sharp shadow can pass for the moving edge ("A
-thirty-third"). `ledge=fit`
+whose lit ledge is no brighter than the strip beside it is refused and the
+plain record returned: a sharp shadow can pass for the moving edge, and then
+the "ledge" is the dark strip ("A thirty-third"). `ledge=fit`
 places the shadow freely as well. That is for measuring a scene's shadow on
 sharp images (`npm run ledge`), not for reading gaps: freed per frame it
 wanders where there is no ledge, and through a lens's blur it overstates

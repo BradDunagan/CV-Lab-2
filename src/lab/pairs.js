@@ -1210,17 +1210,22 @@ function trackPair(raster, carried, options = {}) {
     /*
      * The ledge is kept only when it fits better than the strip alone by
      * `ledgeGain`: one more level, or four, always fit a little better. And
-     * only when it moves the moving edge less than `ledgeShift` px from where
-     * the strip alone put it. Over every stack run, clean and blurred, a ledge
-     * moved it -0.59 to +0.39 px; a sharp shadow can instead pass for the
-     * moving edge, and then the fit puts the moving edge out on the moving
-     * part's face. One such fit read 11.67 px for 5.52, fitting 1.003 times
-     * better, and cost the test poses a millimetre (design-lab-model.md §5,
-     * "A thirty-third").
+     * only when its lit ledge IS lit -- brighter than the shadowed strip
+     * beside it. A sharp shadow can pass for the moving edge, and then the
+     * roles invert: the "ledge" is the dark strip and the "strip" the moving
+     * part's face, the moving edge out on that face. One such fit read 11.67
+     * px for 5.52, fitting 1.003 times better, its ledge at 0.070 and its
+     * strip at 0.234, and cost the blurred test poses a millimetre
+     * (design-lab-model.md §5, "A thirty-third"). Every other ledge seen on
+     * the stack was lit above its strip. A limit on how far the ledge may
+     * move the edge from the plain fit's would refuse it too, but depends on
+     * the scene: with the ledge brighter than the moving face, the plain fit
+     * takes the shadow for the moving edge and a real ledge moves it by its
+     * whole lit width.
      */
     ledgeGain = best && plain && best.rms > 0 ? plain.rms / best.rms : null;
-    const shift = best && plain ? Math.abs(movingOf(best).c - movingOf(plain).c) : 0;
-    if (best && (!plain || (ledgeGain >= (opts.ledgeGain ?? 1) && shift <= (opts.ledgeShift ?? 1)))) shadowAt = 1;
+    const lit = best ? best.levels[side > 0 ? 1 : 2] > best.levels[side > 0 ? 2 : 1] : false;
+    if (best && (!plain || (ledgeGain >= (opts.ledgeGain ?? 1) && lit))) shadowAt = 1;
     else best = plain;
   }
   /*
