@@ -24,6 +24,7 @@ for (const run of runs) {
     const k = `${shot.view.yaw}/${shot.view.elevation}|${slot.slice(1)}`;
     // PAIRS=all: every view-pair the flush lines know, not only the table's;
     // WIDTH: the shadow's width held at that, px, in place of omega * lift;
+    // OMEGA_SCALE: every width scaled by this;
     // LIFT_ERR: mm added to every lift, as a robot that is off would.
     const t = table[k] ?? (process.env.PAIRS === 'all' && flush?.[k] ? { kappa: 0, omega: 0 } : null);
     if (!t) return {};
@@ -31,7 +32,7 @@ for (const run of runs) {
     if (!(lift > 0)) return {};
     // WIDTH=fit: the width fitted in each frame, the offset still held.
     const width = process.env.WIDTH === 'fit' ? null
-      : process.env.WIDTH !== undefined ? Number(process.env.WIDTH) : Math.max(t.omega * lift, 0);
+      : process.env.WIDTH !== undefined ? Number(process.env.WIDTH) : Math.max(t.omega * Number(process.env.OMEGA_SCALE ?? 1) * lift, 0);
     const line = flush?.[k];
     const atFlush = line ? line[0] * lift + line[1] : null;
     if (MODE === 'flush') return atFlush > 0 ? { ledge: { offset: atFlush, width } } : {};

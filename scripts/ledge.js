@@ -22,9 +22,9 @@
  *      --ledge-fit`) where the lit ledge is wide and the fit clearly better
  *      than the strip alone, per millimetre of lift -- a penumbra grows with the
  *      distance from what casts it. The median over --fits' frames; zero
- *      where none qualifies. Measure it on SHARP images: under a lens's blur
- *      the free fit cannot tell the shadow's width from the blur, and widths
- *      measured there made every reading worse.
+ *      where none qualifies, or with no --fits. Measure it on SHARP images,
+ *      or not at all: under a lens's blur zero does as well, and the free fit
+ *      there overstates the width (design-lab-model.md §5, "A thirty-third").
  *
  * Plain node, no pixels: it reads the gap-sweep.json each run wrote.
  */
@@ -44,7 +44,8 @@ CV-Lab ledge -- where a ledge ends and how soft its shadow is, per view and pair
                     its tracked gap against the commanded lift is where each
                     pair's ledge ends
   --fits <dir>      gap-sweep --carry --ledge-fit runs whose free ledge fits
-                    give the shadow's width (repeatable). Sharp images only
+                    give the shadow's width (repeatable). Sharp images only;
+                    without any, every width is zero, as good under blur
   --min-gain <x>    a free fit counts where it fits the pixels this many times
                     better than the strip alone              (default 1.5)
   --min-lit <px>    and where its shadow is this far from the still edge, so
