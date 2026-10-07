@@ -263,6 +263,49 @@ test('with no lift terms, solveLifted is solveHinged', () => {
   assert.deepEqual(solveLifted(obs.map((o) => ({ ...o, lift: [0, 0, 0] }))).d, solveHinged(obs).d);
 });
 
+/*
+ * scripts/solve-position.js, end to end on sweeps made up to be exactly
+ * linear: each reading a fixed combination of the displacement. Swept along
+ * -x, -y and -z -- a part below the still one, mirrored -- it must solve the
+ * same as along +x, +y and +z (design-lab-model.md §5, "A thirty-fifth").
+ */
+test('solve-position steps along each sweep\'s own axis, whichever way it runs', () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const { spawnSync } = require('node:child_process');
+  const J = { '35/1': [0.1, 1.2, -0.6], '35/2': [0.9, 1.0, 0.4], '60/1': [-0.5, 0.9, 0.8], '60/2': [0.7, 1.1, -0.3] };
+  for (const sign of [1, -1]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'solve-'));
+    const ref = [0, 4 * sign, 0];
+    const rowsAt = (d, extra) => Object.entries(J).map(([k, j]) => {
+      const [yaw, pair] = k.split('/').map(Number);
+      const g = 3 + j.reduce((s, v, a) => s + v * (d[a] - ref[a]), 0);
+      return { shot: `${k}-${JSON.stringify(d)}.png`, yaw, elevation: 20, pair, trueGapPx: g,
+        tracked: { gapPx: g, gapSigma: 0.02 }, refit: { gapPx: g, gapSigma: 0.02 }, ...extra };
+    });
+    const write = (name, run) => {
+      fs.mkdirSync(path.join(dir, name), { recursive: true });
+      fs.writeFileSync(path.join(dir, name, 'gap-sweep.json'), JSON.stringify(run));
+    };
+    for (const [u, k] of [['x', 0], ['y', 1], ['z', 2]]) {
+      const axis = [0, 0, 0]; axis[k] = sign;
+      write(u, { moving: 'A', target: 'B', axis, offsetMm: ref,
+        rows: [-2, -1, 0, 1, 2].flatMap((g) => rowsAt(ref.map((v, a) => v + axis[a] * g), { gapMm: g })) });
+    }
+    const poses = [[1.5, 5, -1], [-2, 3, 2], [0.7, 6, 1.3]].map((p) => p.map((v) => v * sign));
+    write('test', { moving: 'A', target: 'B', poses: poses.map((mm) => ({ mm, turn: 0 })),
+      rows: poses.flatMap((mm, i) => rowsAt(mm, { gapMm: 0, pose: i + 1, poseMm: mm, turnDeg: 0 })) });
+    const out = path.join(dir, 'out.json');
+    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'solve-position.js'),
+      '--x', path.join(dir, 'x'), '--y', path.join(dir, 'y'), '--z', path.join(dir, 'z'), '--test', path.join(dir, 'test'),
+      '--max-views', '2', '--calibrate', 'truth', '--out', out], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const both = JSON.parse(fs.readFileSync(out, 'utf8')).sets.find((s) => s.views.length === 2);
+    const rmsOf = both.test.truth.rms;
+    assert.ok(rmsOf.every((v) => v < 1e-6), `swept ${sign > 0 ? '+' : '-'}: test poses off by ${rmsOf}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 if (failures > 0) {
   console.error(`\n${failures} position test(s) FAILED.`);
   process.exit(1);

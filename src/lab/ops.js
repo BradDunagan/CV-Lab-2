@@ -181,6 +181,7 @@ function trackKernel(inputs, params) {
     guess: params.guess, pad: params.pad, levelSlope: params.levelSlope, strip: params.strip, profile: params.profile, wideEnd: params.wideEnd,
     ledge: params.ledge === 'fit' ? 'fit'
       : params.ledge === 'held' ? { offset: params.ledgeOffset, width: params.ledgeWidth } : null,
+    movingBelow: params.moving === 'below',
   });
   return { kind: 'features', features: record ? [record] : [], width: info.width, height: info.height };
 }
@@ -688,7 +689,8 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       // refused (a sharp shadow can pass for the moving edge).
       // v3: ambiguous with the strip level held, and wide at one end, the level
       // is fitted instead (`wideEnd`).
-      version: 3,
+      // v4: `moving=below`; a ledge whose moving edge leaves the band is refused.
+      version: 4,
       summary: 'Read a pair again beside a line carried from an earlier frame: one edge fitted, nothing detected.',
       /*
        * Under about a pixel a gap is not in one image: width and strip level
@@ -743,6 +745,11 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'ledge', type: 'enum', values: ['none', 'held', 'fit'], default: 'none' },
         { name: 'ledgeOffset', type: 'number', default: 0 },
         { name: 'ledgeWidth', type: 'number', default: 0, min: 0, max: 8 },
+        // Which part is the upper one. `above`: the moving part, in front
+        // where the edges cross, a ledge the still part's top face. `below`:
+        // the still part is in front, a ledge is the moving part's own top
+        // face in the still part's shadow, and an overhang is not seen.
+        { name: 'moving', type: 'enum', values: ['above', 'below'], default: 'above' },
       ],
       output: { kind: 'features' },
       kernel: ({ inputs, params }) => trackKernel(inputs, params),

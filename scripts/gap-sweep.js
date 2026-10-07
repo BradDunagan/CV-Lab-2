@@ -37,6 +37,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { movingBelow } = require('./ledge');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { resolveScene } = require('../src/generate/driver');
@@ -485,6 +486,13 @@ function pooledCandidates(dir, opts) {
 const guessFrom = (read) => (read > 0 ? read : 0.5);
 
 function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, ownRun = '', ledgeTable = null) {
+  // Whose top face a ledge is: the still part's, unless the moving part is below it.
+  const below = movingBelow({ offsetMm: opts.offset, axis: opts.axis, poses: opts.poses });
+  for (const e of ledgeTable?.entries ?? []) {
+    if ((e.on ?? 'still') !== (below ? 'moving' : 'still')) {
+      throw new Error(`--ledge ${opts.ledge}: measured with the moving part ${e.on === 'moving' ? 'below' : 'above'} the still one, and this run has it ${below ? 'below' : 'above'}`);
+    }
+  }
   const viewOf = (x) => `${x.view?.yaw ?? x.yaw ?? ''},${x.view?.elevation ?? x.elevation ?? ''}`;
   const n = (v) => v.toFixed(6);
   const shotOf = (s) => (r) => r.gapMm === s.gapMm && (s.pose === undefined || r.pose === s.pose);
@@ -554,7 +562,9 @@ function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, 
           + `towardY=${n(carried.toward[1])}, stripLevel=${n(carried.stripLevel)}, aperture=${n(carried.aperture)}, `
           // A start, not a reading: an overhang's negative refit starts at half a pixel.
           + `guess=${n(guessFrom(read ?? row.refit.gapPx))}, strip=${wide ? 'fit' : 'held'}`
-          + `${carried.profile !== 'box' ? `, profile=${carried.profile}` : ''}`;
+          + `${carried.profile !== 'box' ? `, profile=${carried.profile}` : ''}`
+          // The moving part below the still one: see trackPair's `moving`.
+          + `${below ? ', moving=below' : ''}`;
         /*
          * The ledge, held: it ends where the still edge would be were the
          * moving part flush at this frame's lift -- the y sweep's gap at
@@ -564,7 +574,9 @@ function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, 
          * told, not where the part is (design-lab-model.md §5, "A
          * thirty-second").
          */
-        const lift = opts.ledgeLift ?? displacementOf(s, opts)[1];
+        // The lift is how far the upper part is above the lower: the moving
+        // part's own rise, or, when it is the one below, its drop.
+        const lift = opts.ledgeLift ?? (below ? -1 : 1) * displacementOf(s, opts)[1];
         const offset = ledge ? ledge.flush[0] * lift + ledge.flush[1] : null;
         const held = offset > 0
           ? `, ledge=held, ledgeOffset=${n(offset)}, ledgeWidth=${n(Math.max(0, ledge.widthPerMm * lift))}` : '';
