@@ -823,6 +823,18 @@ test('a lit ledge read as one strip puts the moving edge out; held, it is read w
   }
 });
 
+test('a ledge that moves the moving edge further than `ledgeShift` is refused: the record is the plain one', () => {
+  const { lo, hi, raster } = ledge(6, 3, 0.6);
+  const opts = { strip: 'fit', guess: 6 };
+  const plain = trackPair(raster, carriedFrom(lo, hi), opts);
+  const held = trackPair(raster, carriedFrom(lo, hi), { ...opts, ledge: { offset: 3, width: 0.3 } });
+  const shift = Math.abs(held.gap - plain.gap);
+  assert.ok(shift > 0.05 && shift < 1, `the ledge should move the edge, by less than the default: ${shift}`);
+  const refused = trackPair(raster, carriedFrom(lo, hi), { ...opts, ledge: { offset: 3, width: 0.3 }, ledgeShift: shift / 2 });
+  near(refused.gap, plain.gap, 1e-9, 'refused');
+  assert.equal('ledge' in refused, false);
+});
+
 test('a ledge held behind the still edge is no ledge: the record is the plain one', () => {
   for (const gap of [0.6, 2, 4]) {
     const { lo, hi, raster } = scene(gap);
