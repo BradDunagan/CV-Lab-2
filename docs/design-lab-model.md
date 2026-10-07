@@ -2660,6 +2660,74 @@ the 8-degree rows have no truth to match and keep their old reading.)
 
 (`notes/brads-notes/2026-10-07-ledge/`: `one.js`, `retrack.js`.)
 
+#### A thirty-fifth: the moving part below
+
+Everything so far moved the top cube. An assembly may as well move the part
+underneath, and the thirty-second said its ledge assumed the moving part was
+above. The same scene was rendered with the roles swapped (`gap-sweep
+--moving Cube --target Cube2`): the base cube moves, 4 mm below contact,
+every sweep and test pose stack-2g's mirrored, so the pictures are the same
+physics. Four things assumed the moving part was the upper one, and only
+the last was the ledge.
+
+- **The truth's sign.** A gap is positive toward the moving part, judged by
+  the part's projected middle. Seen from 50 degrees up, a part BELOW the gap
+  has its middle projected above its own near top edge -- its depth carries
+  it up the picture further than its half height carries it down -- so every
+  gap of the lowered base at 50 degrees was signed as an overhang, and no
+  pair there could be carried. The side is now the direction from the still
+  part's middle to the moving part's. Recomputed over every analysed run (461,
+  8,595 truth gaps), exactly the 192 at the lowered base's 50-degree views
+  flip, and nothing else changes (`signs.js`).
+- **The solve's axes.** `solve-position` took every sweep's step as a
+  displacement along +x, +y or +z, ignoring the sweep's own axis; swept
+  along -x, -y, -z the slopes came out mirrored and every pose about 3 mm off.
+  A step is now along its sweep's axis (tested end to end on made-up linear
+  sweeps, both ways). And `hinged` puts its one-sided slope where the ledge
+  is in sight: slid back above, slid out below.
+- **Who is in front.** Where the edges cross, the upper part hides the
+  lower. `trackPair moving=below` makes the still part the occluder, and
+  where the picture is one edge -- an overhang -- that edge is the still
+  part's and the moving one is behind it: nothing is read. With the moving
+  part above, an overhang is read; below, it cannot be seen.
+- **The ledge** is the moving part's own top face, lit against the moving
+  edge, in the still part's shadow, which is tied to the still edge. Read as
+  one strip, slid out, the side pair reads 0.35 to 0.50 px SHORT -- the shadow
+  taken for the moving edge -- where above it read long. `npm run ledge`
+  reads a downward flush sweep as such (the flush lines, 0.98 / 1.17 / 0.37
+  / 0.62 px per mm on the side pair, are the moving-above table's within
+  0.06), and `gap-sweep` writes `moving=below` into every track of a run
+  whose moving part is below contact.
+
+The ledge was harder to hold below. The lit ledge is now bounded by the
+FREE moving edge, not the carried still one, and two kinds of fit that above
+were harmless moved it. With no ledge in sight, a ledge given the moving
+face's level carried the moving edge off the end of the band (a front pair
+at 60/50, 1.4 px, read 22): a ledge fit whose moving edge is not an aperture
+inside the band is refused, which changes nothing above. And near flush,
+ledges fitting 1.000 to 1.07 times better than the strip alone moved the
+edge 0.3 to 1.8 px the wrong way, their "lit" level the moving face's (0.28
+to 0.39 against a real ledge's 0.14 to 0.21); real ones fitted 1.1 to 2.6
+times better. Below, a ledge must fit 1.1 times better.
+
+No truth, four views, x / y / z mm and turn degrees:
+
+| moving part below | test, hinged | test, joint | low, joint |
+|---|---|---|---|
+| no ledge | 0.314 / 0.122 / 0.163 / 0.058 | 0.103 / 0.071 / 0.108 / 0.065 | 0.120 / 0.068 / 0.095 / 0.089 |
+| ledge held | 0.151 / 0.061 / 0.079 / 0.036 | **0.102 / 0.045 / 0.055 / 0.030** | 0.101 / 0.063 / 0.085 / 0.082 |
+
+(Above, for comparison, joint with the ledge: 0.027 / 0.021 / 0.028 / 0.019,
+low 0.050 / 0.055 / 0.052 / 0.058.) The ledge halves y, z and the turn on the
+test poses; x stays at 0.10 mm, four times the moving-above case, and why is
+not found. Seven of eight low poses solve: one has too few readings, its
+overhangs unseen. A synthetic mirrored ledge 1.5 px wide reads 0.11 to 0.15
+px short where the same ledge on the still part reads within 0.05 -- the
+held shadow width taken up by the free edge -- which may be part of it.
+
+(`notes/brads-notes/2026-10-07-below/`: `render.sh`, `analyse.sh`,
+`solve.sh`, `signs.js`, `solves.log`.)
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
