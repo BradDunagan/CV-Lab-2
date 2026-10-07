@@ -38,7 +38,9 @@ function retrack(run, extra, { gen = run, dir = `results/${run}/pairs`, carried 
     }
     const pairs = by.P || by.H ? [...(by.P ?? []), ...(by.H ?? [])] : null;
     const rows = GS.gapRows({ truth: by.T, segments: by.F, explained: by.EF, matches: by.MF, pairs, tracks }, shot,
-      { moving: sweep.moving, target: sweep.target }, {});
+      { moving: sweep.moving, target: sweep.target },
+      // As gap-sweep --max-angle scored the run (12 for turned poses).
+      process.env.MAX_ANGLE ? { maxAngle: Number(process.env.MAX_ANGLE) } : {});
     for (const r of rows) {
       const old = sweep.rows.find((o) => o.shot === shot.name && o.truthPair && r.truthPair && o.truthPair.join() === r.truthPair.join());
       out.push({ shot: shot.name, view: `${shot.view.yaw}/${shot.view.elevation}`, gapMm: shot.gapMm, pose: shot.pose, poseMm: shot.poseMm, turnDeg: shot.turnDeg,

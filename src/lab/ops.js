@@ -178,7 +178,7 @@ function trackKernel(inputs, params) {
     stripLevel: params.stripLevel,
     aperture: params.aperture,
   }, {
-    guess: params.guess, pad: params.pad, levelSlope: params.levelSlope, strip: params.strip, profile: params.profile,
+    guess: params.guess, pad: params.pad, levelSlope: params.levelSlope, strip: params.strip, profile: params.profile, wideEnd: params.wideEnd,
     ledge: params.ledge === 'fit' ? 'fit'
       : params.ledge === 'held' ? { offset: params.ledgeOffset, width: params.ledgeWidth } : null,
   });
@@ -686,7 +686,9 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       name: 'trackPair',
       // v2: a held ledge whose lit ledge is no brighter than its strip is
       // refused (a sharp shadow can pass for the moving edge).
-      version: 2,
+      // v3: ambiguous with the strip level held, and wide at one end, the level
+      // is fitted instead (`wideEnd`).
+      version: 3,
       summary: 'Read a pair again beside a line carried from an earlier frame: one edge fitted, nothing detected.',
       /*
        * Under about a pixel a gap is not in one image: width and strip level
@@ -728,6 +730,9 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         // its own. `fit`: only the line is carried -- a wide strip, read
         // beside an edge a ledge would otherwise hide.
         { name: 'strip', type: 'enum', values: ['held', 'fit'], default: 'held' },
+        // Held and ambiguous, yet this many px open at one end -- a turned
+        // pair -- the strip's level is fitted after all; 0: never.
+        { name: 'wideEnd', type: 'number', default: 3, min: 0 },
         // A ledge inside the strip: the still part's top face, uncovered as
         // the moving part slides back, lit up to the moving part's shadow
         // (design-lab-model.md §5, "A thirty-second"). `held`: the shadow's
