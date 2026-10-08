@@ -70,6 +70,8 @@ scripts/degrade.js   a rendered run made to look like a camera's: noise,
                      exposure bracket
 scripts/response.js  a camera's response curve, measured from an exposure
                      bracket, for load(curve=) to undo
+scripts/believed-truth.js  a run's ground truth again, the part where it is
+                     believed to be, for gap-sweep --identify (needs a GPU)
 pt-lab/              the path tracer + scene editor library, TypeScript, moved in
                      from its own repository — see pt-lab/README.md
 src/generate/        the generator: page (bundled separately) + main-process
@@ -112,6 +114,7 @@ npm run position -- --x <dir> --y <dir> --z <dir>   # where the part is, from se
 npm run servo -- --name a --calibration <file> --start x,y,z,turn   # estimate drives motion
 npm run degrade -- generated/<run> generated/<run>-noisy --gain 2000   # a camera's image
 npm run response -- --out <curve.json> a.png@0.5 b.png@1 c.png@2   # its response curve
+npm run believed-truth -- generated/<run> generated/<new> --mm 0.5   # edges where it is believed
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run check:pt-lab    # type-check pt-lab/ — the build strips types unchecked
@@ -345,4 +348,11 @@ A camera's response curve is measured from an exposure bracket (`npm run
 response`) and undone on load (`load(curve=)`, `--curve`); it gives the clean
 result back wherever nothing clips at 255 ("A thirty-seventh").
 
-Still open: the moving-below x; a real camera's bracket.
+Which edge is which part need not come from the renderer's truth
+(`design-lab-model.md` §5, "A thirty-eighth"): `npm run believed-truth`
+renders the edges where the part is believed to be, and `gap-sweep --identify`
+reads from those. A belief 0.5 mm off costs nothing; 1.5 mm costs the
+calibration sweeps, not test poses identified again from a first solve.
+
+Still open: the moving-below x; a real camera's bracket; predicting a part's
+edges fast enough for a loop, without a path tracer.
