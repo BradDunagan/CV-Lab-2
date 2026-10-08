@@ -17,10 +17,12 @@
  * says it might pay off.
  */
 
+import { asin, len2 } from './math.js';
+
 /** Line through a fitted segment, as unit normal and offset. */
 function lineOf(f) {
   const dx = f.x1 - f.x0, dy = f.y1 - f.y0;
-  const len = Math.hypot(dx, dy) || 1;
+  const len = len2(dx, dy) || 1;
   const tx = dx / len, ty = dy / len;      // along the line
   const nx = -ty, ny = tx;                 // perpendicular to it
   return { nx, ny, c: -(nx * f.x0 + ny * f.y0), tx, ty, len };
@@ -85,7 +87,7 @@ function findCorners(features, opts = {}) {
       // Near-parallel lines intersect somewhere far away and wrongly: the
       // position error goes as 1/sin(angle between).
       const sin = Math.abs(A.nx * B.ny - A.ny * B.nx);
-      const between = Math.asin(Math.min(1, sin)) * 180 / Math.PI;
+      const between = asin(Math.min(1, sin)) * 180 / Math.PI;
       if (between < minAngle) continue;
 
       const det = A.nx * B.ny - A.ny * B.nx;
@@ -96,8 +98,8 @@ function findCorners(features, opts = {}) {
       // Negative means it falls inside the segment, which is the strongest
       // case of all: the two really do cross.
       const reach = (f) => {
-        const d0 = Math.hypot(x - f.x0, y - f.y0);
-        const d1 = Math.hypot(x - f.x1, y - f.y1);
+        const d0 = len2(x - f.x0, y - f.y0);
+        const d1 = len2(x - f.x1, y - f.y1);
         const nearest = Math.min(d0, d1);
         const inside = d0 + d1 <= f.length + 1e-9;
         return inside ? -nearest : nearest;
@@ -120,7 +122,7 @@ function findCorners(features, opts = {}) {
       let endpointGap = Infinity;
       for (const [ax, ay] of [[features[i].x0, features[i].y0], [features[i].x1, features[i].y1]]) {
         for (const [bx, by] of [[features[j].x0, features[j].y0], [features[j].x1, features[j].y1]]) {
-          endpointGap = Math.min(endpointGap, Math.hypot(ax - bx, ay - by));
+          endpointGap = Math.min(endpointGap, len2(ax - bx, ay - by));
         }
       }
 
@@ -134,7 +136,7 @@ function findCorners(features, opts = {}) {
                  (features[i].rms ?? 0) / Math.sqrt(Math.max(features[i].pixels, 1));
       const eB = Math.abs(reachB) * angularError(features[j]) +
                  (features[j].rms ?? 0) / Math.sqrt(Math.max(features[j].pixels, 1));
-      const sigma = Math.hypot(eA, eB) / Math.max(sin, 1e-6);
+      const sigma = len2(eA, eB) / Math.max(sin, 1e-6);
 
       raw.push({
         x, y, a: features[i].id, b: features[j].id,
@@ -164,7 +166,7 @@ function findCorners(features, opts = {}) {
     used[seed] = true;
     for (const other of order) {
       if (used[other]) continue;
-      if (Math.hypot(raw[other].x - raw[seed].x, raw[other].y - raw[seed].y) <= clusterRadius) {
+      if (len2(raw[other].x - raw[seed].x, raw[other].y - raw[seed].y) <= clusterRadius) {
         used[other] = true;
         group.push(raw[other]);
       }

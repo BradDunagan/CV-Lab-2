@@ -20,6 +20,8 @@
  *      images, or not at all ("A thirty-third").
  */
 
+import { sq } from './math.js';
+
 export const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[(s.length - 1) >> 1] : null; };
 export const angleApart = (a, b) => Math.abs((((a - b + 90) % 180) + 180) % 180 - 90);
 
@@ -62,11 +64,11 @@ export function flushLines(run) {
     const n = e.points.length;
     if (n < 3) continue;
     const mx = e.points.reduce((s, p) => s + p[0], 0) / n, my = e.points.reduce((s, p) => s + p[1], 0) / n;
-    const sxx = e.points.reduce((s, p) => s + (p[0] - mx) ** 2, 0);
+    const sxx = e.points.reduce((s, p) => s + sq(p[0] - mx), 0);
     if (!(sxx > 0)) continue;
     const a = e.points.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0) / sxx;
     const b = my - a * mx;
-    const rms = Math.sqrt(e.points.reduce((s, p) => s + (p[1] - a * p[0] - b) ** 2, 0) / n);
+    const rms = Math.sqrt(e.points.reduce((s, p) => s + sq(p[1] - a * p[0] - b), 0) / n);
     out.push({ yaw: e.yaw, elevation: e.elevation, pair: e.pair, pairAngle: median(e.angles), flush: [a, b], flushRms: rms, flushOf: n,
       on: movingBelow(run) ? 'moving' : 'still' });
   }

@@ -26,6 +26,8 @@
  * found is explained by geometry", not "how often the pipeline is right".
  */
 
+import { atan2, cos, len2, sin } from './math.js';
+
 /** Angle between two lines, in [0, 90]. Both inputs are in [0, 180). */
 function lineAngleDifference(a, b) {
   const d = Math.abs(a - b) % 180;
@@ -37,14 +39,14 @@ function pointToSegment(px, py, x0, y0, x1, y1) {
   const dx = x1 - x0;
   const dy = y1 - y0;
   const lenSq = dx * dx + dy * dy;
-  if (lenSq < 1e-12) return Math.hypot(px - x0, py - y0);
+  if (lenSq < 1e-12) return len2(px - x0, py - y0);
   // Clamped, so a segment does not attract points beyond its own ends. An
   // unclamped (infinite-line) distance would match a detected segment to a
   // ground-truth edge on the far side of the image that happens to be
   // collinear with it.
   let t = ((px - x0) * dx + (py - y0) * dy) / lenSq;
   t = t < 0 ? 0 : t > 1 ? 1 : t;
-  return Math.hypot(px - (x0 + t * dx), py - (y0 + t * dy));
+  return len2(px - (x0 + t * dx), py - (y0 + t * dy));
 }
 
 function median(values) {
@@ -129,7 +131,7 @@ function sampleCount(length) {
 /** The point a fraction `u` along an arc's own sweep. */
 function arcPoint(a, u) {
   const t = ((a.angle0 + a.sweep * u) * Math.PI) / 180;
-  return { x: a.cx + a.r * Math.cos(t), y: a.cy + a.r * Math.sin(t) };
+  return { x: a.cx + a.r * cos(t), y: a.cy + a.r * sin(t) };
 }
 
 /**
@@ -151,21 +153,21 @@ function arcTangent(a, u) {
  * distance; past either end it is the distance to that end.
  */
 function pointToArc(px, py, a) {
-  if (!(a.r > 0) || !(a.sweep > 0)) return Math.hypot(px - a.cx, py - a.cy);
+  if (!(a.r > 0) || !(a.sweep > 0)) return len2(px - a.cx, py - a.cy);
   const dx = px - a.cx, dy = py - a.cy;
-  const radial = Math.abs(Math.hypot(dx, dy) - a.r);
-  let u = (Math.atan2(dy, dx) * 180) / Math.PI - a.angle0;
+  const radial = Math.abs(len2(dx, dy) - a.r);
+  let u = (atan2(dy, dx) * 180) / Math.PI - a.angle0;
   u = ((u % 360) + 360) % 360;
   if (u <= a.sweep) return radial;
   // Past an end. Which one is nearer round the circle decides which end.
   const end = (u - a.sweep) <= (360 - u) ? arcPoint(a, 1) : arcPoint(a, 0);
-  return Math.hypot(px - end.x, py - end.y);
+  return len2(px - end.x, py - end.y);
 }
 
 /** Where a point sits along an arc, as a fraction of its sweep, clamped. */
 function arcFraction(a, px, py) {
   if (!(a.sweep > 0)) return 0;
-  let u = (Math.atan2(py - a.cy, px - a.cx) * 180) / Math.PI - a.angle0;
+  let u = (atan2(py - a.cy, px - a.cx) * 180) / Math.PI - a.angle0;
   u = ((u % 360) + 360) % 360;
   return Math.min(1, Math.max(0, u / a.sweep));
 }
@@ -476,7 +478,7 @@ function matchCorners(detected, truth, { maxDistance, minAngle }) {
   const pairs = [];
   for (const corner of detected) {
     for (const vertex of candidates) {
-      const distance = Math.hypot(corner.x - vertex.x, corner.y - vertex.y);
+      const distance = len2(corner.x - vertex.x, corner.y - vertex.y);
       if (distance <= maxDistance) pairs.push({ corner, vertex, distance });
     }
   }
@@ -498,7 +500,7 @@ function matchCorners(detected, truth, { maxDistance, minAngle }) {
     // reporting: 4 px is a near miss and 60 px is an invention.
     let nearest = null;
     for (const vertex of candidates) {
-      const distance = Math.hypot(corner.x - vertex.x, corner.y - vertex.y);
+      const distance = len2(corner.x - vertex.x, corner.y - vertex.y);
       if (nearest === null || distance < nearest) nearest = distance;
     }
     records.push({

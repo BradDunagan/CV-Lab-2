@@ -36,6 +36,8 @@
  * target's: an overhang.
  */
 
+import { acos, atan2, len2, sq } from './math.js';
+
 const MIN_VISIBLE = 0.5; // as match.js: below this an edge is not findable
 
 const DEFAULTS = {
@@ -53,7 +55,7 @@ const DEFAULTS = {
 function line(seg) {
   const dx = seg.x1 - seg.x0;
   const dy = seg.y1 - seg.y0;
-  const len = Math.hypot(dx, dy);
+  const len = len2(dx, dy);
   if (!(len > 0)) return null;
   const u = [dx / len, dy / len];
   return { p0: [seg.x0, seg.y0], p1: [seg.x1, seg.y1], u, n: [-u[1], u[0]], len };
@@ -66,7 +68,7 @@ const add = (a, b, s = 1) => [a[0] + b[0] * s, a[1] + b[1] * s];
 /** Undirected angle between two lines, in degrees, 0..90. */
 function angleBetween(a, b) {
   const c = Math.min(1, Math.abs(dot(a.u, b.u)));
-  return (Math.acos(c) * 180) / Math.PI;
+  return (acos(c) * 180) / Math.PI;
 }
 
 /**
@@ -90,7 +92,7 @@ function onLine(b, p) {
 function toSegment(l, p) {
   const t = Math.max(0, Math.min(l.len, dot(sub(p, l.p0), l.u)));
   const q = add(l.p0, l.u, t);
-  return Math.hypot(p[0] - q[0], p[1] - q[1]);
+  return len2(p[0] - q[0], p[1] - q[1]);
 }
 
 /**
@@ -384,7 +386,7 @@ function gapRows(input, shot, parts, options = {}) {
     const contact = shot.gapMm === 0 && shot.separationMm === undefined;
     return tracks.map((t, k) => {
       const l = line(t.still);
-      const deg = l ? (Math.atan2(l.u[1], l.u[0]) * 180) / Math.PI : null;
+      const deg = l ? (atan2(l.u[1], l.u[0]) * 180) / Math.PI : null;
       return {
         ...base,
         trueGapPx: contact ? 0 : null,
@@ -494,7 +496,7 @@ function rowFor(row, pair, { segments, explained, matches, pairs, tracks, ledgeF
   // pair of a fixture from another when a shot has lost one of them.
   {
     const l = line(pair.b);
-    const deg = (Math.atan2(l.u[1], l.u[0]) * 180) / Math.PI;
+    const deg = (atan2(l.u[1], l.u[0]) * 180) / Math.PI;
     row.pairAngle = ((deg % 180) + 180) % 180;
   }
   row.truthPair = [pair.a.id, pair.b.id];
@@ -820,7 +822,7 @@ function pxPerMmSlope(rows) {
   const mx = pts.reduce((a, r) => a + r.gapMm, 0) / pts.length;
   const my = pts.reduce((a, r) => a + r.trueGapPx, 0) / pts.length;
   let sxx = 0, sxy = 0;
-  for (const r of pts) { sxx += (r.gapMm - mx) ** 2; sxy += (r.gapMm - mx) * (r.trueGapPx - my); }
+  for (const r of pts) { sxx += sq(r.gapMm - mx); sxy += (r.gapMm - mx) * (r.trueGapPx - my); }
   return sxx > 0 ? sxy / sxx : null;
 }
 

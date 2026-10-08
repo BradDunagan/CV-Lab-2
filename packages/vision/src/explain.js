@@ -44,6 +44,8 @@
  * where the buffers are.
  */
 
+import { acos, cos, len2, len3, sin, tan } from './math.js';
+
 /** The causes, in the order they are tested. First match wins. */
 const CAUSES = ['occlusion', 'crease', 'texture', 'shading'];
 
@@ -87,14 +89,14 @@ const median = (xs) => {
 /** Unit normal at a pixel, from a pass holding components packed into [0,1]. */
 function normalAt(raster, x, y) {
   const n = [0, 1, 2].map((c) => sample(raster, x, y, c) * 2 - 1);
-  const len = Math.hypot(n[0], n[1], n[2]);
+  const len = len3(n[0], n[1], n[2]);
   return len > 1e-6 ? n.map((v) => v / len) : [0, 0, 0];
 }
 
 function angleBetween(a, b) {
   const dot = Math.min(1, Math.max(-1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]));
   if (!Number.isFinite(dot)) return 0;
-  return (Math.acos(dot) * 180) / Math.PI;
+  return (acos(dot) * 180) / Math.PI;
 }
 
 /**
@@ -119,7 +121,7 @@ function arcCrossings(feature, { offset, samples }) {
     const t = (i + 1) / (samples + 1);
     const a = a0 + sweep * t;
     // The radial unit vector IS the arc's normal at this point.
-    const nx = Math.cos(a), ny = Math.sin(a);
+    const nx = cos(a), ny = sin(a);
     const px = cx + r * nx, py = cy + r * ny;
     pairs.push([
       { x: px - nx * offset, y: py - ny * offset },
@@ -162,7 +164,7 @@ function crossings(feature, { offset, samples }) {
 
   const dx = feature.x1 - feature.x0;
   const dy = feature.y1 - feature.y0;
-  const len = Math.hypot(dx, dy);
+  const len = len2(dx, dy);
   if (len < 1e-6) return pairs;
   const nx = -dy / len, ny = dx / len;
 
@@ -198,7 +200,7 @@ function viewGeometry(camera, width, height) {
   const fov = camera?.fov;
   if (typeof fov !== 'number' || !(fov > 0) || !(fov < 180)) return null;
   return {
-    f: (height / 2) / Math.tan((fov * Math.PI) / 360),
+    f: (height / 2) / tan((fov * Math.PI) / 360),
     // The optical centre in the lab's pixel convention, where pixel i's
     // centre is at i: halfway between the middle two pixels. width / 2 is the
     // middle in pt-lab's convention, half a pixel off from this one; see
@@ -270,9 +272,9 @@ function slantAt(g, normal, x, y) {
   const n = normalAt(normal, x, y);
   if (!n[0] && !n[1] && !n[2]) return 0;
   const e = viewRay(g, x, y);
-  const len = Math.hypot(e[0], e[1], e[2]);
+  const len = len3(e[0], e[1], e[2]);
   const cos = Math.min(1, Math.abs(dot3(n, e)) / len);
-  return (Math.acos(cos) * 180) / Math.PI;
+  return (acos(cos) * 180) / Math.PI;
 }
 
 /**

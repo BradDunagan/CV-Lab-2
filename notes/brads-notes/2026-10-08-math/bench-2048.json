@@ -1,0 +1,1050 @@
+{
+  "frames": [
+    {
+      "file": "generated/bench-2048/y35-e20-pose-1.pfm",
+      "size": "2048x2048",
+      "commands": [
+        "K1 = trackPair(G, x0=692.234996, y0=1048.218800, x1=1078.822152, y1=1154.211888, towardX=890.503944, towardY=1082.700752, stripLevel=0.068742, aperture=1.388232, guess=26.062796, strip=fit)",
+        "K2 = trackPair(G, x0=1115.767608, y0=1143.174852, x1=1336.735348, y1=1011.427720, towardX=1218.175964, towardY=1063.437720, stripLevel=0.067058, aperture=1.397534, guess=15.816680, strip=fit)"
+      ]
+    },
+    {
+      "file": "generated/bench-2048/y35-e50-pose-1.pfm",
+      "size": "2048x2048",
+      "commands": [
+        "K1 = trackPair(G, x0=692.204416, y0=1077.821764, x1=1073.060496, y1=1301.708688, towardX=888.905188, towardY=1179.031352, stripLevel=0.059812, aperture=1.386890, guess=17.036908, strip=fit)",
+        "K2 = trackPair(G, x0=1104.539148, y0=1290.282488, x1=1347.326888, y1=986.506820, towardX=1212.728364, towardY=1127.749164, stripLevel=0.130377, aperture=1.397824, guess=16.974112, strip=held)"
+      ]
+    },
+    {
+      "file": "generated/bench-2048/y60-e20-pose-1.pfm",
+      "size": "2048x2048",
+      "commands": [
+        "K1 = trackPair(G, x0=713.569344, y0=1001.909012, x1=895.758676, y1=1138.175716, towardX=815.814392, towardY=1054.754812, stripLevel=0.066966, aperture=1.472106, guess=22.441776, strip=fit)",
+        "K2 = trackPair(G, x0=932.418416, y0=1151.221024, x1=1352.027220, y1=1057.001208, towardX=1138.117108, towardY=1085.442624, stripLevel=0.064756, aperture=1.388419, guess=20.949052, strip=fit)"
+      ]
+    },
+    {
+      "file": "generated/bench-2048/y60-e50-pose-1.pfm",
+      "size": "2048x2048",
+      "commands": [
+        "K1 = trackPair(G, x0=704.676812, y0=966.503000, x1=908.859844, y1=1282.834556, towardX=819.889428, towardY=1116.197768, stripLevel=0.082995, aperture=1.401833, guess=11.851484, strip=held)",
+        "K2 = trackPair(G, x0=942.067256, y0=1294.818268, x1=1350.082232, y1=1098.150568, towardX=1139.424280, towardY=1182.630532, stripLevel=0.070775, aperture=1.336517, guess=6.585676, strip=held)"
+      ]
+    }
+  ],
+  "script": [
+    "G  = gray(A)",
+    "B  = gaussian(G, sigma=1.4)",
+    "Gx = sobel(B, axis=x)",
+    "Gy = sobel(B, axis=y)",
+    "M  = sobel(B, axis=mag)",
+    "N  = nms(M, Gx, Gy)",
+    "S  = segments(N, Gx, Gy)",
+    "R  = merge(S)",
+    "F  = fit(R)",
+    "C  = corners(F)",
+    "P  = fitPairs(F, G)",
+    "H  = findPairs(F, G)"
+  ],
+  "reps": 1,
+  "platform": "darwin/arm64",
+  "runs": [
+    {
+      "name": "native (node 22.23.2)",
+      "results": [
+        {
+          "source": "/frames/0-y35-e20-pose-1.pfm",
+          "totals": [
+            18532.401790999997
+          ],
+          "ops": {
+            "frame": [
+              232.07400000000052
+            ],
+            "gray": [
+              70.14858399999866
+            ],
+            "gaussian": [
+              131.26066699999865
+            ],
+            "sobel": [
+              254.51304099999834
+            ],
+            "nms": [
+              131.3897500000021
+            ],
+            "segments": [
+              70.71033300000272
+            ],
+            "merge": [
+              73.0881249999984
+            ],
+            "fit": [
+              5.9927499999976135
+            ],
+            "corners": [
+              1.1633330000004207
+            ],
+            "fitPairs": [
+              1.5696250000000873
+            ],
+            "findPairs": [
+              11607.591499999999
+            ],
+            "trackPair": [
+              5952.900083
+            ]
+          },
+          "hashes": [
+            "6931ccac57f2686f03a3343e620238dddd158378513c507314fb620e8333272b",
+            "d024e5d6bbf45afbefd148df5a17276b5723d390ba8022af27cb74fc57ee74b6",
+            "48e08dfe03ee585576d0e7c65be9b1f5879cd1e02c84d74f5fab3227badb6ac0",
+            "ce3375ff3115742c755d90ea39e1c75ad63c77d7889264e13ae85e07fbea99ee",
+            "a49d1f29561f5fd17fa0bcfc93b864d328acddfdc39715bfb9e825b9c68aa078",
+            "71009b9863c60a45b59a30f5e61d860da29c954abb20b0af15cb656085953454",
+            "34bd02354bbea834997e6a1fabed09102ef81c303d045e3e5e1895b54d8600a5",
+            "d750b6a7733b8d725a329f1c518deb8f7e269bc0dc87e4b42924eab61b9c6dee",
+            "0591185bf9638df75d95b9f8fa7f8f41ed3874cefab6866f11c7ec0b55e3725a",
+            "194748e460ede20b95d4574c2ee2cef6ff3bbfe6ef2412e9d2dcb76fabd1a7f2",
+            "04ab52938dd8690ad04d27e0e0d210dd5d3f3186004a18ae82fe9a91f479d19b",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "733b2ed0ead2e532419ad2d716914a0c33652349eef3e41091077f6eba62065c",
+            "ebad039b2e3845b8dac8de9c1f44ef5105238964f3730fd94d12cf586663a8d5"
+          ]
+        },
+        {
+          "source": "/frames/1-y35-e50-pose-1.pfm",
+          "totals": [
+            20191.535169000002
+          ],
+          "ops": {
+            "frame": [
+              210.21729200000118
+            ],
+            "gray": [
+              67.16641700000037
+            ],
+            "gaussian": [
+              131.17954199999804
+            ],
+            "sobel": [
+              250.59558399999514
+            ],
+            "nms": [
+              127.85158399999636
+            ],
+            "segments": [
+              69.11554199999955
+            ],
+            "merge": [
+              71.45900000000256
+            ],
+            "fit": [
+              5.9586249999993015
+            ],
+            "corners": [
+              1.1865840000027674
+            ],
+            "fitPairs": [
+              379.01608300000225
+            ],
+            "findPairs": [
+              8050.243000000002
+            ],
+            "trackPair": [
+              10827.545916000003
+            ]
+          },
+          "hashes": [
+            "5415d9df16e3f916675cbf1765635f389dc1ef9704f9378f2eebb0a309a8d5f2",
+            "85f8d54b8df80444fcab3dd04e6d96c214ee158772adf716072a292432a07ed4",
+            "59d6f3fe664fa9aea5330a29b253ad3942164a8973222fa4b93091b619992fb9",
+            "b1710a5671c6e192d696cd366275abe5f501d4d2645f5c84166d41e1db727e8b",
+            "846fadf95ac23a837ea02563bbcf6feb1becb06978b8e71dc24492f109725cb1",
+            "975fcecc8345e9e318c70a5e305285c1f384f87946a476159cfb028feaba0ca4",
+            "ec67e34ca7da17cf00a1e22ef39c07a14315c7cf912d5bb2cbe2b84adab176d7",
+            "47405cad5739576cf82cdf2f84769913a7acf0cd85fd4d2d02574f6c6ae37403",
+            "16625e71abdfa567f91799c4c0bd63b1f399a356d39010ce35750a5532b271ca",
+            "470130ee378799324bd9391de50e2a1a77365d5d2b86ab9345bdf8cc850403f1",
+            "29e39b0438cedc7232f54ac137b72a574d01ecc5333f9f801963f44ad7646827",
+            "5d83fd7d2535d34f8ceb5776f954e3f495e513890bf8552ec74cdde1b5735447",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "128edefcaf146b0149ade2bcdfa6c2653a23eac43ffa221e9efe2421abb6bc4c",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          ]
+        },
+        {
+          "source": "/frames/2-y60-e20-pose-1.pfm",
+          "totals": [
+            18937.15370700002
+          ],
+          "ops": {
+            "frame": [
+              219.7183750000113
+            ],
+            "gray": [
+              69.31124999999884
+            ],
+            "gaussian": [
+              135.8537079999951
+            ],
+            "sobel": [
+              260.62454100001196
+            ],
+            "nms": [
+              131.1797499999957
+            ],
+            "segments": [
+              70.87774999999965
+            ],
+            "merge": [
+              72.15783300000476
+            ],
+            "fit": [
+              5.854500000001281
+            ],
+            "corners": [
+              1.1304999999993015
+            ],
+            "fitPairs": [
+              0.8303330000053393
+            ],
+            "findPairs": [
+              11646.894084
+            ],
+            "trackPair": [
+              6322.721082999997
+            ]
+          },
+          "hashes": [
+            "fc6b29c733d8ef3509f751095ed7953d606ebc01c649558de54652d4ce04a616",
+            "42be4b7aec9da2be35041cafc610cadfbf6e23fc05cfaf286aab05b9b60c94b2",
+            "62afd81ca094bc703ebe989c71060b3df5a125437fcb38a69c545e073f6d4f76",
+            "a9ecdba9f8b3479ea364171473eda10cc95047e58a6f3ab90e35850b756b435b",
+            "b5d3a9384b2a5428bd013e2e8d5e7c6ef4980264b7b6c035ecf1e4011b40c887",
+            "d1e2c2de8522ed594fc890dad8de2c047294753d46e0013aff7fb19f3a928990",
+            "68ca11621c690c478459a01207dfd877b23b2d6e66403a4f42aa07248d35b600",
+            "7ec66b8ba7da4aaba057cefb9a794f4f57cbc2ec8662071bce8e91ce21603151",
+            "6a1118f9e9db711d68aa796957d5443b7de5d82c5564f6fd36bd4554e20b03dc",
+            "768dac3bb4f7ca3ce352e0d6642132abc4a6953f349b2c27704947af8e1493ee",
+            "a0cae3756c3d618b0402e88edcb4007040bb072c3da82369aefc998c65d30d9c",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ad1ff41588eac7ec25982fb04a28cdf5eede184f62a946246efafc30821b1f29",
+            "96d1fd1ec0b22d5694ef1788892fd17219c59a58cbfa59c8ff1d84fab71d9ade"
+          ]
+        },
+        {
+          "source": "/frames/3-y60-e50-pose-1.pfm",
+          "totals": [
+            14769.911292000048
+          ],
+          "ops": {
+            "frame": [
+              220.9513339999976
+            ],
+            "gray": [
+              69.1356659999874
+            ],
+            "gaussian": [
+              135.53029200001038
+            ],
+            "sobel": [
+              258.7822509999969
+            ],
+            "nms": [
+              129.4475000000093
+            ],
+            "segments": [
+              69.78224999998929
+            ],
+            "merge": [
+              72.18854200001806
+            ],
+            "fit": [
+              6.0352080000157
+            ],
+            "corners": [
+              1.66820800001733
+            ],
+            "fitPairs": [
+              740.4605830000073
+            ],
+            "findPairs": [
+              9425.77900000001
+            ],
+            "trackPair": [
+              3640.150457999989
+            ]
+          },
+          "hashes": [
+            "50f24c628f5505e0fa077daeaad7a8a61384ec67159d9e2c99f850edb162a42c",
+            "7d3f168fec2e6131d21d4bf2ecda2e2a6e4284eba569156e8e473bb1aaafc216",
+            "12fac4650a5c6727e628702b8c4a8744ab3f1d3ad28cffb619a79829d5065c42",
+            "44c287e98547c9f968ac427f7960660eb29166969c69a6b51757193e8a2fe4a5",
+            "c17e2440f0d64858054261d11d6abdd21d7df4521f5816bdeff1e6e150cc147a",
+            "acce05fa1e3ada904ae877249af825a6acceeeea3e5b2e3b9b0c6978dd353c4f",
+            "6e9077a8413ebdae431849c2988f24f2f4dc84298073678f7cd4412f34eaeb49",
+            "74a434a4e9df70cbc34afff92c0eafd3a394e04363aa916675a5e8f6f4bc4435",
+            "10b98236bbd52fb608f95de1f272e2f7a2b838cd1408d3a999672620166b5970",
+            "f73dd8f47a4f1a0730e74425c3a337b84f94b17d0e81be05711a4ed337f02799",
+            "e23ad79700863e54d3311bdb3bea3cf5424457d1b24d61e6737100aa84948839",
+            "37e72d7b831ef5bfa70fe67ebc9e4814717a152d705d10389d8a06a5183fb138",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ba60adf2e32d3b5514e680ddd43bc8e41b5be76ba76f96c9a10b3ff6f747d011",
+            "a6bdb91ac414b1fb0853967a2ba8b9eb880769c9956607dbf0a8a1eaabb32d79"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wasm (node 22.23.2)",
+      "results": [
+        {
+          "source": "/frames/0-y35-e20-pose-1.pfm",
+          "totals": [
+            20252.356040999963
+          ],
+          "ops": {
+            "frame": [
+              288.03054199999315
+            ],
+            "gray": [
+              83.28837500000373
+            ],
+            "gaussian": [
+              169.81929099999252
+            ],
+            "sobel": [
+              356.65620799997123
+            ],
+            "nms": [
+              142.2039999999979
+            ],
+            "segments": [
+              89.22891700000037
+            ],
+            "merge": [
+              93.50183300001663
+            ],
+            "fit": [
+              10.433874999987893
+            ],
+            "corners": [
+              0.985791999992216
+            ],
+            "fitPairs": [
+              0.9170420000154991
+            ],
+            "findPairs": [
+              12548.708666999999
+            ],
+            "trackPair": [
+              6468.581498999993
+            ]
+          },
+          "hashes": [
+            "6931ccac57f2686f03a3343e620238dddd158378513c507314fb620e8333272b",
+            "d024e5d6bbf45afbefd148df5a17276b5723d390ba8022af27cb74fc57ee74b6",
+            "48e08dfe03ee585576d0e7c65be9b1f5879cd1e02c84d74f5fab3227badb6ac0",
+            "ce3375ff3115742c755d90ea39e1c75ad63c77d7889264e13ae85e07fbea99ee",
+            "a49d1f29561f5fd17fa0bcfc93b864d328acddfdc39715bfb9e825b9c68aa078",
+            "71009b9863c60a45b59a30f5e61d860da29c954abb20b0af15cb656085953454",
+            "34bd02354bbea834997e6a1fabed09102ef81c303d045e3e5e1895b54d8600a5",
+            "d750b6a7733b8d725a329f1c518deb8f7e269bc0dc87e4b42924eab61b9c6dee",
+            "0591185bf9638df75d95b9f8fa7f8f41ed3874cefab6866f11c7ec0b55e3725a",
+            "194748e460ede20b95d4574c2ee2cef6ff3bbfe6ef2412e9d2dcb76fabd1a7f2",
+            "04ab52938dd8690ad04d27e0e0d210dd5d3f3186004a18ae82fe9a91f479d19b",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "733b2ed0ead2e532419ad2d716914a0c33652349eef3e41091077f6eba62065c",
+            "ebad039b2e3845b8dac8de9c1f44ef5105238964f3730fd94d12cf586663a8d5"
+          ]
+        },
+        {
+          "source": "/frames/1-y35-e50-pose-1.pfm",
+          "totals": [
+            21328.61504100007
+          ],
+          "ops": {
+            "frame": [
+              270.82795800000895
+            ],
+            "gray": [
+              84.7558330000029
+            ],
+            "gaussian": [
+              174.61345800000709
+            ],
+            "sobel": [
+              364.49004200001946
+            ],
+            "nms": [
+              144.62616600000183
+            ],
+            "segments": [
+              92.46141700001317
+            ],
+            "merge": [
+              94.52720799998497
+            ],
+            "fit": [
+              10.770624999975553
+            ],
+            "corners": [
+              1.3492499999993015
+            ],
+            "fitPairs": [
+              389.31320800000685
+            ],
+            "findPairs": [
+              8485.263334000017
+            ],
+            "trackPair": [
+              11215.616542000032
+            ]
+          },
+          "hashes": [
+            "5415d9df16e3f916675cbf1765635f389dc1ef9704f9378f2eebb0a309a8d5f2",
+            "85f8d54b8df80444fcab3dd04e6d96c214ee158772adf716072a292432a07ed4",
+            "59d6f3fe664fa9aea5330a29b253ad3942164a8973222fa4b93091b619992fb9",
+            "b1710a5671c6e192d696cd366275abe5f501d4d2645f5c84166d41e1db727e8b",
+            "846fadf95ac23a837ea02563bbcf6feb1becb06978b8e71dc24492f109725cb1",
+            "975fcecc8345e9e318c70a5e305285c1f384f87946a476159cfb028feaba0ca4",
+            "ec67e34ca7da17cf00a1e22ef39c07a14315c7cf912d5bb2cbe2b84adab176d7",
+            "47405cad5739576cf82cdf2f84769913a7acf0cd85fd4d2d02574f6c6ae37403",
+            "16625e71abdfa567f91799c4c0bd63b1f399a356d39010ce35750a5532b271ca",
+            "470130ee378799324bd9391de50e2a1a77365d5d2b86ab9345bdf8cc850403f1",
+            "29e39b0438cedc7232f54ac137b72a574d01ecc5333f9f801963f44ad7646827",
+            "5d83fd7d2535d34f8ceb5776f954e3f495e513890bf8552ec74cdde1b5735447",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "128edefcaf146b0149ade2bcdfa6c2653a23eac43ffa221e9efe2421abb6bc4c",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          ]
+        },
+        {
+          "source": "/frames/2-y60-e20-pose-1.pfm",
+          "totals": [
+            19987.443040000013
+          ],
+          "ops": {
+            "frame": [
+              266.73495799998636
+            ],
+            "gray": [
+              84.00908300001174
+            ],
+            "gaussian": [
+              172.5382090000203
+            ],
+            "sobel": [
+              376.067332000006
+            ],
+            "nms": [
+              148.4569579999952
+            ],
+            "segments": [
+              91.44687500002328
+            ],
+            "merge": [
+              103.47649999998976
+            ],
+            "fit": [
+              12.46112500000163
+            ],
+            "corners": [
+              1.262125000008382
+            ],
+            "fitPairs": [
+              0.8729999999923166
+            ],
+            "findPairs": [
+              12176.550707999995
+            ],
+            "trackPair": [
+              6553.566166999983
+            ]
+          },
+          "hashes": [
+            "fc6b29c733d8ef3509f751095ed7953d606ebc01c649558de54652d4ce04a616",
+            "42be4b7aec9da2be35041cafc610cadfbf6e23fc05cfaf286aab05b9b60c94b2",
+            "62afd81ca094bc703ebe989c71060b3df5a125437fcb38a69c545e073f6d4f76",
+            "a9ecdba9f8b3479ea364171473eda10cc95047e58a6f3ab90e35850b756b435b",
+            "b5d3a9384b2a5428bd013e2e8d5e7c6ef4980264b7b6c035ecf1e4011b40c887",
+            "d1e2c2de8522ed594fc890dad8de2c047294753d46e0013aff7fb19f3a928990",
+            "68ca11621c690c478459a01207dfd877b23b2d6e66403a4f42aa07248d35b600",
+            "7ec66b8ba7da4aaba057cefb9a794f4f57cbc2ec8662071bce8e91ce21603151",
+            "6a1118f9e9db711d68aa796957d5443b7de5d82c5564f6fd36bd4554e20b03dc",
+            "768dac3bb4f7ca3ce352e0d6642132abc4a6953f349b2c27704947af8e1493ee",
+            "a0cae3756c3d618b0402e88edcb4007040bb072c3da82369aefc998c65d30d9c",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ad1ff41588eac7ec25982fb04a28cdf5eede184f62a946246efafc30821b1f29",
+            "96d1fd1ec0b22d5694ef1788892fd17219c59a58cbfa59c8ff1d84fab71d9ade"
+          ]
+        },
+        {
+          "source": "/frames/3-y60-e50-pose-1.pfm",
+          "totals": [
+            15569.685208999843
+          ],
+          "ops": {
+            "frame": [
+              274.9520419999608
+            ],
+            "gray": [
+              86.06512500002282
+            ],
+            "gaussian": [
+              173.45879199996125
+            ],
+            "sobel": [
+              362.31562499993015
+            ],
+            "nms": [
+              145.26712500001304
+            ],
+            "segments": [
+              89.82233299996005
+            ],
+            "merge": [
+              93.49937500001397
+            ],
+            "fit": [
+              10.857583000033628
+            ],
+            "corners": [
+              0.818874999997206
+            ],
+            "fitPairs": [
+              784.9704999999958
+            ],
+            "findPairs": [
+              9774.46074999997
+            ],
+            "trackPair": [
+              3773.197083999985
+            ]
+          },
+          "hashes": [
+            "50f24c628f5505e0fa077daeaad7a8a61384ec67159d9e2c99f850edb162a42c",
+            "7d3f168fec2e6131d21d4bf2ecda2e2a6e4284eba569156e8e473bb1aaafc216",
+            "12fac4650a5c6727e628702b8c4a8744ab3f1d3ad28cffb619a79829d5065c42",
+            "44c287e98547c9f968ac427f7960660eb29166969c69a6b51757193e8a2fe4a5",
+            "c17e2440f0d64858054261d11d6abdd21d7df4521f5816bdeff1e6e150cc147a",
+            "acce05fa1e3ada904ae877249af825a6acceeeea3e5b2e3b9b0c6978dd353c4f",
+            "6e9077a8413ebdae431849c2988f24f2f4dc84298073678f7cd4412f34eaeb49",
+            "74a434a4e9df70cbc34afff92c0eafd3a394e04363aa916675a5e8f6f4bc4435",
+            "10b98236bbd52fb608f95de1f272e2f7a2b838cd1408d3a999672620166b5970",
+            "f73dd8f47a4f1a0730e74425c3a337b84f94b17d0e81be05711a4ed337f02799",
+            "e23ad79700863e54d3311bdb3bea3cf5424457d1b24d61e6737100aa84948839",
+            "37e72d7b831ef5bfa70fe67ebc9e4814717a152d705d10389d8a06a5183fb138",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ba60adf2e32d3b5514e680ddd43bc8e41b5be76ba76f96c9a10b3ff6f747d011",
+            "a6bdb91ac414b1fb0853967a2ba8b9eb880769c9956607dbf0a8a1eaabb32d79"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chromium 154.0.8037.99 worker",
+      "results": [
+        {
+          "source": "/frames/0-y35-e20-pose-1.pfm",
+          "totals": [
+            16622.100000023842
+          ],
+          "ops": {
+            "frame": [
+              281.39999997615814
+            ],
+            "gray": [
+              91
+            ],
+            "gaussian": [
+              180.70000004768372
+            ],
+            "sobel": [
+              380.39999997615814
+            ],
+            "nms": [
+              149.80000007152557
+            ],
+            "segments": [
+              98
+            ],
+            "merge": [
+              98.89999997615814
+            ],
+            "fit": [
+              9.699999928474426
+            ],
+            "corners": [
+              1.100000023841858
+            ],
+            "fitPairs": [
+              1.8000000715255737
+            ],
+            "findPairs": [
+              10217.699999928474
+            ],
+            "trackPair": [
+              5111.600000023842
+            ]
+          },
+          "hashes": [
+            "6931ccac57f2686f03a3343e620238dddd158378513c507314fb620e8333272b",
+            "d024e5d6bbf45afbefd148df5a17276b5723d390ba8022af27cb74fc57ee74b6",
+            "48e08dfe03ee585576d0e7c65be9b1f5879cd1e02c84d74f5fab3227badb6ac0",
+            "ce3375ff3115742c755d90ea39e1c75ad63c77d7889264e13ae85e07fbea99ee",
+            "a49d1f29561f5fd17fa0bcfc93b864d328acddfdc39715bfb9e825b9c68aa078",
+            "71009b9863c60a45b59a30f5e61d860da29c954abb20b0af15cb656085953454",
+            "34bd02354bbea834997e6a1fabed09102ef81c303d045e3e5e1895b54d8600a5",
+            "d750b6a7733b8d725a329f1c518deb8f7e269bc0dc87e4b42924eab61b9c6dee",
+            "0591185bf9638df75d95b9f8fa7f8f41ed3874cefab6866f11c7ec0b55e3725a",
+            "194748e460ede20b95d4574c2ee2cef6ff3bbfe6ef2412e9d2dcb76fabd1a7f2",
+            "04ab52938dd8690ad04d27e0e0d210dd5d3f3186004a18ae82fe9a91f479d19b",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "733b2ed0ead2e532419ad2d716914a0c33652349eef3e41091077f6eba62065c",
+            "ebad039b2e3845b8dac8de9c1f44ef5105238964f3730fd94d12cf586663a8d5"
+          ]
+        },
+        {
+          "source": "/frames/1-y35-e50-pose-1.pfm",
+          "totals": [
+            18868.700000047684
+          ],
+          "ops": {
+            "frame": [
+              328
+            ],
+            "gray": [
+              91.29999995231628
+            ],
+            "gaussian": [
+              181.5
+            ],
+            "sobel": [
+              377.90000009536743
+            ],
+            "nms": [
+              150
+            ],
+            "segments": [
+              94
+            ],
+            "merge": [
+              96.89999997615814
+            ],
+            "fit": [
+              9.199999928474426
+            ],
+            "corners": [
+              1.2000000476837158
+            ],
+            "fitPairs": [
+              328.89999997615814
+            ],
+            "findPairs": [
+              7568.399999976158
+            ],
+            "trackPair": [
+              9641.400000095367
+            ]
+          },
+          "hashes": [
+            "5415d9df16e3f916675cbf1765635f389dc1ef9704f9378f2eebb0a309a8d5f2",
+            "85f8d54b8df80444fcab3dd04e6d96c214ee158772adf716072a292432a07ed4",
+            "59d6f3fe664fa9aea5330a29b253ad3942164a8973222fa4b93091b619992fb9",
+            "b1710a5671c6e192d696cd366275abe5f501d4d2645f5c84166d41e1db727e8b",
+            "846fadf95ac23a837ea02563bbcf6feb1becb06978b8e71dc24492f109725cb1",
+            "975fcecc8345e9e318c70a5e305285c1f384f87946a476159cfb028feaba0ca4",
+            "ec67e34ca7da17cf00a1e22ef39c07a14315c7cf912d5bb2cbe2b84adab176d7",
+            "47405cad5739576cf82cdf2f84769913a7acf0cd85fd4d2d02574f6c6ae37403",
+            "16625e71abdfa567f91799c4c0bd63b1f399a356d39010ce35750a5532b271ca",
+            "470130ee378799324bd9391de50e2a1a77365d5d2b86ab9345bdf8cc850403f1",
+            "29e39b0438cedc7232f54ac137b72a574d01ecc5333f9f801963f44ad7646827",
+            "5d83fd7d2535d34f8ceb5776f954e3f495e513890bf8552ec74cdde1b5735447",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "128edefcaf146b0149ade2bcdfa6c2653a23eac43ffa221e9efe2421abb6bc4c",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          ]
+        },
+        {
+          "source": "/frames/2-y60-e20-pose-1.pfm",
+          "totals": [
+            17494.899999976158
+          ],
+          "ops": {
+            "frame": [
+              290
+            ],
+            "gray": [
+              90.69999992847443
+            ],
+            "gaussian": [
+              180.40000009536743
+            ],
+            "sobel": [
+              378.09999990463257
+            ],
+            "nms": [
+              149.80000007152557
+            ],
+            "segments": [
+              94.29999995231628
+            ],
+            "merge": [
+              97.80000007152557
+            ],
+            "fit": [
+              8.5
+            ],
+            "corners": [
+              0.6999999284744263
+            ],
+            "fitPairs": [
+              2
+            ],
+            "findPairs": [
+              10643
+            ],
+            "trackPair": [
+              5559.600000023842
+            ]
+          },
+          "hashes": [
+            "fc6b29c733d8ef3509f751095ed7953d606ebc01c649558de54652d4ce04a616",
+            "42be4b7aec9da2be35041cafc610cadfbf6e23fc05cfaf286aab05b9b60c94b2",
+            "62afd81ca094bc703ebe989c71060b3df5a125437fcb38a69c545e073f6d4f76",
+            "a9ecdba9f8b3479ea364171473eda10cc95047e58a6f3ab90e35850b756b435b",
+            "b5d3a9384b2a5428bd013e2e8d5e7c6ef4980264b7b6c035ecf1e4011b40c887",
+            "d1e2c2de8522ed594fc890dad8de2c047294753d46e0013aff7fb19f3a928990",
+            "68ca11621c690c478459a01207dfd877b23b2d6e66403a4f42aa07248d35b600",
+            "7ec66b8ba7da4aaba057cefb9a794f4f57cbc2ec8662071bce8e91ce21603151",
+            "6a1118f9e9db711d68aa796957d5443b7de5d82c5564f6fd36bd4554e20b03dc",
+            "768dac3bb4f7ca3ce352e0d6642132abc4a6953f349b2c27704947af8e1493ee",
+            "a0cae3756c3d618b0402e88edcb4007040bb072c3da82369aefc998c65d30d9c",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ad1ff41588eac7ec25982fb04a28cdf5eede184f62a946246efafc30821b1f29",
+            "96d1fd1ec0b22d5694ef1788892fd17219c59a58cbfa59c8ff1d84fab71d9ade"
+          ]
+        },
+        {
+          "source": "/frames/3-y60-e50-pose-1.pfm",
+          "totals": [
+            10176.899999976158
+          ],
+          "ops": {
+            "frame": [
+              287.6999999284744
+            ],
+            "gray": [
+              90.90000009536743
+            ],
+            "gaussian": [
+              183.5
+            ],
+            "sobel": [
+              378.39999997615814
+            ],
+            "nms": [
+              150.5
+            ],
+            "segments": [
+              94.69999992847443
+            ],
+            "merge": [
+              97.5
+            ],
+            "fit": [
+              8.600000023841858
+            ],
+            "corners": [
+              0.8000000715255737
+            ],
+            "fitPairs": [
+              506.39999997615814
+            ],
+            "findPairs": [
+              6058.100000023842
+            ],
+            "trackPair": [
+              2319.7999999523163
+            ]
+          },
+          "hashes": [
+            "50f24c628f5505e0fa077daeaad7a8a61384ec67159d9e2c99f850edb162a42c",
+            "7d3f168fec2e6131d21d4bf2ecda2e2a6e4284eba569156e8e473bb1aaafc216",
+            "12fac4650a5c6727e628702b8c4a8744ab3f1d3ad28cffb619a79829d5065c42",
+            "44c287e98547c9f968ac427f7960660eb29166969c69a6b51757193e8a2fe4a5",
+            "c17e2440f0d64858054261d11d6abdd21d7df4521f5816bdeff1e6e150cc147a",
+            "acce05fa1e3ada904ae877249af825a6acceeeea3e5b2e3b9b0c6978dd353c4f",
+            "6e9077a8413ebdae431849c2988f24f2f4dc84298073678f7cd4412f34eaeb49",
+            "74a434a4e9df70cbc34afff92c0eafd3a394e04363aa916675a5e8f6f4bc4435",
+            "10b98236bbd52fb608f95de1f272e2f7a2b838cd1408d3a999672620166b5970",
+            "f73dd8f47a4f1a0730e74425c3a337b84f94b17d0e81be05711a4ed337f02799",
+            "e23ad79700863e54d3311bdb3bea3cf5424457d1b24d61e6737100aa84948839",
+            "37e72d7b831ef5bfa70fe67ebc9e4814717a152d705d10389d8a06a5183fb138",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ba60adf2e32d3b5514e680ddd43bc8e41b5be76ba76f96c9a10b3ff6f747d011",
+            "a6bdb91ac414b1fb0853967a2ba8b9eb880769c9956607dbf0a8a1eaabb32d79"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "firefox 144.0.2 worker",
+      "results": [
+        {
+          "source": "/frames/0-y35-e20-pose-1.pfm",
+          "totals": [
+            42883
+          ],
+          "ops": {
+            "frame": [
+              2252
+            ],
+            "gray": [
+              814
+            ],
+            "gaussian": [
+              2609
+            ],
+            "sobel": [
+              4519
+            ],
+            "nms": [
+              1038
+            ],
+            "segments": [
+              810
+            ],
+            "merge": [
+              833
+            ],
+            "fit": [
+              61
+            ],
+            "corners": [
+              2
+            ],
+            "fitPairs": [
+              2
+            ],
+            "findPairs": [
+              19422
+            ],
+            "trackPair": [
+              10521
+            ]
+          },
+          "hashes": [
+            "6931ccac57f2686f03a3343e620238dddd158378513c507314fb620e8333272b",
+            "d024e5d6bbf45afbefd148df5a17276b5723d390ba8022af27cb74fc57ee74b6",
+            "48e08dfe03ee585576d0e7c65be9b1f5879cd1e02c84d74f5fab3227badb6ac0",
+            "ce3375ff3115742c755d90ea39e1c75ad63c77d7889264e13ae85e07fbea99ee",
+            "a49d1f29561f5fd17fa0bcfc93b864d328acddfdc39715bfb9e825b9c68aa078",
+            "71009b9863c60a45b59a30f5e61d860da29c954abb20b0af15cb656085953454",
+            "34bd02354bbea834997e6a1fabed09102ef81c303d045e3e5e1895b54d8600a5",
+            "d750b6a7733b8d725a329f1c518deb8f7e269bc0dc87e4b42924eab61b9c6dee",
+            "0591185bf9638df75d95b9f8fa7f8f41ed3874cefab6866f11c7ec0b55e3725a",
+            "194748e460ede20b95d4574c2ee2cef6ff3bbfe6ef2412e9d2dcb76fabd1a7f2",
+            "04ab52938dd8690ad04d27e0e0d210dd5d3f3186004a18ae82fe9a91f479d19b",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "733b2ed0ead2e532419ad2d716914a0c33652349eef3e41091077f6eba62065c",
+            "ebad039b2e3845b8dac8de9c1f44ef5105238964f3730fd94d12cf586663a8d5"
+          ]
+        },
+        {
+          "source": "/frames/1-y35-e50-pose-1.pfm",
+          "totals": [
+            45343
+          ],
+          "ops": {
+            "frame": [
+              2286
+            ],
+            "gray": [
+              814
+            ],
+            "gaussian": [
+              2666
+            ],
+            "sobel": [
+              4593
+            ],
+            "nms": [
+              1059
+            ],
+            "segments": [
+              826
+            ],
+            "merge": [
+              849
+            ],
+            "fit": [
+              62
+            ],
+            "corners": [
+              2
+            ],
+            "fitPairs": [
+              667
+            ],
+            "findPairs": [
+              13240
+            ],
+            "trackPair": [
+              18279
+            ]
+          },
+          "hashes": [
+            "5415d9df16e3f916675cbf1765635f389dc1ef9704f9378f2eebb0a309a8d5f2",
+            "85f8d54b8df80444fcab3dd04e6d96c214ee158772adf716072a292432a07ed4",
+            "59d6f3fe664fa9aea5330a29b253ad3942164a8973222fa4b93091b619992fb9",
+            "b1710a5671c6e192d696cd366275abe5f501d4d2645f5c84166d41e1db727e8b",
+            "846fadf95ac23a837ea02563bbcf6feb1becb06978b8e71dc24492f109725cb1",
+            "975fcecc8345e9e318c70a5e305285c1f384f87946a476159cfb028feaba0ca4",
+            "ec67e34ca7da17cf00a1e22ef39c07a14315c7cf912d5bb2cbe2b84adab176d7",
+            "47405cad5739576cf82cdf2f84769913a7acf0cd85fd4d2d02574f6c6ae37403",
+            "16625e71abdfa567f91799c4c0bd63b1f399a356d39010ce35750a5532b271ca",
+            "470130ee378799324bd9391de50e2a1a77365d5d2b86ab9345bdf8cc850403f1",
+            "29e39b0438cedc7232f54ac137b72a574d01ecc5333f9f801963f44ad7646827",
+            "5d83fd7d2535d34f8ceb5776f954e3f495e513890bf8552ec74cdde1b5735447",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "128edefcaf146b0149ade2bcdfa6c2653a23eac43ffa221e9efe2421abb6bc4c",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+          ]
+        },
+        {
+          "source": "/frames/2-y60-e20-pose-1.pfm",
+          "totals": [
+            36280
+          ],
+          "ops": {
+            "frame": [
+              1966
+            ],
+            "gray": [
+              698
+            ],
+            "gaussian": [
+              2314
+            ],
+            "sobel": [
+              3948
+            ],
+            "nms": [
+              900
+            ],
+            "segments": [
+              699
+            ],
+            "merge": [
+              723
+            ],
+            "fit": [
+              53
+            ],
+            "corners": [
+              2
+            ],
+            "fitPairs": [
+              2
+            ],
+            "findPairs": [
+              15892
+            ],
+            "trackPair": [
+              9083
+            ]
+          },
+          "hashes": [
+            "fc6b29c733d8ef3509f751095ed7953d606ebc01c649558de54652d4ce04a616",
+            "42be4b7aec9da2be35041cafc610cadfbf6e23fc05cfaf286aab05b9b60c94b2",
+            "62afd81ca094bc703ebe989c71060b3df5a125437fcb38a69c545e073f6d4f76",
+            "a9ecdba9f8b3479ea364171473eda10cc95047e58a6f3ab90e35850b756b435b",
+            "b5d3a9384b2a5428bd013e2e8d5e7c6ef4980264b7b6c035ecf1e4011b40c887",
+            "d1e2c2de8522ed594fc890dad8de2c047294753d46e0013aff7fb19f3a928990",
+            "68ca11621c690c478459a01207dfd877b23b2d6e66403a4f42aa07248d35b600",
+            "7ec66b8ba7da4aaba057cefb9a794f4f57cbc2ec8662071bce8e91ce21603151",
+            "6a1118f9e9db711d68aa796957d5443b7de5d82c5564f6fd36bd4554e20b03dc",
+            "768dac3bb4f7ca3ce352e0d6642132abc4a6953f349b2c27704947af8e1493ee",
+            "a0cae3756c3d618b0402e88edcb4007040bb072c3da82369aefc998c65d30d9c",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ad1ff41588eac7ec25982fb04a28cdf5eede184f62a946246efafc30821b1f29",
+            "96d1fd1ec0b22d5694ef1788892fd17219c59a58cbfa59c8ff1d84fab71d9ade"
+          ]
+        },
+        {
+          "source": "/frames/3-y60-e50-pose-1.pfm",
+          "totals": [
+            30350
+          ],
+          "ops": {
+            "frame": [
+              1955
+            ],
+            "gray": [
+              695
+            ],
+            "gaussian": [
+              2289
+            ],
+            "sobel": [
+              3934
+            ],
+            "nms": [
+              899
+            ],
+            "segments": [
+              697
+            ],
+            "merge": [
+              725
+            ],
+            "fit": [
+              53
+            ],
+            "corners": [
+              2
+            ],
+            "fitPairs": [
+              1109
+            ],
+            "findPairs": [
+              12886
+            ],
+            "trackPair": [
+              5106
+            ]
+          },
+          "hashes": [
+            "50f24c628f5505e0fa077daeaad7a8a61384ec67159d9e2c99f850edb162a42c",
+            "7d3f168fec2e6131d21d4bf2ecda2e2a6e4284eba569156e8e473bb1aaafc216",
+            "12fac4650a5c6727e628702b8c4a8744ab3f1d3ad28cffb619a79829d5065c42",
+            "44c287e98547c9f968ac427f7960660eb29166969c69a6b51757193e8a2fe4a5",
+            "c17e2440f0d64858054261d11d6abdd21d7df4521f5816bdeff1e6e150cc147a",
+            "acce05fa1e3ada904ae877249af825a6acceeeea3e5b2e3b9b0c6978dd353c4f",
+            "6e9077a8413ebdae431849c2988f24f2f4dc84298073678f7cd4412f34eaeb49",
+            "74a434a4e9df70cbc34afff92c0eafd3a394e04363aa916675a5e8f6f4bc4435",
+            "10b98236bbd52fb608f95de1f272e2f7a2b838cd1408d3a999672620166b5970",
+            "f73dd8f47a4f1a0730e74425c3a337b84f94b17d0e81be05711a4ed337f02799",
+            "e23ad79700863e54d3311bdb3bea3cf5424457d1b24d61e6737100aa84948839",
+            "37e72d7b831ef5bfa70fe67ebc9e4814717a152d705d10389d8a06a5183fb138",
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+            "ba60adf2e32d3b5514e680ddd43bc8e41b5be76ba76f96c9a10b3ff6f747d011",
+            "a6bdb91ac414b1fb0853967a2ba8b9eb880769c9956607dbf0a8a1eaabb32d79"
+          ]
+        }
+      ]
+    }
+  ]
+}

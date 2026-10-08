@@ -9,6 +9,7 @@
  */
 
 import { movingBelow, median, angleApart } from './ledge.js';
+import { len2 } from './math.js';
 
 /**
  * What --carry writes into each frame.
@@ -92,7 +93,7 @@ export function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo =
        * -- the middle one is outvoted by nothing.
        */
       const ref = placed[0].still;
-      const len = Math.hypot(ref.x1 - ref.x0, ref.y1 - ref.y0);
+      const len = len2(ref.x1 - ref.x0, ref.y1 - ref.y0);
       const normal = [-(ref.y1 - ref.y0) / len, (ref.x1 - ref.x0) / len];
       const m = [(ref.x0 + ref.x1) / 2, (ref.y0 + ref.y1) / 2];
       const cross = (a, b) => a[0] * b[1] - a[1] * b[0];

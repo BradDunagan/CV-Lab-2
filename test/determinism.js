@@ -128,7 +128,10 @@ const EXPECTED = {
   S: 'cad811d4931d3573a356aecfe9952f793ee9796920b1a14b5ffcdfdd25100f6d',
   R: '90375302cc7012f3e9bc77cf728b84efcb0663db7db207d2f62d6583a03c0190',
   F: 'f44b87efe4279132323139eb85d7b82e29216257619b1c6645a4b925d5042619',
-  C: '2cdce86a2f4ad52beb5f0c094cb2678742a610d701f0de781170b171d93e51a0',
+  // corners v2 (2026-10-08): its asin and lengths are the package's own
+  // (math.js) rather than the engine's, which is what lets a browser give
+  // this hash too. v1's was 2cdce86a...
+  C: 'e33a86987dbfea40ab4da2ba422923b56cc45a3c525d6a8826a29fcd7067c87e',
 };
 
 /*

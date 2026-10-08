@@ -111,51 +111,6 @@ export function viewRay(g: any, x: any, y: any): number[];
 export function surfaceResidual(g: any, normal: any, depth: any, a: any, b: any): number | null;
 /** How far the surface is turned from the line of sight, in degrees. */
 export function slantAt(g: any, normal: any, x: any, y: any): number;
-/**
- * Why is this edge in the picture?
- *
- * A detector answers "there is an edge here". It cannot answer what put it
- * there, because the beauty render does not contain that information: a
- * shadow boundary and a silhouette are both a step in luminance and nothing
- * in the image distinguishes them. The renderer's auxiliary passes do —
- * see `glossary.md`, AOV.
- *
- * | depth step | normal step | albedo step | the edge is |
- * |---|---|---|---|
- * | yes | — | — | an OCCLUSION — one surface ending in front of another |
- * | no | yes | — | a CREASE — a fold, with no step |
- * | no | no | yes | TEXTURE — paint rather than shape |
- * | no | no | no | SHADING — a shadow boundary or specular terminator |
- *
- * **The depth test is a residual, not a difference, and v1 got that wrong.**
- * Sampling a fixed distance either side of an edge on a surface turned away
- * from the camera reads a large depth difference with nothing occluding
- * anything: the surface simply recedes. Measured over six helmet views, 241 of
- * the 282 detections v1 called `occlusion` were that — a single tangent plane
- * through the sample midpoint accounted for the difference to within 1%, where
- * across a genuine step the same plane accounts for 7% of it. So the depth
- * evidence here is what a locally flat surface at the measured orientation
- * does NOT explain, and `depthStep` (measured) and `planeStep` (explained) are
- * both recorded so a record says which it was.
- *
- * Note what this does not do: threshold on slant. Median slant is 64.0° under
- * the misread detections and 64.1° under the genuine steps — both live at a
- * silhouette, where a surface turns away AND where one surface ends in front
- * of another — so a slant threshold would be exactly as wrong as the raw depth
- * one. Only the residual separates them. See design-lab-model.md §11.
- *
- * That last row is the one this exists for. A shading edge is a real image
- * edge belonging to the LIGHT rather than to the object, so a detector is
- * right to find it and ground truth — which models only geometry — is right
- * to call it invented. Scoring them together as "not geometry" throws away
- * the distinction between a detector that is wrong and a detector that is
- * answering a question nobody asked it.
- *
- * Pure JavaScript, no pixels of its own: it is handed decoded rasters and
- * feature records, so every number here is arithmetic a test can check by
- * hand. The unpacking of pt-lab's fixed-point depth lives in the operation,
- * where the buffers are.
- */
 /** The causes, in the order they are tested. First match wins. */
 export const CAUSES: string[];
 export namespace DEFAULTS {

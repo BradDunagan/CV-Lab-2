@@ -1,0 +1,13 @@
+done x-f float
+done y-f float
+done z-f float
+done turn-f float
+done x-f float
+done y-f float
+done z-f float
+done turn-f float
+done test-f float
+stack-2g-f-float-hinged.before-math.json 10 sets 0.105 / 0.047 / 0.054 / 0.029   4 views 0.062 / 0.031 / 0.040 / 0.013  (10/10)
+stack-2g-f-float-joint.before-math.json  10 sets 0.131 / 0.057 / 0.056 / 0.026   4 views 0.058 / 0.020 / 0.026 / 0.011  (10/10)
+stack-2g-f-float-hinged.json             10 sets 0.105 / 0.047 / 0.054 / 0.029   4 views 0.062 / 0.031 / 0.040 / 0.013  (10/10)
+stack-2g-f-float-joint.json              10 sets 0.131 / 0.057 / 0.056 / 0.026   4 views 0.058 / 0.020 / 0.026 / 0.011  (10/10)

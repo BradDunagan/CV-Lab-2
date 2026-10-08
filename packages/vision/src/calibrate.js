@@ -22,6 +22,7 @@
  */
 
 import { solvePosition, solveLifted } from './position.js';
+import { cos, log, sq } from './math.js';
 
 /** The angular unknowns, in degrees; the rest (x, y, z) are millimetres. */
 export const ANGLES = ['turn', 'tipx', 'tipz'];
@@ -60,7 +61,7 @@ export function fitLine(points) {
   const mx = p.reduce((s, [x]) => s + x, 0) / p.length;
   const my = p.reduce((s, [, y]) => s + y, 0) / p.length;
   let sxx = 0, sxy = 0;
-  for (const [x, y] of p) { sxx += (x - mx) ** 2; sxy += (x - mx) * (y - my); }
+  for (const [x, y] of p) { sxx += sq(x - mx); sxy += (x - mx) * (y - my); }
   if (!(sxx > 0)) return null;
   const slope = sxy / sxx;
   return { slope, at0: my - slope * mx };
@@ -210,7 +211,7 @@ export function keysOf(sweepFrames, points = POINTS.both) {
  */
 export function robustSolve(obs0, { prior = null, robust = 0, medianSigma = 1, readingSigma = 0.1,
   liftAxis = 1, hingeOf = hingeFor(false) } = {}) {
-  const obs = prior ? obs0.map((o) => ({ ...o, weight: (o.weight ?? 1) * (medianSigma / readingSigma) ** 2 })) : obs0;
+  const obs = prior ? obs0.map((o) => ({ ...o, weight: (o.weight ?? 1) * sq(medianSigma / readingSigma) })) : obs0;
   let s = solveLifted(obs, { prior, liftAxis });
   if (!(robust > 0)) return s;
   for (let round = 0; round < 5 && s.determined; round++) {
@@ -283,7 +284,7 @@ export function solvePose(used, readings, { pick, sigmaOf = () => null, weights 
 export function gaussians(seed) {
   let x = seed >>> 0;
   const u = () => { x = (Math.imul(x, 1664525) + 1013904223) >>> 0; return (x + 0.5) / 4294967296; };
-  return () => Math.sqrt(-2 * Math.log(u())) * Math.cos(2 * Math.PI * u());
+  return () => Math.sqrt(-2 * log(u())) * cos(2 * Math.PI * u());
 }
 
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[(s.length - 1) >> 1] : null; };
@@ -388,7 +389,7 @@ export function estimatePose(calibration, readings, prior, { readingSigma = 0.1,
   const hingeOf = hingeFor(movingBelow);
   const weightOf = (sigma) => {
     const rel = sigma > 0 && calibration.medianSigma ? sigma / calibration.medianSigma : 1;
-    return 1 / (readingSigma * rel) ** 2;
+    return 1 / sq(readingSigma * rel);
   };
   const obs = used.map((p) => {
     const v = readings.get(p.key);
@@ -400,7 +401,7 @@ export function estimatePose(calibration, readings, prior, { readingSigma = 0.1,
     if (!v?.[2]) continue;
     const predicted = modelAt(p, prior.d, { hingeOf, liftAxis: 1 });
     const jp = p.jacobian.map((_, a) => prior.covariance[a].reduce((acc, c, b) => acc + c * p.jacobian[b], 0));
-    const sigma = Math.sqrt(p.jacobian.reduce((acc, j, a) => acc + j * jp[a], 0) + readingSigma ** 2);
+    const sigma = Math.sqrt(p.jacobian.reduce((acc, j, a) => acc + j * jp[a], 0) + sq(readingSigma));
     const [near, far] = [...v[2]].sort((x, y) => Math.abs(x - predicted) - Math.abs(y - predicted));
     if (Math.abs(far - predicted) - Math.abs(near - predicted) >= 3 * sigma) { obs[i].measured = near; resolved++; } else unresolved++;
   }

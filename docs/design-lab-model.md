@@ -3007,8 +3007,8 @@ view per frame, the median:
   `hypot` and `sqrt` agree -- and Firefox differs from both, `hypot` on 36%.
   The package README had said V8 is consistent with itself; across versions
   it is not. Pre-port item 6 is not about Firefox and Safari: it is needed
-  between rr's browser and cv-lab's Node. The module carries a libm that
-  agrees everywhere, and the JavaScript could call it.
+  between rr's browser and cv-lab's Node. It is rule 7 now: the JavaScript
+  has math of its own, and these differences are gone.
 
 WebKit was not measured: the WebKit build on this machine does not speak the
 protocol of rr's Playwright, and installing a new set of browsers was not
@@ -3258,8 +3258,7 @@ the output where this lab claims *sub-pixel* accuracy.
   (`native/kernels.h`) are the project's own, and replacing them is what made a
   feature list compare equal across platforms at all. `explain` reached for
   `Math.acos` in pure JS and reintroduced the same exposure by a different
-  door — a `cv_acos`-shaped answer exists, and the JS path has no route to it
-  today.
+  door. Rule 7 closed it: the JavaScript has functions of its own now.
 - `segments`, `merge` and `chain` emit `i32` label maps, so a last-bit
   difference only shows up if it flips a threshold comparison. They agree
   today. A pixel sitting exactly at `maxResidual` would not, and then whole
@@ -3369,6 +3368,38 @@ workers too.
 
 The module has an identity the addon lacks: its SHA-256, which a session run
 on it records as `environment.build`.
+
+**7. The JavaScript's math is the package's own, for the reason 3b gives
+the C's.** ECMAScript fixes `+ - * /` and `Math.sqrt` -- binary64, round to
+nearest, no fused multiply-add -- and leaves `Math.sin`, `atan2`, `log`,
+`hypot`, `**` and the rest "implementation-approximated". Engines take the
+licence: over 200,000 inputs each, Chrome 154's V8 and Node 22's disagree on
+3-18% of every transcendental function's results, and Firefox on others,
+`hypot` among them ("A fortieth"). So `corners` gave one hash in cv-lab and
+another in Chrome. `packages/vision/src/math.js` is built from the fixed
+operations alone -- `len2`, `len3`, `atan2`, `asin`, `acos`, `sin`, `cos`,
+`tan`, `log`, `sq` -- within 4 ULP of the engines' over the ranges used, and
+its `atan2` is `cv_atan2` operation for operation, which `test/math.js`
+holds to the C's own output bit for bit (rule 4). The same test fails if an
+engine-approximated call comes back into the package. The six operations
+whose JavaScript called them moved a version: `corners` v2, `explain` v4,
+`match` v2, `fitPairs` v5, `findPairs` v2, `trackPair` v5, and
+`test/determinism.js`'s corner hash with them.
+
+Measured on 2026-10-08: the package's functions give Node's bits in Chrome
+and Firefox on every one of 200,000 inputs per function, where the engines'
+own differ on up to 74,000 (`notes/brads-notes/2026-10-08-math/`); and
+`npm run bench` gives the native hashes for every statement of the pipeline
+in both browsers' workers, at 512, 1024 and 2048 px. The measurements do not move:
+re-analysed with it, the thirty-ninth's float runs give 499 gap readings
+that differ by 7e-8 px at most, none gained or lost, and test-pose errors
+equal to the third decimal.
+
+One exemption, deliberate: `orbitViews` in `gapsweep.js`, which places a
+renderer's camera for a sweep, keeps the engine's `Math`. It measures
+nothing, its output is recorded in `shots.json`, and every run rendered so
+far is checked against those bytes; moving them by a bit would refuse them
+all.
 
 **What remains achievable:** bit-exact results within a machine, and — with
 rules 3 and 3b — across platforms, for the geometry and for every buffer this

@@ -36,6 +36,7 @@
  */
 
 import { solve } from './pairs.js';
+import { sq } from './math.js';
 
 /**
  * @param {{jacobian: number[], reference: number, measured: number, weight?: number}[]} observations
@@ -216,7 +217,7 @@ function solveLifted(observations, { prior = null, liftAxis = 1, iterations = 20
       m += o.jacobian[a] * d0[a] + (o.hinge?.[a] ?? 0) * Math.min(d0[a], 0) + (o.lift?.[a] ?? 0) * d0[liftAxis] * d0[a]
         + (o.liftHinge?.[a] ?? 0) * d0[liftAxis] * Math.min(d0[a], 0);
     }
-    sse += (o.measured - m) ** 2;
+    sse += sq(o.measured - m);
   }
   return { ...s, residualRms: obs.length ? Math.sqrt(sse / obs.length) : null };
 }
