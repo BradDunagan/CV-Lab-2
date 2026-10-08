@@ -87,9 +87,12 @@ hashes. That holds across hosts because:
   on the browser.
 
 Not yet: the JavaScript in `src/` still calls the engine's `Math.hypot`,
-`atan2`, `sin`, `cos` and `acos` in places (pre-port item 6). V8 is consistent
-with itself, so Chrome and Electron agree; Firefox and Safari may not, in the
-last bit.
+`atan2`, `asin`, `tan` and others (pre-port item 6), and engines do not agree
+on them in the last bit -- not even two versions of V8. Over 200,000 inputs,
+Chrome 154 and Node 22 differ on 3-18% of every transcendental function's
+results (only `hypot` and `sqrt` agree), and Firefox differs from both. So
+today `corners` gives a different hash in Chrome, and `fitPairs` and
+`trackPair` too in Firefox, while every C kernel matches everywhere.
 
 A host should record `backend.build` (the module's SHA-256) in each session,
 and keep the frames it measured, or their hashes: a path-traced frame is not

@@ -92,6 +92,9 @@ scripts/response.js  a camera's response curve, measured from an exposure
                      bracket, for load(curve=) to undo
 scripts/believed-truth.js  a run's ground truth again, the part where it is
                      believed to be, for gap-sweep --identify (needs a GPU)
+scripts/bench.js     what a frame costs, per statement: the addon, the module,
+                     and the module in browsers' Web Workers (bench-core.mjs
+                     runs in all of them; bench-worker.mjs is the Worker)
 pt-lab/              the path tracer + scene editor library, TypeScript, moved in
                      from its own repository — see pt-lab/README.md
 src/generate/        the generator: page (bundled separately) + main-process
@@ -138,6 +141,8 @@ npm run generate -- --float ...      # each PNG's samples as linear float too, <
 npm run degrade -- generated/<run> generated/<run>-noisy --gain 2000   # a camera's image
 npm run response -- --out <curve.json> a.png@0.5 b.png@1 c.png@2   # its response curve
 npm run believed-truth -- generated/<run> generated/<new> --mm 0.5   # edges where it is believed
+npm run bench -- <frames.pfm> --carry <carry-commands.json>   # ms a frame, per backend
+                        # (--browsers chromium,firefox --playwright ../rr/node_modules)
 npm run build:native    # compile the addon
 npm run build:wasm      # the same C as WebAssembly, into packages/vision/wasm/ -- commit
                         # it (--fetch: the pinned wasi-sdk; --check: rebuild
@@ -394,5 +399,12 @@ cost nothing; one stop over, they cost five to eight times the error and float
 frames nothing. Two renders of the same shots move hinged x 0.026 -> 0.067 mm,
 more than the input route does: compare analyses on the same renders.
 
+What a frame costs ("A fortieth", `npm run bench`): 2.2 s a view at 512 px,
+6.3 at 1024, 16 at 2048, and 90-95% of it is the JavaScript pair fits
+(`findPairs`, `trackPair`); the C is under 6%, so the module costs 1-2% over
+native and the native build is never needed for speed. The C gives the same
+hashes in Chrome and Firefox; the JavaScript does not -- even Chrome's V8 and
+Node's disagree on `Math.asin`, `atan2`, `exp` -- which is pre-port item 6.
+
 Still open: the moving-below x; a real camera's bracket; predicting a part's
-edges fast enough for a loop, without a path tracer.
+edges fast enough for a loop, without a path tracer; the pair fits' speed.
