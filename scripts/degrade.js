@@ -12,6 +12,8 @@
  *   --k1 <x>       radial distortion, r normalised to half the width: an
  *                  output pixel shows the scene at r(1 + k1 r^2)     (0)
  *   --blur <px>    Gaussian sigma of the optics                       (0)
+ *   --exposure <x> light times x before the sensor, clipped at full
+ *                  scale: a bracket for npm run response         (1)
  *   --gain <e>     electrons at full scale: shot noise sd sqrt(v/gain) (off)
  *   --read <x>     read noise sd, as a fraction of full scale         (0)
  *   --gamma <g>    encode with v^(1/g) instead of sRGB; the lab decodes
@@ -46,7 +48,7 @@ const zlib = require('node:zlib');
 const { encodePNG, decodePNG } = require('./png');
 
 const [src, dst, ...rest] = process.argv.slice(2);
-const opts = { k1: 0, blur: 0, gain: 0, read: 0, gamma: 0, scurve: 0, seed: 1, interp: 'bilinear', downsample: 1 };
+const opts = { k1: 0, blur: 0, exposure: 1, gain: 0, read: 0, gamma: 0, scurve: 0, seed: 1, interp: 'bilinear', downsample: 1 };
 for (let i = 0; i < rest.length; i += 2) {
   const k = rest[i].replace(/^--/, '');
   if (!(k in opts)) { console.error(`unknown option ${rest[i]}`); process.exit(2); }
@@ -138,7 +140,7 @@ function degrade({ width: W0, height: H0, channels: nc, data: rgba }) {
       }
     }
     for (let i = 0; i < w * h; i++) {
-      let v = img[i];
+      let v = img[i] * opts.exposure;
       const sd = Math.sqrt((opts.gain ? Math.max(v, 0) / opts.gain : 0) + opts.read * opts.read);
       if (sd > 0) v += gauss() * sd;
       v = Math.max(0, Math.min(1, v));

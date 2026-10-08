@@ -220,6 +220,41 @@ async function run() {
     for (const h of [direct, asSrgb, converted]) native.bufferRelease(h);
   });
 
+  await test('load with a response curve: the table exactly, and toSrgb\'s value when as=srgb', async () => {
+    /*
+     * A measured curve (npm run response) replaces `from`. Every code goes
+     * through the table into f32 -- the point of measuring is not to round
+     * the light it recovers back into 8 bits -- and as=srgb is the toSrgb
+     * kernel's own value, so the two routes to an encoded value agree.
+     * Checked on every byte, and the file's own declaration is not consulted.
+     */
+    const rgba = new Uint8ClampedArray(256 * 4);
+    for (let i = 0; i < 256; i++) {
+      rgba[i * 4] = i; rgba[i * 4 + 1] = 255 - i; rgba[i * 4 + 2] = i; rgba[i * 4 + 3] = 255;
+    }
+    const table = Array.from({ length: 256 }, (_, u) => (u / 255) ** 3 * 0.9 + u * 1e-4);
+    const files = { 'c.json': JSON.stringify({ linear: table }), 'bad.json': JSON.stringify({ linear: table.map((v, u) => (u === 99 ? 0 : v)) }) };
+    const reg = createRegistry({
+      decodeFile: async () => ({ width: 256, height: 1, pixels: rgba, declared: 'linear', detail: 'gAMA 1.0' }),
+      readTextFile: async (p) => files[p],
+    });
+    const kernel = reg.get('load').kernel;
+    const lin = (await kernel({ params: { path: 'x.png', from: 'srgb', as: 'linear', curve: 'c.json' } })).handle;
+    const enc = (await kernel({ params: { path: 'x.png', from: 'srgb', as: 'srgb', curve: 'c.json' } })).handle;
+    assert.equal(native.bufferInfo(lin).space, 'linear');
+    assert.equal(native.bufferInfo(enc).space, 'srgb');
+    const a = native.bufferRead(lin);
+    for (let i = 0; i < 256; i++) {
+      assert.ok(Object.is(a[i * 3], Math.fround(table[i])), `code ${i}: ${a[i * 3]} for ${table[i]}`);
+      assert.ok(Object.is(a[i * 3 + 1], Math.fround(table[255 - i])), `code ${255 - i}, green`);
+    }
+    const viaKernel = native.runKernel('toSrgb', [lin], {});
+    const b = native.bufferRead(enc), c = native.bufferRead(viaKernel);
+    for (let i = 0; i < b.length; i++) assert.ok(Object.is(b[i], c[i]), `element ${i}: ${b[i]} vs ${c[i]}`);
+    await assert.rejects(kernel({ params: { path: 'x.png', from: 'srgb', as: 'linear', curve: 'bad.json' } }), /linear\[99\] < linear\[98\]/);
+    for (const h of [lin, enc, viaKernel]) native.bufferRelease(h);
+  });
+
   await test('the reduction in stats does not depend on tile boundaries', () => {
     /*
      * §5 rule 1. `stats` accumulates per fixed-size tile and combines tiles in

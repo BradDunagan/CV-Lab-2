@@ -7,7 +7,9 @@ POOL=(--carry-from results/stack-2g-x$SUFFIX/pairs --carry-from results/stack-2g
 # NOPOOL=1: each run's own frames, for a first pass over runs whose records
 # do not exist yet.
 [[ -n $NOPOOL ]] && POOL=()
-COMMON=(--scene saved:stack-2 --moving Cube2 --target Cube --yaw 35,60 --elevation 20,50 --script pipelines/pairs.lab --carry --skip-render $POOL)
+# CURVE=<file>: load through a measured response curve (npm run response).
+CURVEOPT=(); [[ -n $CURVE ]] && CURVEOPT=(--curve $CURVE)
+COMMON=(--scene saved:stack-2 --moving Cube2 --target Cube --yaw 35,60 --elevation 20,50 --script pipelines/pairs.lab --carry --skip-render $POOL $CURVEOPT)
 TEST="1.5,5,-1,0;-2,3,2,0;0.7,6,1.3,0;-1.2,4.5,-2.5,0;2.5,2.5,0.8,0;1,4,-1,1.5;-1.5,5,1.5,-2;0.5,3,-0.5,2.5;-0.8,6,2.2,-1;2,4.5,0,-3"
 for r in "$@"; do
   case $r in

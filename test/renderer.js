@@ -1312,8 +1312,8 @@ app.whenReady().then(async () => {
 
   test('load decodes to a 3-channel f32 buffer tagged srgb', () => {
     assert.deepEqual(r.loadShape, [2, 2, 3, 'f32', 'srgb']);
-    // params sort alphabetically in the canonical form: as, from, path
-    assert.match(r.loadText, /^load\(as=srgb, from=srgb, path=/);
+    // params sort alphabetically in the canonical form: as, curve, from, path
+    assert.match(r.loadText, /^load\(as=srgb, curve="", from=srgb, path=/);
   });
 
   test('decoded values are exact', () => {

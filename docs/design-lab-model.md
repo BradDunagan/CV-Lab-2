@@ -871,10 +871,12 @@ cannot be recovered. A direct render was the measurement; the inversion was
 an estimate.
 
 **Real cameras have the same problem,** a response curve applied after the
-sensor integrates light over each pixel. Undoing a measured response on load,
-with a `from=` that names a curve, is the general fix. It is not built. (A
-gamma left in costs nothing, a contrast curve four to nine times the error,
-and the curve undone none: "A thirty-sixth".)
+sensor integrates light over each pixel. Undoing a measured response on load
+is the general fix, and it is built: `npm run response` measures the curve
+from an exposure bracket and `load(curve=)` undoes it. (A gamma left in costs
+nothing, a contrast curve whose shoulder the lit faces reach four to nine
+times the error, and the curve undone none, so long as nothing clips at 255:
+"A thirty-sixth", "A thirty-seventh".)
 
 #### A fifth: two edges close together displace each other
 
@@ -2767,6 +2769,81 @@ can supply with a known curve to check against, and a real camera only to
 confirm.
 
 (`notes/brads-notes/2026-10-07-scurve/`: `run.sh`, `invert.js`, `undo.sh`.)
+
+(Corrected by the thirty-seventh: most of the four to nine times is the lit
+faces pressed into the curve's flat top, not the curve. One stop under, the
+k = 6 curve left in costs 1.5 times.)
+
+#### A thirty-seventh: a camera's curve, measured and undone on load
+
+The thirty-sixth left two things unbuilt, and both are now:
+`load(..., curve="<file>")` (and `lab-cli --curve`, `gap-sweep --curve`)
+takes a table of the linear light each 8-bit code stands for, in place of
+`from`, straight into f32; `npm run response` measures that table from an
+exposure bracket -- the same still scene at three or more known exposures --
+by Debevec and Malik's least squares on log light, each pixel's own light
+eliminated so the system is 256 x 256. `degrade --exposure` makes a bracket
+from a render, so the true curve is known: five shots, 0.25 to 4, of one
+frame of the stack-2g test poses.
+
+The load path first, with the exact inverse written as a curve file: k = 3
+and k = 6 give 0.026 and 0.030 mm in x (hinged, four views), what the 8-bit
+rewrite of the thirty-sixth gave. Then the measured curves, the same runs and
+solves, x / y / z mm and turn degrees:
+
+| curve undone with | hinged | joint |
+|---|---|---|
+| S k = 3, left in | 0.236 / 0.103 / 0.181 / 0.022 | 0.105 / 0.039 / 0.047 / 0.035 |
+| S k = 3, measured | 0.026 / 0.019 / 0.024 / 0.020 | 0.069 / 0.026 / 0.029 / 0.021 |
+| S k = 6, left in | 0.245 / 0.183 / 0.200 / 0.030 | 0.134 / 0.119 / 0.129 / 0.048 |
+| S k = 6, exact | 0.030 / 0.024 / 0.026 / 0.017 | 0.062 / 0.028 / 0.029 / 0.019 |
+| S k = 6, measured | 0.234 / 0.110 / 0.191 / 0.026 | 0.120 / 0.042 / 0.057 / 0.031 |
+| S k = 6, measured, code 255 set to the truth | 0.031 / 0.025 / 0.024 / 0.018 | 0.060 / 0.027 / 0.027 / 0.020 |
+| *one stop under (exposure 0.5)* | | |
+| no curve | 0.026 / 0.021 / 0.023 / 0.019 | 0.063 / 0.024 / 0.029 / 0.021 |
+| S k = 6, left in | 0.038 / 0.029 / 0.033 / 0.013 | 0.034 / 0.026 / 0.039 / 0.013 |
+| S k = 6, measured | 0.024 / 0.020 / 0.024 / 0.019 | 0.062 / 0.026 / 0.024 / 0.020 |
+
+(The measured curves here are from noise-free brackets, `--smooth 10`.)
+
+- **A measured curve does the whole job wherever nothing clips.** Over
+  codes 1 to 254 it is within 0.1% of the truth, and k = 3, or k = 6 one
+  stop under, come out as the clean renders do.
+- **Code 255 cannot be measured, and at k = 6 it is everything.** The
+  stack's lit faces sit in the curve's flattened top: 0.9% of all pixels at
+  255, 4.2% at 250 or above. Light that reached 255 in every shot is known
+  only to be at least so much; the fit extrapolates it 7 to 14% low, and that
+  one value moved every tracked gap 0.06 px and x by 0.2 mm. Set to the
+  truth, the rest of the measured curve gives the exact result. So the
+  remedy is the camera's: **expose so that what is measured stays below
+  255.** One stop under, nothing reaches it and nothing is lost.
+- **That also corrects the thirty-sixth.** Its four to nine times was mostly
+  the shoulder: one stop under, the k = 6 curve left in costs 1.5 times
+  (0.038 against 0.026), and nothing undone.
+- **Three things that were tried and did not help.** Pinning code 0 to black
+  was suspected of the k = 6 shortfall, wrongly: the readings did not move
+  (it is kept, because a response curve's foot is at zero light). Sampling
+  more pixels does not reduce the curve's error, and weighting the codes
+  evenly instead of by Debevec's hat does not fix the top: neither reaches
+  code 255. Smoothing does help: `--smooth` 1 left a 1% ripple with a period
+  of about fifty codes, quantization showing through, and 10 takes it to
+  0.1%; 10 is the default.
+- **Noise biases a measured curve.** From a bracket with shot noise (gain
+  2000) the curve is 0.7 to 1% off and no smoothing removes it: an 8-bit
+  code averaged over noise is not the curve at the average light. At
+  exposure 1 that is lost under the clipping (k = 6: 0.249 mm, left in
+  0.241, noise alone 0.058). One stop under, with the same noise in the
+  images as in the bracket -- the case a camera presents -- it costs little:
+
+  | one stop under, shot noise | hinged | joint |
+  |---|---|---|
+  | no curve | 0.025 / 0.025 / 0.026 / 0.021 | 0.062 / 0.028 / 0.028 / 0.017 |
+  | S k = 6, left in | 0.095 / 0.046 / 0.043 / 0.017 | 0.034 / 0.026 / 0.034 / 0.015 |
+  | S k = 6, measured from the noisy bracket | 0.031 / 0.024 / 0.026 / 0.020 | 0.058 / 0.028 / 0.028 / 0.018 |
+
+(`notes/brads-notes/2026-10-07-curve/`: `bracket.sh`, `measured.sh`,
+`exact.js`, `compare.js`, `noisy.sh`, `stop.sh`, `stopnoisy.sh`, and their
+logs.)
 
 #### What twenty-four views measured
 

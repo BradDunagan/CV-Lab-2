@@ -66,7 +66,10 @@ scripts/servo.js     a closed loop: estimate, command a correction, render
                      where a simulated robot really put the part, down to
                      contact (needs a GPU)
 scripts/degrade.js   a rendered run made to look like a camera's: noise,
-                     blur, lens distortion, a response curve left in
+                     blur, lens distortion, a response curve left in, an
+                     exposure bracket
+scripts/response.js  a camera's response curve, measured from an exposure
+                     bracket, for load(curve=) to undo
 pt-lab/              the path tracer + scene editor library, TypeScript, moved in
                      from its own repository — see pt-lab/README.md
 src/generate/        the generator: page (bundled separately) + main-process
@@ -90,7 +93,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — nineteen suites, ~578 tests
+npm test                # everything — nineteen suites, ~581 tests
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -108,6 +111,7 @@ npm run position -- --x <dir> --y <dir> --z <dir>   # where the part is, from se
                                     #  --calibrate hinged: no truth, the ledge one-sided)
 npm run servo -- --name a --calibration <file> --start x,y,z,turn   # estimate drives motion
 npm run degrade -- generated/<run> generated/<run>-noisy --gain 2000   # a camera's image
+npm run response -- --out <curve.json> a.png@0.5 b.png@1 c.png@2   # its response curve
 npm run build:native    # compile the addon
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run check:pt-lab    # type-check pt-lab/ — the build strips types unchecked
@@ -165,10 +169,12 @@ the table edge's share of the gap sweep's bias. `npm run generate --
   not gloss (a matte red cube keeps it), and not "toward the darker side". It
   tracks the face against the gap behind it. Closed unexplained by decision
   (`design-lab-model.md` §5): the 1-2 mm blur push-apart is 5-10x larger;
-- undoing a real camera's response curve on load. A gamma left in costs
-  nothing; a contrast S-curve costs four to nine times the error, and undone
-  with the curve known costs nothing again ("A thirty-sixth"). Not built: the
-  load option, and measuring a camera's curve.
+- a real camera's response curve is built for, not yet met: `npm run
+  response` measures it from an exposure bracket and `load(curve=)` undoes
+  it, which gives the clean result wherever nothing reaches code 255. Clipped
+  white cannot be measured, and under a strong S-curve the lit faces reach
+  it: expose a stop under ("A thirty-sixth", "A thirty-seventh"). Untested:
+  a real camera's bracket, and a curve that differs by channel;
 
 The AOV passes are consumed now: `explain` says what put each detection in the
 picture, and **111 of 123 invented segments turned out to be shading** — the
@@ -335,5 +341,8 @@ above it is 0.03, unexplained. A light search costs 14 positions a
 candidate, not 35, and nothing in one frame tells the lights apart (the
 thirtieth).
 
-Still open: the moving-below x; and a camera's response curve, undone on
-load.
+A camera's response curve is measured from an exposure bracket (`npm run
+response`) and undone on load (`load(curve=)`, `--curve`); it gives the clean
+result back wherever nothing clips at 255 ("A thirty-seventh").
+
+Still open: the moving-below x; a real camera's bracket.
