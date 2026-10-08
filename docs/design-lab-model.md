@@ -2845,6 +2845,66 @@ solves, x / y / z mm and turn degrees:
 `exact.js`, `compare.js`, `noisy.sh`, `stop.sh`, `stopnoisy.sh`, and their
 logs.)
 
+#### A thirty-eighth: which edge is which part, from where the part is believed to be
+
+Every reading so far used the renderer's truth for one thing: deciding which
+detected edge is the moving part's and which the still part's, and where
+along the pair the gap is read. The reading itself never used it. A robot has
+no renderer's truth; it has the parts' geometry and where it believes they
+are. `npm run believed-truth` renders exactly that -- each shot's ground truth
+again with the moving part at its true pose plus a seeded error, one error per
+pose shared by every view of it -- and `gap-sweep --identify <dir>`
+identifies the edges and places the measuring points from it, keeping the
+real truth for scoring only: each row's true gap is the real lines' gap at
+the point the belief chose, so the error reported is the reading's, not the
+belief's. The stack-2g sweeps and test poses, pooled and solved as before,
+four views, x / y / z mm and turn degrees:
+
+| identified from | hinged | joint |
+|---|---|---|
+| the truth | 0.026 / 0.019 / 0.023 / 0.019 | 0.065 / 0.024 / 0.026 / 0.021 |
+| a belief 0.5 mm, 0.3° off (sd) | 0.027 / 0.021 / 0.029 / 0.014 | 0.064 / 0.028 / 0.034 / 0.016 |
+| a belief 1.5 mm, 1° off | 0.051 / 0.039 / 0.052 / 0.024 | 0.059 / 0.034 / 0.046 / 0.028 |
+| ...the test poses again, from the first solve | 0.047 / 0.032 / 0.045 / 0.016 | 0.057 / 0.030 / 0.037 / 0.017 |
+| sweeps at 0.5 mm, test poses at 1.5 mm | 0.028 / 0.037 / 0.044 / 0.020 | 0.066 / 0.042 / 0.056 / 0.019 |
+| ...the test poses again, from the first solve | 0.030 / 0.028 / 0.033 / 0.013 | 0.067 / 0.035 / 0.043 / 0.018 |
+
+- **At half a millimetre nothing is lost.** The predicted gaps sit a median
+  0.4 to 0.65 px from the real ones (up to 1.4), one test pose predicts an
+  overhang where there is a gap, and the answer is the truth's.
+- **At 1.5 mm and 1° no reading goes wrong; they move.** Every tracked
+  reading is still there, and its error against the real lines is what it
+  was (median 0.04 to 0.07 px, the largest 0.25, as with the truth). What
+  goes is the detections' match to the moving part's predicted edge, 42 rows
+  of 269 against 10, and those were not what the solve used. The cost is
+  where the readings are taken: the middle and the sixths of a pair placed
+  by the belief, a median 1.2 to 1.7 px from the real ones. Read at a place
+  that moves from pose to pose, a gap that varies along the pair looks like
+  motion. (This is consistent with the numbers and was not isolated.)
+- **The cost is the calibration's, not the test poses'.** Calibrated from
+  sweeps identified at 0.5 mm, test poses believed 1.5 mm off cost little in
+  x, and identifying them a second time from where the first solve put them
+  -- what a loop does anyway -- brings y and z back too: 0.030 / 0.028 /
+  0.033 mm. From 1.5 mm sweeps the second identification gains little. So a
+  calibration sweep wants its belief within about half a millimetre; a
+  robot's commanded sweep, every step from one start, is a constant offset
+  plus its repeatability, which is better than the random half millimetre a
+  step tried here.
+- **What it costs is not accuracy but time.** pt-lab renders a believed
+  truth at about 20 s a shot, as it renders anything. The edges a part shows
+  from a pose are geometry: its silhouette and creases projected, with
+  occlusion. A loop wants that in milliseconds, not from a path tracer.
+
+The end readings' truth (`endsTruePx`) is also the real lines' now, at the
+believed sixths; the runs above were analysed before that was so, which
+touches only the solve's `truth` column, not `carried`. Two solves with the
+sweeps at 0.5 mm and the test poses identified from the truth itself are in
+`mixed.log` and not in the table: those test poses held still edges pooled
+from other sweeps, so they differ in two ways at once.
+
+(`notes/brads-notes/2026-10-08-identify/`: `run.sh`, `second.sh`,
+`b15-solved-errors.json`, and the logs.)
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

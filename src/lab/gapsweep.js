@@ -400,7 +400,58 @@ function gapRows(input, shot, parts, options = {}) {
       };
     });
   }
-  return found.map((pair, k) => ({ ...rowFor({ ...base }, pair, input, parts, opts), pair: k + 1 }));
+  const rows = found.map((pair, k) => ({ ...rowFor({ ...base }, pair, input, parts, opts), pair: k + 1 }));
+  return opts.scoreTruth ? rows.map((r, k) => scoredAgainst(r, found[k], opts.scoreTruth, shot, parts, opts)) : rows;
+}
+
+/**
+ * A row whose edges were identified from PREDICTED truth -- the parts'
+ * edges where the system believes they are (`gap-sweep --identify`) --
+ * scored against the real truth instead. The readings do not change: which
+ * detection is which part's, and where along the pair the gap is read, were
+ * the prediction's to decide, as they would be in rr. Only what they are
+ * compared with does. The true gap is the real edges' gap at the predicted
+ * measuring point, so a belief that slides the point along a turned pair
+ * does not count as reading error.
+ *
+ * The real pair is the one whose target edge passes nearest that point,
+ * parallel within maxAngle; none within SCORE_MATCH px, and the row's true
+ * gap is unknown -- unless the shot is at contact, where it is zero.
+ */
+const SCORE_MATCH = 10;
+function scoredAgainst(row, predicted, realTruth, shot, { moving, target }, opts) {
+  const T = predicted.facing;
+  let best = null;
+  for (const c of facingCandidates(realTruth, moving, target, separation(shot), opts)) {
+    const b = line(c.b);
+    if (angleBetween(b, line(predicted.b)) > opts.maxAngle) continue;
+    const off = Math.abs(dot(sub(T.at, b.p0), b.n));
+    if (off <= SCORE_MATCH && (!best || off < best.off)) best = { off, c };
+  }
+  const read = best ? measureAt(line(best.c.a), line(best.c.b), T) : null;
+  const contact = shot.gapMm === 0 && shot.separationMm === undefined;
+  const real = read ? read.gap : contact ? 0 : null;
+  // The ends are read where the BELIEVED pair puts them, a sixth in; their
+  // truth is the real lines' gap at those same places.
+  const ends = best ? endPoints(T).map((at) => measureAt(line(best.c.a), line(best.c.b), { ...T, at })?.gap ?? null)
+    : contact ? [0, 0] : null;
+  const shift = (e) => (e === null || e === undefined ? e : real === null ? null : e + T.gap - real);
+  const tracked = row.tracked && {
+    ...row.tracked,
+    errorPx: shift(row.tracked.errorPx),
+    ...(row.tracked.hypotheses ? { hypotheses: row.tracked.hypotheses.map((h) => ({ ...h, errorPx: shift(h.errorPx) })) } : {}),
+  };
+  return {
+    ...row,
+    trueGapPx: real,
+    believedGapPx: T.gap,
+    endsTruePx: ends,
+    errorPx: shift(row.errorPx),
+    refit: row.refit && { ...row.refit, errorPx: shift(row.refit.errorPx) },
+    tracked,
+    truthPair: best ? [best.c.a.id, best.c.b.id] : null,
+    identifiedFrom: 'believed',
+  };
 }
 
 /**

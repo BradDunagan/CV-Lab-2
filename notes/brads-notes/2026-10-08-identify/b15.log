@@ -1,0 +1,7 @@
+generated/believed/stack-2g-x-b15: 28 shots, 7 believed poses (sd 1.5 mm, 1 deg)
+generated/believed/stack-2g-y-b15: 24 shots, 6 believed poses (sd 1.5 mm, 1 deg)
+generated/believed/stack-2g-z-b15: 28 shots, 7 believed poses (sd 1.5 mm, 1 deg)
+generated/believed/stack-2g-turn-b15: 20 shots, 5 believed poses (sd 1.5 mm, 1 deg)
+generated/believed/stack-2g-test-b15: 40 shots, 10 believed poses (sd 1.5 mm, 1 deg)
+stack-2g-b15-joint.json                  10 sets 0.068 / 0.042 / 0.052 / 0.036   4 views 0.059 / 0.034 / 0.046 / 0.028  (10/10)
+stack-2g-b15-hinged.json                 10 sets 0.067 / 0.045 / 0.059 / 0.032   4 views 0.051 / 0.039 / 0.052 / 0.024  (10/10)

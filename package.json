@@ -34,6 +34,7 @@
     "servo": "node scripts/servo.js",
     "degrade": "node scripts/degrade.js",
     "response": "node scripts/response.js",
+    "believed-truth": "node scripts/believed-truth.js",
     "generate": "electron scripts/generate-cli.js",
     "start": "npm run build:renderer && electron .",
     "dev": "npm run rebuild:electron && npm run build:renderer && electron .",

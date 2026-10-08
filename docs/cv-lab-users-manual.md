@@ -1804,6 +1804,21 @@ instead of overwriting it. The pipeline script is recorded and checked the same
 way. Under the hood it hands the generator a shot
 list with `npm run generate -- --shots <file>`, which any other sweep can use.
 
+**`--identify <dir>` says which edge is which part from a belief, not the
+truth.** `<dir>` is a believed truth, `npm run believed-truth` made from the
+same run: each shot's ground truth rendered again with the moving part where
+the robot believes it is, its true pose moved by a seeded error (`--mm`,
+`--deg`, sd; `--seed`), one error per pose for every view of it, or by given
+errors (`--errors <file>`, `{"pose 1": {"mm": [x, y, z], "deg": t}}`, for
+example a first solve's estimate less the truth). The lab is run against it,
+so it decides which detection is which part and where the gap is read; the
+real truth is used only to score, as the real lines' gap at the point the
+belief chose, and the row carries `believedGapPx` beside `trueGapPx`. The
+record names the directory and hashes its truth files. On the stack a belief
+0.5 mm off costs nothing; 1.5 mm costs the calibration sweeps up to twice
+their error, and test poses nothing once identified again from a first solve
+(`design-lab-model.md` §5, "A thirty-eighth"). It takes about 20 s a shot.
+
 ### `npm run position`
 
 ```bash

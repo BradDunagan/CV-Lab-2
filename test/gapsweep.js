@@ -245,6 +245,43 @@ test('a ledge table with the moving part below: the lift is its drop, and the le
   assert.equal(movingBelow({ poses: [{ mm: [1, 2, 0] }] }), false);
 });
 
+test('identified from a believed pose, scored against the real truth: the readings stay, the true gap moves', () => {
+  /*
+   * The belief has the cube 1 px too high (its edge at y=99) and the table
+   * where it is. The tracked reading is the same 10.1 px whichever truth
+   * identified it; against the real truth -- a 10 px gap -- it is 0.1 px
+   * long, not 1.1 px.
+   */
+  const believed = [gt(1, ['Cube'], 100, 99, 200, 99), gt(2, ['Table'], 50, 110, 250, 110)];
+  const tracks = [trackRecord([60, 110.2, 240, 110.2], [60, 100.1, 240, 100.1], [150, 90])];
+  const input = { truth: believed, segments: [], explained: [], matches: [miss(1), miss(2)], tracks };
+  const [plain] = gapRows(input, { gapMm: 8 }, PARTS);
+  assert.ok(Math.abs(plain.tracked.errorPx + 0.9) < 1e-9, `against the belief ${plain.tracked.errorPx}`);
+  const [row] = gapRows(input, { gapMm: 8 }, PARTS, { scoreTruth: TRUTH });
+  assert.equal(row.identifiedFrom, 'believed');
+  assert.ok(Math.abs(row.tracked.gapPx - 10.1) < 1e-9, 'the reading is not touched');
+  assert.ok(Math.abs(row.trueGapPx - 10) < 1e-9, `true ${row.trueGapPx}`);
+  assert.ok(Math.abs(row.believedGapPx - 11) < 1e-9, `believed ${row.believedGapPx}`);
+  assert.ok(Math.abs(row.tracked.errorPx - 0.1) < 1e-9, `error ${row.tracked.errorPx}`);
+  assert.deepEqual(row.truthPair, [1, 2]);
+  // The ends too: read where the belief puts them, true by the real lines.
+  assert.ok(row.endsTruePx.every((e) => Math.abs(e - 10) < 1e-9), `ends ${row.endsTruePx}`);
+  // ...and by the real lines' own slope where they are not parallel.
+  const tilted = [gt(1, ['Cube'], 100, 99, 200, 101), gt(2, ['Table'], 50, 110, 250, 110)];
+  const [slant] = gapRows(input, { gapMm: 8 }, PARTS, { scoreTruth: tilted });
+  assert.ok(slant.endsTruePx[0] > slant.endsTruePx[1], `ends ${slant.endsTruePx}`);
+  // A real truth with nothing near the believed pair: the true gap is unknown away from contact, zero at it.
+  const far = [gt(1, ['Cube'], 100, 40, 200, 40), gt(2, ['Table'], 50, 50, 250, 50)];
+  const [lost] = gapRows(input, { gapMm: 8 }, PARTS, { scoreTruth: far });
+  assert.equal(lost.trueGapPx, null);
+  assert.equal(lost.tracked.errorPx, null);
+  assert.equal(lost.endsTruePx, null);
+  const [touching] = gapRows(input, { gapMm: 0 }, PARTS, { scoreTruth: far });
+  assert.equal(touching.trueGapPx, 0);
+  assert.ok(Math.abs(touching.tracked.errorPx - 10.1) < 1e-9);
+  assert.deepEqual(touching.endsTruePx, [0, 0]);
+});
+
 test('where the truth has no facing pair a track is still a row, and at contact its gap is its error', () => {
   // Only the table's edge in the truth: nothing faces it.
   const truth = [gt(2, ['Table'], 50, 110, 250, 110)];

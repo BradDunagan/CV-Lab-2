@@ -41,6 +41,7 @@ const { movingBelow } = require('./ledge');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { resolveScene } = require('../src/generate/driver');
+const { readGroundTruth } = require('../src/lab/groundtruth');
 const { gapRows, numberPairs, pxPerMm, pxPerMmSlope, changedInputs, orbitViews } = require('../src/lab/gapsweep');
 
 const ROOT = path.join(__dirname, '..');
@@ -120,6 +121,11 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
   --ledge <file>     hold a ledge in every carried pair: npm run ledge's
                      table, matched by view and the angle a pair runs at.
                      Where it ends follows the frame's COMMANDED lift
+  --identify <dir>   say which detected edge is which part, and where along a
+                     pair the gap is read, from the truth in <dir> -- npm run
+                     believed-truth's, rendered where the robot BELIEVES the
+                     part is -- and keep this run's own truth for scoring
+                     only. What rr has instead of a renderer's truth
   --curve <file>     the camera's response curve, measured by npm run
                      response: each image loaded through it (load's curve=)
                      instead of as sRGB
@@ -153,7 +159,7 @@ function parseArgs(argv) {
     gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], carryFrom: [], size: 512, samples: 96, skipRender: false, overwrite: false,
     script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
     yaw: null, elevation: null, offset: null, poses: null,
-    carry: false, carryMin: 3, ledgeMax: 1.2, ledgeFit: false, ledge: null, ledgeLift: null, curve: null, dryRun: false,
+    carry: false, carryMin: 3, ledgeMax: 1.2, ledgeFit: false, ledge: null, ledgeLift: null, curve: null, identify: null, dryRun: false,
   };
   const list = (s, what) => {
     const v = String(s).split(',').map(Number);
@@ -207,6 +213,7 @@ function parseArgs(argv) {
       case '--ledge-fit': opts.ledgeFit = true; break;
       case '--ledge': opts.ledge = argv[++i]; break;
       case '--curve': opts.curve = argv[++i]; break;
+      case '--identify': opts.identify = argv[++i]; break;
       case '--ledge-lift': opts.ledgeLift = list(argv[++i], '--ledge-lift')[0]; break;
       case '--overwrite': opts.overwrite = true; break;
       case '--script': opts.script = argv[++i]; break;
@@ -333,7 +340,7 @@ function slots(file) {
  * its shot, so these -- not the shot list -- are what make two analyses of
  * one run comparable.
  */
-function inputHashes(gen, shots) {
+function inputHashes(gen, shots, identify = null) {
   const sha = (file) => crypto.createHash('sha256').update(fs.readFileSync(path.join(ROOT, file))).digest('hex');
   return Object.fromEntries(shots.map((s) => {
     const base = s.name.replace(/\.png$/, '');
@@ -343,6 +350,7 @@ function inputHashes(gen, shots) {
       depth: sha(path.join(gen, 'aov', `${base}-depth.png`)),
       normal: sha(path.join(gen, 'aov', `${base}-normal.png`)),
       albedo: sha(path.join(gen, 'aov', `${base}-albedo.png`)),
+      ...(identify ? { believedTruth: sha(path.join(identify, `${base}.gt.json`)) } : {}),
     }];
   }));
 }
@@ -661,9 +669,18 @@ function main() {
   }
 
   const images = shots.map((s) => path.join(gen, s.name));
+  if (opts.identify) {
+    const missing = shots.filter((s) => !fs.existsSync(path.join(ROOT, opts.identify, s.name.replace(/\.png$/, '.gt.json'))));
+    if (missing.length) throw new Error(`--identify ${opts.identify} has no truth for ${missing.length} of these shots, ${missing[0].name} first`);
+  }
+  // With --identify the lab's T is the believed truth; this run's own is for scoring.
+  const realTruthOf = (s) => {
+    const file = path.join(ROOT, gen, s.name.replace(/\.png$/, '.gt.json'));
+    return readGroundTruth(fs.readFileSync(file, 'utf8'), file).features;
+  };
   const lab = (extra = [], only = images) => electron('scripts/lab-cli.js', [
     '--script', opts.script, '--as', 'linear', ...(opts.curve ? ['--curve', path.resolve(ROOT, opts.curve)] : []),
-    '--truth', gen, '--aovs', gen, '--out', res, '--quiet', ...extra, ...only,
+    '--truth', opts.identify ?? gen, '--aovs', gen, '--out', res, '--quiet', ...extra, ...only,
   ]);
   lab();
 
@@ -672,7 +689,9 @@ function main() {
   const analyse = () => {
     // One row per facing pair per shot: a fixture with two pairs -- a cube
     // stacked on a cube -- gets two rows a shot, and each is its own measurement.
-    const perShot = shots.flatMap((s) => gapRows(featuresOf(s), s, parts, opts.maxAngle ? { maxAngle: opts.maxAngle } : {}).map((r) => ({
+    const perShot = shots.flatMap((s) => gapRows(featuresOf(s), s, parts, {
+      ...(opts.maxAngle ? { maxAngle: opts.maxAngle } : {}), ...(opts.identify ? { scoreTruth: realTruthOf(s) } : {}),
+    }).map((r) => ({
       shot: s.name,
       ...(s.view ?? {}),
       ...(s.pose ? { pose: s.pose, poseMm: s.poseMm, turnDeg: s.turnDeg, ...(s.tipDeg ? { tipDeg: s.tipDeg } : {}) } : {}),
@@ -769,7 +788,7 @@ function main() {
   }
   const scale = perKeyScale(gridded, paired, opts) ? null : scales.get(viewKey(rows[0]));
 
-  const inputs = inputHashes(gen, shots);
+  const inputs = inputHashes(gen, shots, opts.identify);
   const recordFile = path.join(ROOT, res, 'gap-sweep.json');
   const script = {
     path: path.relative(ROOT, path.resolve(ROOT, opts.script)),
@@ -787,6 +806,8 @@ function main() {
     ...(gridded ? { views: { yaw: opts.yaw, elevation: opts.elevation } } : {}),
     ...(opts.offset ? { offsetMm: opts.offset } : {}),
     ...(posed ? { poses: opts.poses } : {}),
+    ...(opts.identify ? { identify: { dir: opts.identify,
+      believed: JSON.parse(fs.readFileSync(path.join(ROOT, opts.identify, 'believed.json'), 'utf8')) } } : {}),
     ...(opts.curve ? { curve: { file: path.relative(ROOT, path.resolve(ROOT, opts.curve)),
       sha256: crypto.createHash('sha256').update(fs.readFileSync(path.resolve(ROOT, opts.curve))).digest('hex') } } : {}),
     ...(carry ? { carry: { minPx: carry.minPx, ledgeMax: carry.ledgeMax, sources: carry.sources, missing: carry.missing,

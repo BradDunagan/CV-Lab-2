@@ -21,5 +21,7 @@ for r in "$@"; do
     test*) A=(--poses "$TEST") ;;
   esac
   name=stack-2g-$r$SUFFIX
+  # IDENTIFY=1: edges identified from generated/believed/<name> (npm run believed-truth).
+  [[ -n $IDENTIFY ]] && A+=(--identify generated/believed/$name)
   npm run -s gap-sweep -- --name $name $COMMON $A > /tmp/pool-$r$SUFFIX.log 2>&1 && echo "done $r$SUFFIX" || echo "FAIL $r$SUFFIX"
 done
