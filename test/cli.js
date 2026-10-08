@@ -556,6 +556,27 @@ test('every suite under test/ is syntactically valid', () => {
   });
 }
 
+/* --- npm run bench ----------------------------------------------------- */
+
+test('bench times a float frame on both Node backends, and they agree', () => {
+  const w = 96, data = new Float32Array(w * w * 3);
+  for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) {
+    const inside = x > 30.4 && x < 70.2 && y > 25.7 && y < 66.1;
+    for (let c = 0; c < 3; c++) data[(y * w + x) * 3 + c] = inside ? 0.8 : 0.05;
+  }
+  const frame = path.join(tmp, 'square.pfm');
+  // PFM by hand -- little-endian, rows bottom-up, which this square does not mind.
+  fs.writeFileSync(frame, Buffer.concat([Buffer.from(`PF\n${w} ${w}\n-1.0\n`), Buffer.from(data.buffer)]));
+  const json = path.join(tmp, 'bench.json');
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'bench.js'), frame, '--reps', '1', '--out', json],
+    { encoding: 'utf8', cwd: ROOT });
+  assert.equal(r.status, 0, r.stderr || r.stdout);
+  assert.match(r.stdout, /the same hashes on every backend/);
+  const runs = JSON.parse(fs.readFileSync(json, 'utf8')).runs;
+  assert.deepEqual(runs.map((x) => x.name.split(' ')[0]), ['native', 'wasm']);
+  assert.ok(runs.every((x) => x.results[0].totals.length === 1 && x.results[0].totals[0] > 0));
+});
+
 /* ------------------------------------------------------------------- */
 
 fs.rmSync(tmp, { recursive: true, force: true });

@@ -1032,6 +1032,36 @@ It runs under Electron with no window, for one reason only: `load` borrows
 Chromium's decoder. It drives the same `window.lab` bridge the interface does,
 so the batch path cannot drift from what the app does.
 
+### What a frame costs: `npm run bench`
+
+```bash
+npm run bench -- generated/bench-512 --carry results/<run>/pairs/float/carry-commands.json
+npm run bench -- <frames> --browsers chromium,firefox --playwright ../rr/node_modules \
+    --browser-exe chromium=chrome
+```
+
+Times one frame's measuring pipeline -- `pipelines/pairs.lab` without
+`explain` and `match`, plus each frame's carried `trackPair` commands -- one
+statement at a time, on the native addon and the WebAssembly module under
+Node, and with `--browsers` on the module in a Web Worker in each browser
+Playwright drives (served from a local server, so a 2048 px frame never
+crosses the automation protocol). Frames are `.pfm` files.
+
+| option | |
+|---|---|
+| `--reps <n>` | timed repetitions per frame after a warm-up (default 5); the median is reported |
+| `--carry <file>`, `--scale <k>` | a run's `carry-commands.json`, its pixel coordinates times k for frames rendered larger |
+| `--backends`, `--browsers` | `native,wasm`; `chromium,firefox,webkit` |
+| `--playwright <dir>` | a `node_modules` that holds Playwright (rr's) |
+| `--browser-exe <b>=<path>` | launch a browser from this executable; `chrome` is the installed Google Chrome |
+| `--out <file>` | every repetition of every statement, as JSON |
+
+Every backend must give the same output hashes. One that does not is still
+timed, marked `*`, the statements that differ are listed, and the run exits 1.
+Today the JavaScript statements do differ in browsers, for the reason in
+`design-lab-model.md` §5, "A fortieth", which also has the numbers: the C is
+2.6-5.7% of a frame, and the module costs 1-2% of the frame over native.
+
 ---
 
 ## 6. Generating images

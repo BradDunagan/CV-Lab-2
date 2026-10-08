@@ -2962,6 +2962,61 @@ refused together.
 (`notes/brads-notes/2026-10-08-float/`: `run.sh` -- with `old` and `bright` --
 `pool.sh`, `brighter.mjs`, `compare.js` and its output, and the logs.)
 
+#### A fortieth: what a frame costs, and where
+
+`npm run bench` times one frame's measuring pipeline -- `pipelines/pairs.lab`
+without the lines that score against truth, plus the frame's carried
+`trackPair` commands -- statement by statement, on the native addon, on the
+module under Node, and on the module in a Web Worker in Chrome and Firefox,
+served locally and driven by Playwright as rr's tests drive it. Every backend
+must give the same output hashes, or the run says where it does not. Test pose
+1 of stack-2g, its four views, at 512 (the thirty-ninth's float frames) and
+rendered again at 1024 and 2048; an M-series Mac, nothing else running. Per
+view per frame, the median:
+
+| | 512 | 1024 | 2048 |
+|---|---|---|---|
+| native, Node 22 | 2.22 s | 6.27 s | 16.4 s |
+| module, Node 22 | 2.24 s | 6.43 s | 16.8 s |
+| module, Chrome 154 worker | 1.43 s | 4.29 s | 15.5 s |
+| module, Firefox 144 worker | 4.26 s | 12.8 s | 36.2 s |
+| ...of which the C kernels, native | 56 ms | 222 ms | 884 ms |
+
+- **The native build is never worth having for speed.** The C -- `frame`
+  through `fit` -- is 2.6 to 5.7% of a frame natively. The module runs it
+  1.23 to 1.27 times slower in V8, which is 1 to 2% of the frame; with the C
+  taking no time at all, a frame would be 6% faster at best. rr-desktop runs
+  the module, as rr does.
+- **The frame is JavaScript: the pair fits.** `findPairs`, `trackPair` and
+  `fitPairs` are 90-95% of it at every size, and two-thirds of `findPairs` is
+  one closure, `evaluate` in `fitBand` -- the Gauss-Newton band model, written
+  for generality: closures per pixel, a fresh array per pixel and edge in
+  `clampBound`, `includes()` in the inner loop. Chrome's newer V8 runs it a
+  third faster than Node 22's. It has never been optimised, and that, not a
+  backend, is where a loop's time is: four views at 512 are 9 s a step one
+  after another, about 2 s in four workers.
+- **Firefox runs the module ten times slower than V8**, 703 ms of C a frame
+  at 512 against 56 natively, and its JavaScript at 1.6 times Node's. This is
+  Playwright's own Firefox build (the newest on this machine; a stock Firefox
+  is not), so it is noted rather than concluded on.
+- **The C is bit-identical in every engine; the JavaScript is not.** Every C
+  kernel gave the native hashes in both browsers, at every size. `corners`
+  did not in Chrome, nor `fitPairs`, `findPairs` and `trackPair` in Firefox,
+  on some views. Over 200,000 inputs each, Chrome 154's V8 differs from Node
+  22's on 3-18% of every transcendental `Math` function's results -- only
+  `hypot` and `sqrt` agree -- and Firefox differs from both, `hypot` on 36%.
+  The package README had said V8 is consistent with itself; across versions
+  it is not. Pre-port item 6 is not about Firefox and Safari: it is needed
+  between rr's browser and cv-lab's Node. The module carries a libm that
+  agrees everywhere, and the JavaScript could call it.
+
+WebKit was not measured: the WebKit build on this machine does not speak the
+protocol of rr's Playwright, and installing a new set of browsers was not
+done for this.
+
+(`notes/brads-notes/2026-10-08-bench/`: `run.sh`, the three runs' JSON, and
+`mathprobe.js`.)
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
@@ -3307,8 +3362,10 @@ To make the module possible, what `fitSegments`, `fitArcs` and
 `bufferFromRGBA8` compute moved out of the Node-API layer into
 `native/fits.c`; both surfaces call it, and the addon's hashes did not move.
 What the module does not do: run off the calling thread (a browser host puts
-it in a Worker), or cancel a running kernel. Its speed against the addon is
-pre-port item 5.
+it in a Worker), or cancel a running kernel. In V8 it runs the C
+1.23 to 1.27 times slower than the addon, which is 1-2% of a frame (§5, "A
+fortieth"); the C kernels give the addon's hashes in Chrome's and Firefox's
+workers too.
 
 The module has an identity the addon lacks: its SHA-256, which a session run
 on it records as `environment.build`.

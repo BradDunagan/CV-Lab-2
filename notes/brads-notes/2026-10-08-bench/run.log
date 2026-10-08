@@ -1,0 +1,44 @@
+chromium 154.0.8037.99 worker differs from native (node 22.23.2) on y35-e20-pose-1: C  = corners(F)
+chromium 154.0.8037.99 worker differs from native (node 22.23.2) on y35-e50-pose-1: C  = corners(F)
+chromium 154.0.8037.99 worker differs from native (node 22.23.2) on y60-e50-pose-1: C  = corners(F)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y35-e20-pose-1: C  = corners(F); P  = fitPairs(F, G)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y35-e50-pose-1: C  = corners(F); P  = fitPairs(F, G)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y60-e20-pose-1: C  = corners(F)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y60-e50-pose-1: C  = corners(F); P  = fitPairs(F, G); K1 = trackPair(G, x0=176.169203, y0=241.625750, x1=227.214961, y1=320.708639, towardX=204.972357, towardY=279.049442, stripLevel=0.082995, aperture=1.401833, guess=2.962871, strip=held); K2 = trackPair(G, x0=235.516814, y0=323.704567, x1=337.520558, y1=274.537642, towardX=284.856070, towardY=295.657633, stripLevel=0.070775, aperture=1.336517, guess=1.646419, strip=held)
+4 frame(s), 512x512; 13 statements + 2/2/2/2 carried; median of 5 after a warm-up; HASHES DIFFER, above
+
+backend                             ms/frame  x native   slowest steps (ms)
+native (node 22.23.2)                 2217.5      1.00   findPairs 1467.6, trackPair 361.7, fitPairs 228.2, sobel 15.0
+wasm (node 22.23.2)                   2241.7      1.01   findPairs 1473.5, trackPair 375.0, fitPairs 233.6, sobel 20.0
+chromium 154.0.8037.99 worker *       1425.1      0.64   findPairs 910.3, trackPair 228.7, fitPairs 150.8, sobel 20.8
+firefox 144.0.2 worker *              4256.5      1.92   findPairs 2378.5, trackPair 602.5, fitPairs 390.0, sobel 245.0
+chromium 154.0.8037.99 worker differs from native (node 22.23.2) on y35-e20-pose-1: C  = corners(F)
+chromium 154.0.8037.99 worker differs from native (node 22.23.2) on y35-e50-pose-1: C  = corners(F)
+chromium 154.0.8037.99 worker differs from native (node 22.23.2) on y60-e20-pose-1: C  = corners(F)
+chromium 154.0.8037.99 worker differs from native (node 22.23.2) on y60-e50-pose-1: C  = corners(F)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y35-e20-pose-1: C  = corners(F)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y35-e50-pose-1: C  = corners(F); H  = findPairs(F, G)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y60-e20-pose-1: C  = corners(F)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y60-e50-pose-1: C  = corners(F); P  = fitPairs(F, G); K1 = trackPair(G, x0=352.338406, y0=483.251500, x1=454.429922, y1=641.417278, towardX=409.944714, towardY=558.098884, stripLevel=0.082995, aperture=1.401833, guess=5.925742, strip=held); K2 = trackPair(G, x0=471.033628, y0=647.409134, x1=675.041116, y1=549.075284, towardX=569.712140, towardY=591.315266, stripLevel=0.070775, aperture=1.336517, guess=3.292838, strip=held)
+4 frame(s), 1024x1024; 13 statements + 2/2/2/2 carried; median of 3 after a warm-up; HASHES DIFFER, above
+
+backend                             ms/frame  x native   slowest steps (ms)
+native (node 22.23.2)                 6269.9      1.00   findPairs 4334.7, trackPair 1275.7, sobel 60.0, frame 49.0
+wasm (node 22.23.2)                   6425.4      1.02   findPairs 4415.0, trackPair 1295.5, sobel 79.9, frame 59.1
+chromium 154.0.8037.99 worker *       4288.6      0.68   findPairs 2941.1, trackPair 863.1, sobel 83.2, frame 60.6
+firefox 144.0.2 worker *             12773.5      2.04   findPairs 7058.0, trackPair 2168.0, sobel 980.5, gaussian 570.5
+chromium 154.0.8037.99 worker differs from native (node 22.23.2) on y35-e20-pose-1: C  = corners(F)
+chromium 154.0.8037.99 worker differs from native (node 22.23.2) on y35-e50-pose-1: C  = corners(F)
+chromium 154.0.8037.99 worker differs from native (node 22.23.2) on y60-e20-pose-1: C  = corners(F)
+chromium 154.0.8037.99 worker differs from native (node 22.23.2) on y60-e50-pose-1: C  = corners(F)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y35-e20-pose-1: C  = corners(F)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y35-e50-pose-1: C  = corners(F); P  = fitPairs(F, G)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y60-e20-pose-1: C  = corners(F)
+firefox 144.0.2 worker differs from native (node 22.23.2) on y60-e50-pose-1: C  = corners(F); P  = fitPairs(F, G); K1 = trackPair(G, x0=704.676812, y0=966.503000, x1=908.859844, y1=1282.834556, towardX=819.889428, towardY=1116.197768, stripLevel=0.082995, aperture=1.401833, guess=11.851484, strip=held); K2 = trackPair(G, x0=942.067256, y0=1294.818268, x1=1350.082232, y1=1098.150568, towardX=1139.424280, towardY=1182.630532, stripLevel=0.070775, aperture=1.336517, guess=6.585676, strip=held)
+4 frame(s), 2048x2048; 13 statements + 2/2/2/2 carried; median of 2 after a warm-up; HASHES DIFFER, above
+
+backend                             ms/frame  x native   slowest steps (ms)
+native (node 22.23.2)                16420.3      1.00   findPairs 9076.3, trackPair 5380.0, sobel 239.4, frame 196.3
+wasm (node 22.23.2)                  16757.9      1.02   findPairs 8971.9, trackPair 5424.7, sobel 318.1, frame 236.7
+chromium 154.0.8037.99 worker *      15536.7      0.95   findPairs 8702.7, trackPair 4835.4, sobel 331.9, frame 241.9
+firefox 144.0.2 worker *             36210.0      2.21   findPairs 14168.3, trackPair 8896.5, sobel 3924.8, gaussian 2288.0

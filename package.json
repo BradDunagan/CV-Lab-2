@@ -49,7 +49,8 @@
     "test:readme": "node test/readme.js",
     "test": "npm run test:native && npm run test:lab && npm run test:determinism && npm run test:wasm && npm run test:readme && npm run test:renderer && npm run test:cli",
     "test:renderer": "electron test/renderer.js",
-    "test:cli": "node test/cli.js"
+    "test:cli": "node test/cli.js",
+    "bench": "node scripts/bench.js"
   },
   "author": "Brad Dunagan <brad.dunagan@gmail.com>",
   "devDependencies": {
