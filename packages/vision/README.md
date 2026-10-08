@@ -14,10 +14,10 @@ kernels come as `wasm/cvlab.wasm`: 72 KB, importing nothing.
 import { loadWasm, createRegistry, Session } from '@cv-lab/vision';
 
 const backend = await loadWasm(new URL('@cv-lab/vision/cvlab.wasm', import.meta.url));
-const registry = createRegistry({ backend, decodeFile, readTextFile });
+const registry = createRegistry({ backend, readFrame, readTextFile });
 const session = new Session({ registry, environment: { app: 'rr', backend: backend.backend, build: backend.build } });
 await session.run(`
-A = load("frame.png", as=linear)
+A = frame("capture-0042")
 G = gray(A)
 B = gaussian(G, sigma=1.4)
 `);
@@ -29,10 +29,27 @@ The host supplies, and the package touches nothing else:
 | | |
 |---|---|
 | `backend` | the C kernels: `loadWasm(bytes \| URL \| Response)`. In cv-lab, the Node-API addon gives the same results to the bit |
+| `readFrame(source)` | for `frame`: linear float, `{ width, height, channels: 3 \| 4, data: Float32Array }`, rows top-down |
 | `decodeFile(path)` | for `load`: 8-bit RGBA, `{ width, height, pixels }` |
 | `readTextFile(path)` | for `load(curve=)` and `groundTruth` |
 
 Run it in a Web Worker: a kernel is synchronous and the module has one thread.
+
+## The input: linear float frames
+
+`frame()` is the route in. A frame is light as the renderer computed it -- a
+path tracer's float render target read back, times the exposure -- never
+tone-mapped, clipped or rounded to 8 bits, so nothing has to be undone. NaN,
+infinity, negative samples and one-channel frames are refused, not repaired:
+which repair is right is the host's decision, made where it can be recorded.
+`source` is whatever the host knows the frame by; the frame's hash goes in the
+log, so a replay handed a different frame says so. `decodePfm` and `encodePfm`
+read and write the same thing as a file, which is how cv-lab keeps them.
+
+`load` is still there for 8-bit images: a real camera's, or anything else
+already encoded. It needs a decoder (in a browser, `createImageBitmap` and a
+canvas give the RGBA), and the encoding stated (`from=`, `as=`) or a measured
+response curve (`curve=`).
 
 ## From readings to a pose
 

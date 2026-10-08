@@ -40,7 +40,7 @@ packages/vision/     @cv-lab/vision: the library, ESM, host-free -- what rr
                      and rr-desktop consume (its README says how). cv-lab
                      require()s it; src/lab-host.js supplies the addon, the
                      file reader and the decoder
-  src/ops.js         the twenty-four operations themselves: inputs, params,
+  src/ops.js         the twenty-five operations themselves: inputs, params,
                      defaults, and the kernel each one binds to
   src/registry.js    the schema they are declared against — validation,
                      error messages, provenance records
@@ -66,6 +66,8 @@ packages/vision/     @cv-lab/vision: the library, ESM, host-free -- what rr
                      the other's line, carried from a wider frame (pure JS)
   src/wasm.js        the C as a backend, from the module's bytes
   src/sha256.js      feature lists' and scalars' hashes, without node:crypto
+  src/pfm.js         float frames as files: frame() is the input contract --
+                     a renderer's linear light, never through 8 bits
   wasm/cvlab.wasm    the module, committed, with a manifest of its sources
   types/             TypeScript declarations from the JSDoc, committed
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
@@ -102,8 +104,8 @@ src/menu.js          the application menu — global commands live here, not in 
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
-test/                twenty suites; nineteen run under plain node, and
-                     sixteen of those again on WebAssembly (test:wasm)
+test/                twenty-one suites; twenty run under plain node, and
+                     seventeen of those again on WebAssembly (test:wasm)
 pipelines/           .lab scripts for the batch runner
 ```
 
@@ -114,7 +116,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — twenty suites, the node ones twice
+npm test                # everything — twenty-one suites, the node ones twice
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -125,12 +127,14 @@ npm run gap-sweep -- --name gap-1   # a part closing on another, down to contact
                                     #  --offset: across a gap already open;
                                     #  --carry: each pair tracked down its approach;
                                     #  --carry-from <dir>: the still edge from other runs;
-                                    #  --ledge <file>: a lit ledge held in each pair)
+                                    #  --ledge <file>: a lit ledge held in each pair;
+                                    #  --float: read linear float frames, not PNGs)
 npm run ledge -- --flush <dir> --fits <dir> --out <file>   # where a ledge ends, how soft
 npm run position -- --x <dir> --y <dir> --z <dir>   # where the part is, from several
                                     # (--sequence <dir>: frame by frame, the pose carried;
                                     #  --calibrate hinged: no truth, the ledge one-sided)
 npm run servo -- --name a --calibration <file> --start x,y,z,turn   # estimate drives motion
+npm run generate -- --float ...      # each PNG's samples as linear float too, <name>.pfm
 npm run degrade -- generated/<run> generated/<run>-noisy --gain 2000   # a camera's image
 npm run response -- --out <curve.json> a.png@0.5 b.png@1 c.png@2   # its response curve
 npm run believed-truth -- generated/<run> generated/<new> --mm 0.5   # edges where it is believed
@@ -383,6 +387,12 @@ Which edge is which part need not come from the renderer's truth
 renders the edges where the part is believed to be, and `gap-sweep --identify`
 reads from those. A belief 0.5 mm off costs nothing; 1.5 mm costs the
 calibration sweeps, not test poses identified again from a first solve.
+
+A renderer's frames come in as linear float (`frame()`, `generate --float`,
+`gap-sweep --float`; "A thirty-ninth"): at the exposure the lab picks, 8 bits
+cost nothing; one stop over, they cost five to eight times the error and float
+frames nothing. Two renders of the same shots move hinged x 0.026 -> 0.067 mm,
+more than the input route does: compare analyses on the same renders.
 
 Still open: the moving-below x; a real camera's bracket; predicting a part's
 edges fast enough for a loop, without a path tracer.

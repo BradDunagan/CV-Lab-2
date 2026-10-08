@@ -129,6 +129,10 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
   --curve <file>     the camera's response curve, measured by npm run
                      response: each image loaded through it (load's curve=)
                      instead of as sRGB
+  --float            render each shot as linear float too (<shot>.pfm, the
+                     same samples as the PNG) and read those with frame():
+                     no tone curve, no clipping, no 8 bits. Results go to
+                     the results directory's float/ beside the PNG's
   --ledge-lift <mm>  the lift to place the ledge at, for every shot, instead
                      of the shot's own: a closed loop renders the part where
                      it really is and knows only where it believes it is
@@ -160,6 +164,7 @@ function parseArgs(argv) {
     script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
     yaw: null, elevation: null, offset: null, poses: null,
     carry: false, carryMin: 3, ledgeMax: 1.2, ledgeFit: false, ledge: null, ledgeLift: null, curve: null, identify: null, dryRun: false,
+    float: false,
   };
   const list = (s, what) => {
     const v = String(s).split(',').map(Number);
@@ -213,6 +218,7 @@ function parseArgs(argv) {
       case '--ledge-fit': opts.ledgeFit = true; break;
       case '--ledge': opts.ledge = argv[++i]; break;
       case '--curve': opts.curve = argv[++i]; break;
+      case '--float': opts.float = true; break;
       case '--identify': opts.identify = argv[++i]; break;
       case '--ledge-lift': opts.ledgeLift = list(argv[++i], '--ledge-lift')[0]; break;
       case '--overwrite': opts.overwrite = true; break;
@@ -340,12 +346,13 @@ function slots(file) {
  * its shot, so these -- not the shot list -- are what make two analyses of
  * one run comparable.
  */
-function inputHashes(gen, shots, identify = null) {
+function inputHashes(gen, shots, identify = null, float = false) {
   const sha = (file) => crypto.createHash('sha256').update(fs.readFileSync(path.join(ROOT, file))).digest('hex');
   return Object.fromEntries(shots.map((s) => {
     const base = s.name.replace(/\.png$/, '');
     return [s.name, {
       image: sha(path.join(gen, s.name)),
+      ...(float ? { frame: sha(path.join(gen, `${base}.pfm`)) } : {}),
       truth: sha(path.join(gen, `${base}.gt.json`)),
       depth: sha(path.join(gen, 'aov', `${base}-depth.png`)),
       normal: sha(path.join(gen, 'aov', `${base}-normal.png`)),
@@ -493,9 +500,11 @@ function main() {
   // never overwrite the default's numbers under the same run name.
   if (!fs.existsSync(path.resolve(ROOT, opts.script))) throw new Error(`no such script: ${opts.script}`);
   const scriptName = path.basename(opts.script).replace(/\.lab$/, '');
-  const res = path.resolve(ROOT, opts.script) === path.join(ROOT, DEFAULT_SCRIPT)
+  // Float frames are another measurement of the same renders: beside the PNG's.
+  const res = path.join(path.resolve(ROOT, opts.script) === path.join(ROOT, DEFAULT_SCRIPT)
     ? path.join('results', opts.name)
-    : path.join('results', opts.name, scriptName);
+    : path.join('results', opts.name, scriptName), opts.float ? 'float' : '');
+  if (opts.float && opts.curve) throw new Error('--float and --curve: a response curve is for 8-bit codes, and a float frame has none');
   const shots = gapShots(opts);
   const posed = !!opts.poses;
 
@@ -534,10 +543,13 @@ function main() {
       '--out', gen, '--scene', opts.scene, '--shots', shotsFile,
       '--size', String(opts.size), '--samples', String(opts.samples), '--truth', '--aovs',
       '--tone-mapping', opts.toneMapping, '--exposure', String(opts.exposure),
+      ...(opts.float ? ['--float'] : []),
     ]);
   }
 
-  const images = shots.map((s) => path.join(gen, s.name));
+  // What the lab reads for a shot: its PNG, or with --float the same samples as float.
+  const imageOf = (s) => path.join(gen, opts.float ? s.name.replace(/\.png$/, '.pfm') : s.name);
+  const images = shots.map(imageOf);
   if (opts.identify) {
     const missing = shots.filter((s) => !fs.existsSync(path.join(ROOT, opts.identify, s.name.replace(/\.png$/, '.gt.json'))));
     if (missing.length) throw new Error(`--identify ${opts.identify} has no truth for ${missing.length} of these shots, ${missing[0].name} first`);
@@ -608,7 +620,7 @@ function main() {
     if (carry.missing.length) console.log(`--carry: nothing to carry from for ${carry.missing.map((m) => `${m.view} pair ${m.pair}`).join('; ')}`);
     const commandsFile = path.join(res, 'carry-commands.json');
     fs.writeFileSync(path.join(ROOT, commandsFile), `${JSON.stringify(carry.commands, null, 2)}\n`);
-    const later = shots.filter((s) => carry.commands[s.name.replace(/\.png$/, '')]).map((s) => path.join(gen, s.name));
+    const later = shots.filter((s) => carry.commands[s.name.replace(/\.png$/, '')]).map(imageOf);
     if (later.length > 0) lab(['--extra', commandsFile], later);
     rows = analyse();
     for (const r of rows) {
@@ -618,7 +630,8 @@ function main() {
   }
 
   const overlays = path.join(res, 'overlays');
-  for (const image of images) {
+  // Drawn over the PNG even when the lab read the float frame: the same samples, viewable.
+  for (const image of shots.map((s) => path.join(gen, s.name))) {
     const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts/overlay.js'), image, res, overlays],
       { cwd: ROOT, stdio: ['ignore', 'ignore', 'inherit'] });
     if (r.status !== 0) throw new Error(`overlay of ${image} failed`);
@@ -657,7 +670,7 @@ function main() {
   }
   const scale = perKeyScale(gridded, paired, opts) ? null : scales.get(viewKey(rows[0]));
 
-  const inputs = inputHashes(gen, shots, opts.identify);
+  const inputs = inputHashes(gen, shots, opts.identify, opts.float);
   const recordFile = path.join(ROOT, res, 'gap-sweep.json');
   const script = {
     path: path.relative(ROOT, path.resolve(ROOT, opts.script)),
@@ -677,6 +690,7 @@ function main() {
     ...(posed ? { poses: opts.poses } : {}),
     ...(opts.identify ? { identify: { dir: opts.identify,
       believed: JSON.parse(fs.readFileSync(path.join(ROOT, opts.identify, 'believed.json'), 'utf8')) } } : {}),
+    ...(opts.float ? { frames: 'float' } : {}),
     ...(opts.curve ? { curve: { file: path.relative(ROOT, path.resolve(ROOT, opts.curve)),
       sha256: crypto.createHash('sha256').update(fs.readFileSync(path.resolve(ROOT, opts.curve))).digest('hex') } } : {}),
     ...(carry ? { carry: { minPx: carry.minPx, ledgeMax: carry.ledgeMax, sources: carry.sources, missing: carry.missing,

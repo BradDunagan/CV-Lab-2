@@ -1,9 +1,10 @@
 /**
  * @cv-lab/vision -- what a host needs to measure with cv-lab's library.
  *
- * A host supplies three things and the library touches nothing else: a
+ * A host supplies a few things and the library touches nothing else: a
  * compute backend (the WebAssembly module, `loadWasm`, or in cv-lab the
- * Node-API addon), an image decoder for `load`, and a text reader for the
+ * Node-API addon), its frames for `frame` -- linear float, the input
+ * contract -- or an image decoder for `load`, and a text reader for the
  * files `load(curve=)` and `groundTruth` name. No file system, no Node
  * built-in, no global state: two registries with different backends can
  * live in one process.
@@ -28,6 +29,7 @@ export { createRegistry, buildOps } from './ops.js';
 export { Session, SessionError, backendAdapter, hashScalars, hashFeatures } from './session.js';
 export { parseStatement, parseScript, quoteString, ParseError } from './parser.js';
 export { sha256 } from './sha256.js';
+export { decodePfm, encodePfm } from './pfm.js';
 
 // From readings to a pose: calibrate against commanded sweeps, then solve
 // each frame against the last pose carried forward.
@@ -47,3 +49,4 @@ export { gapRows } from './gapsweep.js';
 /** @typedef {import('./types.js').BufferInfo} BufferInfo */
 /** @typedef {import('./types.js').HostOptions} HostOptions */
 /** @typedef {import('./types.js').DecodedImage} DecodedImage */
+/** @typedef {import('./types.js').Frame} Frame */

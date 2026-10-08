@@ -312,7 +312,8 @@ All three are explained in `docs/electron-guide.md`.
 
 Working: the buffer type, the operation registry, the command language, the
 session log with provenance and replay, the display path, and the UI.
-Twenty-four operations — `load`, `pattern`, `gray`, `gaussian`, `sobel`,
+Twenty-five operations — `load`, `frame` (a renderer's linear float, never
+through 8 bits), `pattern`, `gray`, `gaussian`, `sobel`,
 `threshold`, `stats`, `toLinear`, `toSrgb`, `nms`, `hysteresis`, `orient`,
 `segments`, `merge`, `chain`, `fit`, `fitArcs`, `fitPairs`, `findPairs`,
 `trackPair`, `corners`, `groundTruth`, `match`, `explain` — enough for Canny

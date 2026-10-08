@@ -1,0 +1,22 @@
+done x-f2
+done y-f2
+done z-f2
+done turn-f2
+done x-f2
+done y-f2
+done z-f2
+done turn-f2
+done test-f2
+done x-f2 float
+done y-f2 float
+done z-f2 float
+done turn-f2 float
+done x-f2 float
+done y-f2 float
+done z-f2 float
+done turn-f2 float
+done test-f2 float
+stack-2g-f2-float-hinged.json            10 sets 0.103 / 0.047 / 0.054 / 0.030   4 views 0.054 / 0.030 / 0.038 / 0.014  (10/10)
+stack-2g-f2-float-joint.json             10 sets 0.129 / 0.056 / 0.058 / 0.026   4 views 0.056 / 0.019 / 0.028 / 0.012  (10/10)
+stack-2g-f2-png-hinged.json              10 sets 3.542 / 0.324 / 0.494 / 0.102   4 views 0.315 / 0.210 / 0.235 / 0.088  (10/10)
+stack-2g-f2-png-joint.json               10 sets 0.409 / 0.254 / 0.268 / 0.089   4 views 0.407 / 0.276 / 0.258 / 0.083  (10/10)

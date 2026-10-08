@@ -61,6 +61,9 @@ CV-Lab image generator — renders from pt-lab
   --tone-mapping <k> aces | linear                       (default aces)
                      linear for measurement -- see TONE MAPPING below
   --exposure <x>     multiplies radiance before tone mapping (default 1)
+  --float            also write <name>.pfm: the same samples as linear float,
+                     radiance times --exposure, never tone-mapped, clipped or
+                     rounded to 8 bits. Read with frame(); not with --denoise
   --show             show the render window and watch it converge
   --shots <file>     render these shots instead of the scene's own plan: a
                      JSON array of {name, camera, target, intensity,
@@ -199,6 +202,7 @@ function parseArgs(argv) {
       case '--denoise': opts.denoise = true; break;
       case '--tone-mapping': opts.toneMapping = argv[++i]; break;
       case '--exposure': opts.exposure = num(); break;
+      case '--float': opts.float = true; break;
       case '--truth': opts.truth = true; break;
       case '--show': opts.show = true; break;
       case '--shots': {

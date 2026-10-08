@@ -2905,6 +2905,63 @@ from other sweeps, so they differ in two ways at once.
 (`notes/brads-notes/2026-10-08-identify/`: `run.sh`, `second.sh`,
 `b15-solved-errors.json`, and the logs.)
 
+#### A thirty-ninth: linear float frames in, and what 8 bits cost
+
+rr's analysis camera is a path tracer, and the vision package should take what
+it computes rather than an 8-bit picture of it. So there is a second way in:
+`frame(source)`, a float frame in linear light that the host supplies
+(`readFrame`), refused if it holds a NaN, an infinity, a negative sample or one
+channel, its hash in the log like any other result. pt-lab reads the path
+tracer's accumulated float target back in the tick it captures the PNG and
+writes it, times the exposure, as `<shot>.pfm` (`generate --float`); the PNG
+is that frame clipped at 1 and sRGB-encoded -- exactly, in 99.86% of samples,
+and one code off in the rest. `gap-sweep --float` reads the frames.
+
+The stack-2g sweeps and test poses were rendered again, once, written both
+ways, and each pooled and solved as the thirty-eighth's clean runs were. Four
+views, x / y / z mm and turn degrees:
+
+| renders | input | hinged | joint |
+|---|---|---|---|
+| the thirty-eighth's | PNG | 0.026 / 0.019 / 0.023 / 0.019 | 0.065 / 0.024 / 0.026 / 0.021 |
+| new, exposure 0.5 | PNG | 0.067 / 0.032 / 0.040 / 0.015 | 0.056 / 0.020 / 0.026 / 0.011 |
+| | float | 0.062 / 0.031 / 0.040 / 0.013 | 0.058 / 0.020 / 0.026 / 0.011 |
+| the same, one stop over | PNG | 0.315 / 0.210 / 0.235 / 0.088 | 0.407 / 0.276 / 0.258 / 0.083 |
+| | float | 0.054 / 0.030 / 0.038 / 0.014 | 0.056 / 0.019 / 0.028 / 0.012 |
+
+- **At the exposure the lab chose, 8 bits cost nothing.** Reading for reading
+  the two routes differ by 0.004 to 0.010 px RMS, at most 0.046, either way;
+  every run's error is the same to the third decimal. Exposure 0.5 was picked
+  so the measured faces stay below 1, and 0.6% of pixels clip, all of it red
+  on the red cube's lit face.
+- **One stop over, the PNG route is five to eight times worse and the float
+  route does not notice.** The second pair of rows is the first's frames times
+  two -- which is that render at exposure 1, the same samples -- and their
+  PNGs made from them as pt-lab's canvas makes them (`brighter.mjs`). 12.8% of
+  pixels clip. The gap readings' error goes from 0.08 to 0.40-0.77 px RMS
+  through the PNG and stays at 0.08-0.11 through the frame. A clipped lit face
+  is flat, and its edge is read where the clipping stops rather than where the
+  face does; `test/frame.js` sees the same on a synthetic rectangle, a side
+  moved 0.45 px. So the contract buys freedom from choosing an exposure, which
+  in rr is one less thing a scene's lighting can break silently.
+- **Two renders of the same shots differ by more than the input route ever
+  did.** The old renders, run through exactly this script, give the
+  thirty-eighth's numbers to the digit, so the analysis is unchanged; a fresh
+  render of the same 140 shots moves hinged x from 0.026 to 0.067 mm and joint
+  x from 0.065 to 0.056. The thirty-first found 0.03 mm from the calibration's
+  render alone; this is both renders, the test poses' as well. A difference
+  between two analyses means something only on the same renders, which every
+  comparison in this section has been -- and a single render's 0.026 was in
+  part that render's luck.
+
+`frame()` refuses rather than repairs: a firefly or a denoiser's undershoot is
+the host's to fix, where the fix can be recorded. A denoised render has no float
+frame -- pt-lab denoises the 8-bit image -- so `--float` and `--denoise` are
+refused together.
+
+(`notes/brads-notes/2026-10-08-float/`: `run.sh` -- with `old` and `bright` --
+`pool.sh`, `brighter.mjs`, `compare.js` and its output, and the logs.)
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;
@@ -3679,6 +3736,12 @@ item genuinely deferrable.
   still need a native decode path, and that means a third-party library and all
   the build complexity `electron-guide.md` §5 describes avoiding. Worth doing
   only when an experiment actually needs the precision.
+
+  *Answered for renders (2026-10-08):* a renderer's frames need no decoder.
+  `frame()` takes linear float directly, and pt-lab writes it beside each PNG
+  (§5, "A thirty-ninth"): at a chosen exposure 8 bits cost nothing, and one
+  stop over they cost five to eight times the error, which float frames do
+  not. A real camera's 16-bit or raw data is still the open case.
 
   *Also settled:* what the stored bytes **mean** is now read from the file
   rather than assumed. `load` takes a `from` parameter alongside `as` — `from`

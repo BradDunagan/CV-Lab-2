@@ -89,7 +89,10 @@ cv-lab-2 batch runner
   npm run lab -- --script <file> [--image <png> ...] [options]
 
   --script <file>   commands to run against each image, one per line
-  --image <png>     an image to run over; repeatable, or list them bare
+  --image <png>     an image to run over; repeatable, or list them bare. A
+                    .pfm is a float frame in linear light, read with frame()
+                    rather than load(), and --from, --as and --curve do not
+                    apply to it
   --out <dir>       write one <name>.session.json and <name>.features.json
                     per image (default: report to stdout only)
   --from srgb|linear   what the file's samples MEAN      (default srgb)
@@ -200,7 +203,10 @@ async function runOne(win, { image, script, opts }) {
 
   const quoted = await call(`quote(${JSON.stringify(image)})`);
   const curve = opts.curve ? `, curve=${await call(`quote(${JSON.stringify(path.resolve(opts.curve))})`)}` : '';
-  const load = `${opts.slot} = load(${quoted}, from=${opts.from}, as=${opts.as}${curve})`;
+  // A .pfm is a float frame: linear light already, so from, as and a curve
+  // have nothing to say about it.
+  const load = /\.pfm$/i.test(image) ? `${opts.slot} = frame(${quoted})`
+    : `${opts.slot} = load(${quoted}, from=${opts.from}, as=${opts.as}${curve})`;
 
   const prelude = [load];
   if (opts.truth) {
@@ -269,6 +275,8 @@ if (opts && (opts.help || (!opts.script && opts.images.length === 0))) {
   const missing = opts.images.filter((p) => !fs.existsSync(p));
   if (missing.length > 0) {
     bail(process.stderr, `no such image:\n  ${missing.join('\n  ')}`, 2);
+  } else if (opts.images.some((p) => /\.pfm$/i.test(p)) && (opts.curve || opts.as !== 'linear')) {
+    bail(process.stderr, 'a .pfm frame is linear light: pass --as linear, and no --curve', 2);
   } else if (opts.script && !fs.existsSync(opts.script)) {
     bail(process.stderr, `no such script: ${opts.script}`, 2);
   } else if (opts.extra) {

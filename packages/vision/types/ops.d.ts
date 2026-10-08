@@ -7,4 +7,4 @@ export function createRegistry(options?: import("./types.js").HostOptions): impo
     backend: import("./types.js").Backend | null;
 };
 /** @param {import('./types.js').HostOptions} [options] */
-export function buildOps({ backend: given, decodeFile, readTextFile }?: import("./types.js").HostOptions): object[];
+export function buildOps({ backend: given, decodeFile, readTextFile, readFrame }?: import("./types.js").HostOptions): object[];
