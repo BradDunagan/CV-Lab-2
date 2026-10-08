@@ -166,42 +166,5 @@ export namespace DEFAULTS {
     export let reach: number;
     export { MIN_VISIBLE as minVisible };
 }
-/**
- * One row of a gap sweep: how well the pipeline sees the gap between two
- * parts, measured against what the renderer says is there.
- *
- * The quantity is the one image-based servoing would drive to zero -- the
- * distance IN THE IMAGE between the moving part's leading edge and the edge of
- * the target it is closing on -- rather than a 6-DoF relative pose. cv-lab has
- * no pose estimator, and putting one in front of this measurement would make
- * its errors part of the result.
- *
- * Pure JavaScript over the feature records `npm run lab` writes, like the rest
- * of src/lab/. No pixels.
- *
- * THE FACING PAIR
- *
- * The true gap is measured between two ground-truth edges: one belonging only
- * to the moving part, one only to the target, near-parallel in the image,
- * overlapping along their length, and near each other IN DEPTH as well as in
- * the image -- at the place the gap is measured, since a long edge seen
- * obliquely spans a great deal of depth. The depth test is what stops a far edge that happens to project
- * close -- the back of a table behind a cube -- from being taken for the near
- * one. Among the pairs that pass, the one closest in the image wins.
- *
- * The measured gap is the same distance between the two detected segments
- * that `match` paired with those truth edges, taken at the SAME image point:
- * the middle of the truth pair's overlap. Two numbers measured at different
- * places along an edge in perspective would differ for reasons that are not
- * error.
- *
- * SIGN
- *
- * Gaps are signed along the target edge's normal, oriented toward the middle
- * of the moving part. A detected gap with the wrong sign is the detector
- * putting the edges in the wrong order, which an absolute value would hide.
- * A TRUE gap with a negative sign is the moving part's edge past the
- * target's: an overhang.
- */
 declare const MIN_VISIBLE: 0.5;
 export {};

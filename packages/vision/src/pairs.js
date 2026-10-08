@@ -85,6 +85,8 @@
  * order over sums taken in row-major pixel order (design-lab-model.md §5).
  */
 
+import { len2, tan } from './math.js';
+
 const DEFAULTS = {
   maxGap: 6,        // px between two segments still fitted jointly
   maxAngle: 5,      // degrees between them
@@ -231,7 +233,7 @@ function density(d, a, b) {
 function lineOf(seg) {
   let dx = seg.x1 - seg.x0;
   let dy = seg.y1 - seg.y0;
-  const len = Math.hypot(dx, dy);
+  const len = len2(dx, dy);
   if (!(len > 0)) return null;
   // One direction per line whichever way its endpoints were written, so the
   // frame -- and with it which edge is "below" -- does not depend on that.
@@ -262,7 +264,7 @@ function pairFrame(sa, sb, opts) {
   }
   const sin = ref.ux * other.uy - ref.uy * other.ux;
   // tan against a tolerance in degrees: one conversion, of a constant.
-  if (!(cos > 0) || Math.abs(sin) > cos * Math.tan((opts.maxAngle * Math.PI) / 180)) return null;
+  if (!(cos > 0) || Math.abs(sin) > cos * tan((opts.maxAngle * Math.PI) / 180)) return null;
 
   const along = (x, y) => (x - ref.x0) * ref.ux + (y - ref.y0) * ref.uy;
   const o0 = along(other.x0, other.y0);

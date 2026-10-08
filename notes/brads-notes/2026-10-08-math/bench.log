@@ -1,0 +1,21 @@
+4 frame(s), 512x512; 13 statements + 2/2/2/2 carried; median of 1 after a warm-up; the same hashes on every backend
+
+backend                             ms/frame  x native   slowest steps (ms)
+native (node 22.23.2)                 2320.6      1.00   findPairs 1550.8, trackPair 379.1, fitPairs 236.4, sobel 15.3
+wasm (node 22.23.2)                   2337.6      1.01   findPairs 1520.1, trackPair 375.2, fitPairs 244.8, sobel 20.7
+chromium 154.0.8037.99 worker         1832.8      0.79   findPairs 1194.8, trackPair 286.7, fitPairs 203.9, sobel 21.5
+firefox 144.0.2 worker                4467.5      1.93   findPairs 2494.5, trackPair 633.5, fitPairs 420.5, sobel 254.0
+4 frame(s), 1024x1024; 13 statements + 2/2/2/2 carried; median of 1 after a warm-up; the same hashes on every backend
+
+backend                             ms/frame  x native   slowest steps (ms)
+native (node 22.23.2)                 6687.6      1.00   findPairs 4654.2, trackPair 1356.2, sobel 61.8, frame 51.8
+wasm (node 22.23.2)                   6950.5      1.04   findPairs 4740.3, trackPair 1421.2, sobel 83.2, frame 65.2
+chromium 154.0.8037.99 worker         4436.0      0.66   findPairs 3101.3, trackPair 873.1, sobel 87.1, frame 64.4
+firefox 144.0.2 worker               13710.5      2.05   findPairs 7597.5, trackPair 2348.0, sobel 1037.0, gaussian 607.0
+4 frame(s), 2048x2048; 13 statements + 2/2/2/2 carried; median of 1 after a warm-up; the same hashes on every backend
+
+backend                             ms/frame  x native   slowest steps (ms)
+native (node 22.23.2)                18734.8      1.00   findPairs 10516.7, trackPair 6137.8, sobel 256.6, frame 220.3
+wasm (node 22.23.2)                  20119.9      1.07   findPairs 10975.5, trackPair 6511.1, sobel 363.4, frame 272.9
+chromium 154.0.8037.99 worker        17058.5      0.91   findPairs 8893.0, trackPair 5335.6, sobel 378.2, frame 288.8
+firefox 144.0.2 worker               39581.5      2.11   findPairs 14566.0, trackPair 9802.0, sobel 4233.5, gaussian 2461.5

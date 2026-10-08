@@ -84,15 +84,13 @@ hashes. That holds across hosts because:
 - buffers are hashed in C (`bufferHash`), and records with the package's own
   SHA-256, never an engine's;
 - the module carries its own math library, so `exp` and `pow` do not depend
-  on the browser.
-
-Not yet: the JavaScript in `src/` still calls the engine's `Math.hypot`,
-`atan2`, `asin`, `tan` and others (pre-port item 6), and engines do not agree
-on them in the last bit -- not even two versions of V8. Over 200,000 inputs,
-Chrome 154 and Node 22 differ on 3-18% of every transcendental function's
-results (only `hypot` and `sqrt` agree), and Firefox differs from both. So
-today `corners` gives a different hash in Chrome, and `fitPairs` and
-`trackPair` too in Firefox, while every C kernel matches everywhere.
+  on the browser;
+- the JavaScript uses the package's own math (`src/math.js`), never the
+  engine's `Math.sin`, `atan2`, `log` or `hypot`: engines disagree on those
+  in the last bit -- Chrome's V8 and Node's on 3-18% of inputs -- and
+  `math.js` is built from `+ - * /` and `sqrt` alone, which the language
+  fixes. `npm run bench` gives the same hash for every statement in Node,
+  Chrome and Firefox.
 
 A host should record `backend.build` (the module's SHA-256) in each session,
 and keep the frames it measured, or their hashes: a path-traced frame is not

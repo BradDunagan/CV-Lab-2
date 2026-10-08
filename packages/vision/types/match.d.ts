@@ -87,33 +87,6 @@ export function summarise(records: any): {
  * worked from nine.
  */
 export const MIN_VISIBLE: 0.5;
-/**
- * Scoring what the pipeline found against what is really there.
- *
- * Pure JavaScript for the same reason `corners.js` is: this is arithmetic over
- * a few hundred records with no pixels involved, so putting it in C would buy
- * nothing and cost the ability to read it.
- *
- * WHAT THIS CAN AND CANNOT SETTLE
- *
- * The ground truth is the scene's GEOMETRY. Three consequences, and every
- * number out of here has to be read with them in mind:
- *
- *   - **A geometric edge need not be a visible one.** Two faces meeting under
- *     flat lighting produce no gradient at all, and a corner formed by two
- *     such faces is invisible in the picture. A miss is not automatically a
- *     failure of the detector.
- *   - **A visible edge need not be geometric.** Texture, shadow boundaries and
- *     specular terminators are real image edges and none of them are in the
- *     ground truth. A false positive here may be a perfectly good detection of
- *     something that is not geometry — which is exactly what the albedo and
- *     normal passes are for.
- *   - **Visibility is rasterised**, so the ground truth itself is right to
- *     about a pixel and no better.
- *
- * So the honest reading of a match rate is "how much of what the pipeline
- * found is explained by geometry", not "how often the pipeline is right".
- */
 /** Angle between two lines, in [0, 90]. Both inputs are in [0, 180). */
 export function lineAngleDifference(a: any, b: any): number;
 /** Distance from a point to a SEGMENT — not to its infinite line. */

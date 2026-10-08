@@ -66,6 +66,8 @@ packages/vision/     @cv-lab/vision: the library, ESM, host-free -- what rr
                      the other's line, carried from a wider frame (pure JS)
   src/wasm.js        the C as a backend, from the module's bytes
   src/sha256.js      feature lists' and scalars' hashes, without node:crypto
+  src/math.js        the package's own atan2, sin, log, hypot...: engines'
+                     Math differs in the last bit, even V8 from V8
   src/pfm.js         float frames as files: frame() is the input contract --
                      a renderer's linear light, never through 8 bits
   wasm/cvlab.wasm    the module, committed, with a manifest of its sources
@@ -175,6 +177,11 @@ npm run smoke:package   # launch it and check it actually works
 - **A custom application menu must keep `role: 'editMenu'` and `role: 'viewMenu'`.** Electron's default menu is what provides Cmd/Ctrl+C/V/X/A in the command input and Toggle Developer Tools; calling `setApplicationMenu` drops both silently. Pinned by a test.
 - **No dev server.** The renderer is always a `file://` URL, built by Vite. `sandbox: false` is conditional on this window only ever loading local, first-party content, and a window that can point at `http://localhost` is a window that can point anywhere.
 - **Electron forbids external ArrayBuffers** (`napi_status 22`). C-owned memory cannot be aliased from JS; access is an explicit copy, and the names say so.
+- **The package's JavaScript never calls `Math.sin`, `cos`, `tan`, `asin`,
+  `acos`, `atan2`, `log`, `exp`, `pow`, `hypot` or `**`.** ECMAScript leaves
+  them to the engine and engines differ in the last bit; use
+  `packages/vision/src/math.js`. `test/math.js` fails on one. The exemption
+  is `orbitViews`, a renderer's camera, recorded in `shots.json`.
 - **Determinism rules live in `design-lab-model.md` §5.** Fixed summation order, no `-ffast-math`, and *where two routes reach the same value, make them agree on purpose*. Canonical numbering for anything that assigns identities.
 
 ## Working habits that have paid off here
@@ -402,9 +409,11 @@ more than the input route does: compare analyses on the same renders.
 What a frame costs ("A fortieth", `npm run bench`): 2.2 s a view at 512 px,
 6.3 at 1024, 16 at 2048, and 90-95% of it is the JavaScript pair fits
 (`findPairs`, `trackPair`); the C is under 6%, so the module costs 1-2% over
-native and the native build is never needed for speed. The C gives the same
-hashes in Chrome and Firefox; the JavaScript does not -- even Chrome's V8 and
-Node's disagree on `Math.asin`, `atan2`, `exp` -- which is pre-port item 6.
+native and the native build is never needed for speed. Every statement gives the same
+hash in Node, Chrome and Firefox: the C because it carries its own libm, the
+JavaScript because it uses `packages/vision/src/math.js` and never the
+engine's `Math.sin`, `atan2`, `log` or `hypot`, on which even Chrome's V8 and
+Node's disagree (`design-lab-model.md` §5, rule 7).
 
 Still open: the moving-below x; a real camera's bracket; predicting a part's
 edges fast enough for a loop, without a path tracer; the pair fits' speed.

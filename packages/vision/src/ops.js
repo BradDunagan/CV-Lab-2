@@ -14,6 +14,7 @@ import { readGroundTruth } from './groundtruth.js';
 import { matchFeatures } from './match.js';
 import { explainFeatures } from './explain.js';
 import { fitPairs, findPairs, trackPair } from './pairs.js';
+import { len2 } from './math.js';
 
 /**
  * Bind a declared operation to its C kernel.
@@ -258,7 +259,7 @@ function trackKernel(backend, inputs, params) {
         `Pass the gray image, before gaussian: G = gray(A)`
     );
   }
-  if (!(Math.hypot(params.x1 - params.x0, params.y1 - params.y0) > 0)) {
+  if (!(len2(params.x1 - params.x0, params.y1 - params.y0) > 0)) {
     throw new Error('trackPair: the carried line has no length; give x0, y0, x1, y1');
   }
   const raster = { width: info.width, height: info.height, channels: 1, data: native.bufferRead(image.handle) };
@@ -635,7 +636,8 @@ function buildOps({ backend: given, decodeFile, readTextFile, readFrame } = {}) 
 
     defineOp({
       name: 'corners',
-      version: 1,
+      version: 2,
+      // v2: the package's own math (math.js), not the engine's: the same bits in every engine.
       summary: 'Where fitted segments would meet, with how far each had to reach.',
       // Features in, features out -- the first operation to consume the kind
       // rather than only produce it.
@@ -666,7 +668,8 @@ function buildOps({ backend: given, decodeFile, readTextFile, readFrame } = {}) 
       // v3: each level may change along the pair (`levelSlope`), which stops
       // a face's shading turning the two edges opposite ways.
       // v4: `ledge`, whether a shadow ramp lies inside the strip.
-      version: 4,
+      version: 5,
+      // v5: the package's own math (math.js), not the engine's: the same bits in every engine.
       summary: 'Place two close parallel segments again, jointly, against the unblurred image.',
       /*
        * Features in, features out, with the image alongside -- the shape
@@ -748,7 +751,8 @@ function buildOps({ backend: given, decodeFile, readTextFile, readFrame } = {}) 
 
     defineOp({
       name: 'findPairs',
-      version: 1,
+      version: 2,
+      // v2: the package's own math (math.js), not the engine's: the same bits in every engine.
       summary: 'Find two edges the detector reported as one segment: a strip hidden inside it.',
       /*
        * fitPairs places two segments the detector FOUND. Closer than about a
@@ -806,7 +810,8 @@ function buildOps({ backend: given, decodeFile, readTextFile, readFrame } = {}) 
       // v3: ambiguous with the strip level held, and wide at one end, the level
       // is fitted instead (`wideEnd`).
       // v4: `moving=below`; a ledge whose moving edge leaves the band is refused.
-      version: 4,
+      version: 5,
+      // v5: the package's own math (math.js), not the engine's: the same bits in every engine.
       summary: 'Read a pair again beside a line carried from an earlier frame: one edge fitted, nothing detected.',
       /*
        * Under about a pixel a gap is not in one image: width and strip level
@@ -892,7 +897,8 @@ function buildOps({ backend: given, decodeFile, readTextFile, readFrame } = {}) 
 
     defineOp({
       name: 'match',
-      version: 1,
+      version: 2,
+      // v2: the package's own math (math.js), not the engine's: the same bits in every engine.
       summary: 'Score detected features against ground truth: hits, misses, inventions.',
       // Two feature lists in, one out. The first operation to consume the kind
       // twice, and the reason feature types are namespaced: which ground truth
@@ -944,7 +950,8 @@ function buildOps({ backend: given, decodeFile, readTextFile, readFrame } = {}) 
       // first; see explain.js and design-lab-model.md §11.
       // v3: view rays through the optical centre in the lab's pixel
       // convention, (w-1)/2 rather than w/2 -- half a pixel, ~0.05 deg.
-      version: 3,
+      version: 4,
+      // v4: the package's own math (math.js), not the engine's: the same bits in every engine.
       summary: 'Say what put each detected feature in the picture, from the renderer\'s AOV passes.',
       /*
        * Features in, features out, with three auxiliary passes alongside.
