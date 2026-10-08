@@ -1,0 +1,3 @@
+# The WebAssembly module is committed and checked by SHA-256: never let
+# git convert it.
+*.wasm binary
