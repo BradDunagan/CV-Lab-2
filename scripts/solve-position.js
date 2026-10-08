@@ -31,7 +31,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { solvePosition, solveLifted } = require('../packages/vision/src/position.js');
-const { movingBelow } = require('./ledge');
+const { ANGLES, POINTS, viewOf, keyOf, readingsOf, hingeFor, calibrateReadings, solvePose } =
+  require('../packages/vision/src/calibrate.js');
+const { movingBelow } = require('../packages/vision/src/ledge.js');
 const AXES = ['x', 'y', 'z'];
 
 const ROOT = path.join(__dirname, '..');
@@ -160,46 +162,12 @@ function parseArgs(argv) {
   return opts;
 }
 
-const viewOf = (r) => (r.yaw === undefined ? 'the saved view' : `yaw ${r.yaw}, elev ${r.elevation}`);
-const POINTS = { mid: ['mid'], ends: ['end 1', 'end 2'], both: ['mid', 'end 1', 'end 2'] };
-
 /** Every way of choosing `n` of `items`, in order. */
 function choose(items, n) {
   if (n === 0) return [[]];
   if (items.length < n) return [];
   const [first, ...rest] = items;
   return [...choose(rest, n - 1).map((c) => [first, ...c]), ...choose(rest, n)];
-}
-
-/** Least-squares slope and intercept of y against x. Null with under two points. */
-function fitLine(points) {
-  const p = points.filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
-  if (p.length < 2) return null;
-  const mx = p.reduce((s, [x]) => s + x, 0) / p.length;
-  const my = p.reduce((s, [, y]) => s + y, 0) / p.length;
-  let sxx = 0, sxy = 0;
-  for (const [x, y] of p) { sxx += (x - mx) ** 2; sxy += (x - mx) * (y - my); }
-  if (!(sxx > 0)) return null;
-  const slope = sxy / sxx;
-  return { slope, at0: my - slope * mx };
-}
-
-/** One row's readings at each point, as truth, detected and refit. */
-function readingsOf(r) {
-  const at = (k) => ({
-    truth: r.endsTruePx?.[k] ?? null,
-    detected: r.endsDetectedPx?.[k] ?? null,
-    refit: r.refit?.endsPx?.[k] ?? null,
-    sigma: r.refit?.gapSigma ?? null,
-    tracked: r.tracked?.endsPx?.[k] ?? null,
-    trackedSigma: r.tracked?.gapSigma ?? null,
-  });
-  return {
-    mid: { truth: r.trueGapPx, detected: r.measuredGapPx, refit: r.refit?.gapPx ?? null, sigma: r.refit?.gapSigma ?? null,
-      tracked: r.tracked?.gapPx ?? null, trackedSigma: r.tracked?.gapSigma ?? null },
-    'end 1': at(0),
-    'end 2': at(1),
-  };
 }
 
 const rms = (v) => (v.length ? Math.sqrt(v.reduce((s, x) => s + x * x, 0) / v.length) : null);
@@ -218,7 +186,6 @@ function main() {
   }
   if (opts.help || ['x', 'y', 'z'].some((a) => !opts.dirs[a])) { console.log(USAGE); process.exit(opts.help ? 0 : 2); }
 
-  const ANGLES = ['turn', 'tipx', 'tipz'];
   const unknowns = ['x', 'y', 'z', ...ANGLES.filter((u) => opts.dirs[u])];
   const units = (u) => (ANGLES.includes(u) ? 'deg' : 'mm');
   // A row's angles, for the angular unknowns this solve has.
@@ -258,7 +225,7 @@ function main() {
    * thirty-fifth").
    */
   const below = movingBelow(sweeps[unknowns.find((u) => !ANGLES.includes(u))]);
-  const hingeOf = (x) => (below ? Math.max(x, 0) : Math.min(x, 0));
+  const hingeOf = hingeFor(below);
   const displacementOf = (u, r) => unknowns.map((v) => (v === u ? stepOf(u, r) : 0));
   const rowsOf = (u) => sweeps[u].rows.filter((r) => r.pair !== null && r.pair !== undefined);
   /*
@@ -276,14 +243,6 @@ function main() {
   });
   const lifted = liftRows.length > 0;
   /*
-   * One pose's solve, optionally Huber-reweighted: each reading's residual
-   * against the solution, and a reading further off than --robust px keeps
-   * k/|r| of its weight. Five rounds from the plain solve.
-   */
-  const modelAt = (o, d) => o.reference + o.jacobian.reduce((acc, j, a) => acc + j * d[a]
-    + (o.hinge?.[a] ?? 0) * hingeOf(d[a]) + (o.lift?.[a] ?? 0) * d[LIFT] * d[a]
-    + (o.liftHinge?.[a] ?? 0) * d[LIFT] * hingeOf(d[a]), 0);
-  /*
    * A prior on the tips alone: zero, to --tip-prior degrees; every other
    * unknown free (a variance far past anything solved).
    */
@@ -297,41 +256,15 @@ function main() {
   const calSigmas = unknowns.flatMap((u) => rowsOf(u)).flatMap((r) => [r.tracked?.gapSigma, r.refit?.gapSigma])
     .filter((v) => v > 0).sort((a, b) => a - b);
   const calMedian = calSigmas.length ? calSigmas[(calSigmas.length - 1) >> 1] : 1;
-  const robustly = (obs0, prior = null) => {
-    const obs = prior ? obs0.map((o) => ({ ...o, weight: (o.weight ?? 1) * (calMedian / opts.readingSigma) ** 2 })) : obs0;
-    let s = solveLifted(obs, { prior, liftAxis: LIFT });
-    if (!(opts.robust > 0)) return s;
-    for (let round = 0; round < 5 && s.determined; round++) {
-      const w = obs.map((o) => {
-        if (!Number.isFinite(o.measured)) return o;
-        const r = Math.abs(o.measured - modelAt(o, s.d));
-        return { ...o, weight: (o.weight ?? 1) * (r > opts.robust ? opts.robust / r : 1) };
-      });
-      const next = solveLifted(w, { prior, liftAxis: LIFT });
-      if (!next.determined) break;
-      s = { ...next, residualRms: s.residualRms };
-    }
-    return s;
-  };
   const points = POINTS[opts.readings];
 
   /* ---- 1. the Jacobian ---------------------------------------------- */
 
-  const keyOf = (r, point) => `${viewOf(r)} / pair ${r.pair} / ${point}`;
-  const keys = new Set();
-  for (const u of unknowns) for (const r of rowsOf(u)) for (const p of points) keys.add(keyOf(r, p));
-  const readings = new Map();
-  for (const key of [...keys].sort()) {
-    const lines = unknowns.map((u) => fitLine(rowsOf(u)
-      .flatMap((r) => points.filter((p) => keyOf(r, p) === key).map((p) => [stepOf(u, r), readingsOf(r)[p].truth]))));
-    if (lines.some((l) => l === null)) continue;
-    const at0 = lines.map((l) => l.at0);
-    readings.set(key, {
-      key, view: key.split(' / ')[0],
-      jacobian: lines.map((l) => l.slope),
-      reference: at0.reduce((s, v) => s + v, 0) / at0.length,
-    });
-  }
+  // Every frame of every sweep, with the step it was made at.
+  const sweepFrames = unknowns.flatMap((u) => rowsOf(u).map((row) => ({ sweep: u, step: stepOf(u, row), row })));
+  const calibration = { sweepFrames, liftFrames: liftRows, unknowns, points, hingeOf, liftAxis: LIFT };
+  // The truth's own slopes and intercepts: what every other mode is checked against.
+  const readings = calibrateReadings({ ...calibration, liftFrames: [], mode: 'full', pick: (r) => r.truth });
   if (readings.size === 0) throw new Error('no reading has a truth value in every sweep');
 
   console.log(`Pixels per ${unknowns.map((u) => `${units(u)} of ${u}`).join(', ')}, from the truth:\n`);
@@ -350,81 +283,8 @@ function main() {
    * in the reference and in the reading, and cancels. `full` goes on to the
    * Jacobian, which leaves no truth anywhere: what a real cell would have.
    */
-  const calibrated = (pick) => {
-    if (opts.calibrate === 'truth') return readings;
-    const out = new Map();
-    for (const [key, truth] of readings) {
-      const point = key.split(' / ')[2];
-      const valuesOf = (u) => rowsOf(u).filter((r) => keyOf(r, point) === key)
-        .map((r) => [stepOf(u, r), pick(readingsOf(r)[point])])
-        .filter(([, v]) => v !== null && v !== undefined && Number.isFinite(v));
-      if (opts.calibrate === 'joint' || opts.calibrate === 'hinged') {
-        /*
-         * reading = reference + J . d, over every frame of every sweep where
-         * this reading was made: one fit, so a frame's error pulls on every
-         * coefficient a little rather than on one slope a lot, and the sweeps
-         * agree on one reference. A frame the fit disagrees with by more than
-         * 3 MADs (scaled to a sigma, and never under 0.05 px) is dropped and
-         * the fit made again.
-         */
-        const points = [...unknowns.flatMap((u) => rowsOf(u).filter((r) => keyOf(r, point) === key)
-          .map((r) => [displacementOf(u, r), pick(readingsOf(r)[point])])),
-        ...liftRows.filter(({ row }) => keyOf(row, point) === key).map(({ row, d }) => [d, pick(readingsOf(row)[point])])]
-          .filter(([, v]) => v !== null && v !== undefined && Number.isFinite(v));
-        // Hinged: one more column per lateral axis, the displacement where
-        // it is below zero and nothing where it is not.
-        const hinged = opts.calibrate === 'hinged' ? unknowns.map((u) => u === 'x' || u === 'z') : unknowns.map(() => false);
-        // Lifted: one more column per other axis, its displacement times the lift's.
-        const liftOn = unknowns.map((u, a) => lifted && a !== LIFT);
-        // And the hinges' own lift terms, when both.
-        const columns = (d) => [1, ...d, ...d.filter((_, a) => hinged[a]).map(hingeOf),
-          ...d.filter((_, a) => liftOn[a]).map((x) => x * d[LIFT]),
-          ...d.filter((_, a) => lifted && hinged[a]).map((x) => hingeOf(x) * d[LIFT])];
-        const fit = (pts) => solvePosition(pts.map(([d, v]) => ({ jacobian: columns(d), reference: 0, measured: v })));
-        let f = fit(points);
-        /*
-         * A reading whose frames do not pin a one-sided slope -- every frame
-         * on one side of flush lost -- is not dropped: it is fitted without
-         * hinges, as joint would. Dropped, it took a whole pair of a view out
-         * of the solve (four of 24 readings in one render, six in another).
-         */
-        if (!f.determined && hinged.some(Boolean)) { hinged.fill(false); f = fit(points); }
-        if (!f.determined) continue;
-        const resid = (pts, q) => pts.map(([d, v]) => v - columns(d).reduce((acc, x, a) => acc + x * q[a], 0));
-        const r0 = resid(points, f.d).map(Math.abs).sort((a, b) => a - b);
-        const cut = Math.max(0.05, 3 * 1.4826 * r0[(r0.length - 1) >> 1]);
-        const kept = points.filter((_, i) => Math.abs(resid([points[i]], f.d)[0]) <= cut);
-        if (kept.length < points.length) { const g = fit(kept); if (g.determined) f = g; }
-        /*
-         * How well a straight model describes this reading over the frames it
-         * was fitted to, in px: 0.016 to 0.13 on the stack. A diagnostic only.
-         * Weighting the solve by it was tried and made every axis worse (x
-         * 0.19 -> 0.33 mm, the turn 0.06 -> 0.29 degrees): the readings it
-         * marks down are the end readings, and they carry the turn.
-         */
-        const rk = resid(kept, f.d);
-        const fitRms = Math.sqrt(rk.reduce((acc, x) => acc + x * x, 0) / Math.max(1, kept.length - f.d.length));
-        let h = 1 + unknowns.length;
-        const hinge = hinged.map((on) => (on ? f.d[h++] : 0));
-        const lift = liftOn.map((on) => (on ? f.d[h++] : 0));
-        const liftHinge = hinged.map((on) => (lifted && on ? f.d[h++] : 0));
-        out.set(key, { ...truth, reference: f.d[0], jacobian: f.d.slice(1, 1 + unknowns.length),
-          ...(hinged.some(Boolean) ? { hinge } : {}), ...(lifted ? { lift } : {}),
-          ...(lifted && hinged.some(Boolean) ? { liftHinge } : {}),
-          calibration: { frames: points.length, kept: kept.length, rms: fitRms } });
-      } else if (opts.calibrate === 'reference') {
-        const at = unknowns.flatMap((u) => valuesOf(u).filter(([x]) => x === 0).map(([, v]) => v));
-        if (at.length === 0) continue;
-        out.set(key, { ...truth, reference: at.reduce((s, v) => s + v, 0) / at.length });
-      } else {
-        const lines = unknowns.map((u) => fitLine(valuesOf(u)));
-        if (lines.some((l) => l === null)) continue;
-        out.set(key, { ...truth, jacobian: lines.map((l) => l.slope),
-          reference: lines.reduce((s, l) => s + l.at0, 0) / lines.length });
-      }
-    }
-    return out;
-  };
+  const calibrated = (pick) => (opts.calibrate === 'truth' ? readings
+    : calibrateReadings({ ...calibration, mode: opts.calibrate, pick, base: readings }));
   const byPick = new Map();
   const calibratedFor = (pick) => { if (!byPick.has(pick)) byPick.set(pick, calibrated(pick)); return byPick.get(pick); };
   if (opts.calibrate !== 'truth') {
@@ -513,45 +373,16 @@ function main() {
     const worst = { size: 0, text: '' };
     for (const pose of poses) {
       /*
-       * Weighted by the refit's gapSigma, which the record has at the middle
-       * only; the ends are given the middle's. Not because sigma predicts the
-       * error -- reading by reading it hardly does, a rank correlation of
-       * 0.34 -- but it is lowest where a gap is wide and its edges long, and
-       * among the readings of ONE pose that is enough. On the stack's test
-       * poses it took the turn from 0.19 to 0.05 degrees RMS, averaged over
-       * every set of views; with the end readings still tilted by a flat-
-       * level fit it did nothing (design-lab-model.md §5, "An eleventh").
+       * The refit's gapSigma is in the record at the middle only; the ends
+       * are given the middle's (design-lab-model.md §5, "An eleventh").
        */
-      const obs = used.map((p) => {
-        const r = pose.readings.get(p.key);
-        const sigma = sigmaOf(pick, r);
-        return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, liftHinge: p.liftHinge, reference: p.reference, measured: r ? pick(r) : null,
-          weight: opts.weights === 'sigma' && sigma > 0 ? 1 / (sigma * sigma) : 1 };
+      const { solution: s, refused } = solvePose(used, pose.readings, {
+        pick, sigmaOf: (r) => sigmaOf(pick, r), weights: opts.weights, maxSigma: opts.maxSigma, maxResidual: opts.maxResidual,
+        prior: tipPrior, robust: opts.robust, medianSigma: calMedian, readingSigma: opts.readingSigma, liftAxis: LIFT, hingeOf,
       });
-      const s = robustly(obs, tipPrior);
-      /*
-       * A pose is solved from the readings it HAS, and one that lost a few
-       * can be left with readings that barely separate the unknowns. The
-       * solve still returns numbers -- one pose came back 1.3 m from the part
-       * -- and its sigma is what refuses it. The sigma of the readings it has,
-       * UNWEIGHTED: millimetres per pixel of reading error, which is what
-       * --max-sigma is in. The weighted solve's own sigma is scaled by the
-       * weights, 1/gapSigma^2 with gapSigma ~0.015 px, and refused nothing:
-       * the stack's two 50-degree views solved a pose 5 mm off from two
-       * pairs (design-lab-model.md §5, "A twentieth").
-       */
-      const geometry = solvePosition(obs.filter((o) => Number.isFinite(o.measured))
-        .map((o) => ({ jacobian: o.jacobian, reference: 0, measured: 0 })));
-      if (!s.determined || !geometry.determined || Math.max(...geometry.sigma) > opts.maxSigma) continue;
-      /*
-       * And refused when its own readings disagree with it: the RMS of what
-       * each reading says against what the solution predicts, unweighted,
-       * in px. Geometry can pass and the readings still be wrong -- three
-       * pairs of a part turned past the pairing limit solved 98 mm off
-       * (design-lab-model.md §5, "A twenty-third").
-       */
+      if (refused === 'undetermined' || refused === 'geometry') continue;
       residuals.push(s.residualRms);
-      if (s.residualRms > opts.maxResidual) continue;
+      if (refused === 'residual') continue;
       solved++;
       const e = s.d.map((v, k) => v - pose.d[k]);
       e.forEach((v, k) => errors[k].push(v));
@@ -752,6 +583,8 @@ function main() {
       .filter((v) => v > 0).sort((a, b) => a - b);
     const saved = {
       unknowns, reference, calibrate: opts.calibrate, readings: opts.readings,
+      // Which side of flush the hinge is on; estimatePose reads it.
+      ...(below ? { movingBelow: true } : {}),
       sweeps: Object.fromEntries(unknowns.map((u) => [u, opts.dirs[u]])),
       medianSigma: sigmas.length ? sigmas[(sigmas.length - 1) >> 1] : null,
       ...(lifted ? { lift: opts.lift } : {}),

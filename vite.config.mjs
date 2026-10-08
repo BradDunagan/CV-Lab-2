@@ -4,9 +4,10 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 /*
  * The renderer's build.
  *
- * `.mjs` because package.json stays CommonJS: main.js, preload.js, native/
- * and src/lab/ are all `require()`-based and run under Node, not through this
- * bundler. Only src/renderer/ is built. Setting "type": "module" to please
+ * `.mjs` because package.json stays CommonJS: main.js, preload.js and native/
+ * are `require()`-based and run under Node, not through this bundler; so does
+ * packages/vision/, an ES module package with its own package.json that they
+ * require(). Only src/renderer/ is built. Setting "type": "module" to please
  * Vite would break every other file in the project.
  *
  * There is deliberately NO dev server. electron-guide.md attaches one

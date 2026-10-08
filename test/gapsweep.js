@@ -205,7 +205,7 @@ test('a free ledge fit reaches the row beside the track, and a held ledge rides 
 });
 
 test('a ledge table: where it ends is the flush sweep\'s gap in the lift, its shadow the sharp fits\' width per mm', () => {
-  const { flushLines, ledgeTable } = require('../scripts/ledge');
+  const { flushLines, ledgeTable } = require('../packages/vision/src/ledge.js');
   // A y sweep from 4 mm: the gap 1.04 px per mm of lift, less 0.15, read with noise.
   const noise = [0.01, -0.02, 0.015, -0.005, 0];
   const run = { axis: [0, 1, 0], offsetMm: [0, 4, 0], rows: [-2, -1, 0, 1, 2].map((g, k) => (
@@ -227,7 +227,7 @@ test('a ledge table: where it ends is the flush sweep\'s gap in the lift, its sh
 });
 
 test('a ledge table with the moving part below: the lift is its drop, and the ledge its own', () => {
-  const { flushLines, ledgeTable, movingBelow } = require('../scripts/ledge');
+  const { flushLines, ledgeTable, movingBelow } = require('../packages/vision/src/ledge.js');
   // The same sweep mirrored: the moving part 4 mm below, swept further down.
   const run = { axis: [0, -1, 0], offsetMm: [0, -4, 0], rows: [-2, -1, 0, 1, 2].map((g) => (
     { yaw: 35, elevation: 20, pair: 2, pairAngle: 15, gapMm: g, tracked: { gapPx: 1.04 * (4 + g) - 0.15 } })) };

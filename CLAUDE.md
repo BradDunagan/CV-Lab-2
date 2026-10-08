@@ -31,31 +31,43 @@ native/kernels.*     the compute kernels, behind one uniform C signature
 native/render.*      display transforms and downsampling, done in C
 native/fits.*        the results that are not pixels -- fitSegments, fitArcs,
                      8-bit RGBA in -- in plain C, for every surface
+native/sha256.*      a buffer's content hash, in C where the bytes are
 native/addon_*.c     the Node-API surface
 native/wasm_api.c    the WebAssembly surface: the same C, flat exports
-native/wasm.js       the addon's functions from native/wasm/cvlab.wasm
-                     (committed, with a manifest); CVLAB_BACKEND=wasm swaps
-                     it in behind require('native')
-src/lab/ops.js       the twenty-four operations themselves: inputs, params,
+native/wasm.js       reads the module and hands it to the package's backend;
+                     CVLAB_BACKEND=wasm swaps it in behind require('native')
+packages/vision/     @cv-lab/vision: the library, ESM, host-free -- what rr
+                     and rr-desktop consume (its README says how). cv-lab
+                     require()s it; src/lab-host.js supplies the addon, the
+                     file reader and the decoder
+  src/ops.js         the twenty-four operations themselves: inputs, params,
                      defaults, and the kernel each one binds to
-src/lab/registry.js  the schema they are declared against — validation,
+  src/registry.js    the schema they are declared against — validation,
                      error messages, provenance records
-src/lab/parser.js    the command language
-src/lab/session.js   slots, execution, the log, the provenance graph
-src/lab/corners.js   corner hypotheses (pure JS — no pixels involved)
-src/lab/groundtruth.js   reads a renderer's ground truth in as features
-src/lab/match.js     scores detected features against it (pure JS)
-src/lab/explain.js   what put each edge in the picture — reads the AOV
+  src/parser.js      the command language
+  src/session.js     slots, execution, the log, the provenance graph
+  src/corners.js     corner hypotheses (pure JS — no pixels involved)
+  src/groundtruth.js reads a renderer's ground truth in as features
+  src/match.js       scores detected features against it (pure JS)
+  src/explain.js     what put each edge in the picture — reads the AOV
                      passes: occlusion, crease, texture, or shading
-src/lab/gapsweep.js  the image gap between two parts, detected against
+  src/gapsweep.js    the image gap between two parts, detected against
                      true, one row per step of a gap sweep (pure JS)
-src/lab/position.js  one relative position from several gap readings, and
+  src/position.js    one relative position from several gap readings, and
                      what a set of views is worth before anything is
                      detected (pure JS)
-src/lab/pairs.js     two close edges placed again, jointly, against the
+  src/calibrate.js   from readings to a pose: calibrating each reading against
+                     commanded sweeps, solving a frame, a closed loop's step
+  src/carry.js       what a wide frame measured, carried into the narrow ones
+  src/ledge.js       where a ledge ends and how soft its shadow is
+  src/pairs.js       two close edges placed again, jointly, against the
                      unblurred image -- and found, where the detector
                      reported the two as one segment; and one tracked beside
                      the other's line, carried from a wider frame (pure JS)
+  src/wasm.js        the C as a backend, from the module's bytes
+  src/sha256.js      feature lists' and scalars' hashes, without node:crypto
+  wasm/cvlab.wasm    the module, committed, with a manifest of its sources
+  types/             TypeScript declarations from the JSDoc, committed
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
 scripts/generate-cli.js  drives pt-lab to render varied images (needs a GPU)
 scripts/score.js     tallies match records: precision, recall, and which
@@ -123,10 +135,12 @@ npm run degrade -- generated/<run> generated/<run>-noisy --gain 2000   # a camer
 npm run response -- --out <curve.json> a.png@0.5 b.png@1 c.png@2   # its response curve
 npm run believed-truth -- generated/<run> generated/<new> --mm 0.5   # edges where it is believed
 npm run build:native    # compile the addon
-npm run build:wasm      # the same C as WebAssembly, into native/wasm/ -- commit
+npm run build:wasm      # the same C as WebAssembly, into packages/vision/wasm/ -- commit
                         # it (--fetch: the pinned wasi-sdk; --check: rebuild
                         # must be byte-identical, as CI does on Linux)
 npm run test:wasm       # the module against the addon, and every node suite on it
+npm run build:types     # the package's .d.ts from its JSDoc -- commit them (--check:
+                        # current, and a TypeScript host compiles against them)
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run check:pt-lab    # type-check pt-lab/ — the build strips types unchecked
 npm run dev:renderer    # the same, in watch mode

@@ -114,8 +114,8 @@ having tried.
 
 ## 3. Operation reference
 
-Twenty-three operations. Every one is a single entry in `src/lab/ops.js`, declared
-against the schema in `src/lab/registry.js` — which is also what validates your
+Twenty-three operations. Every one is a single entry in `packages/vision/src/ops.js`, declared
+against the schema in `packages/vision/src/registry.js` — which is also what validates your
 arguments and generates the error messages.
 
 Notation: `[1]` means the input must have one channel; `linear` means it demands

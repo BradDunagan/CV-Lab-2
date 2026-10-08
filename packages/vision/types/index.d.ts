@@ -1,4 +1,6 @@
 export { sha256 } from "./sha256.js";
+export { carryPlan } from "./carry.js";
+export { gapRows } from "./gapsweep.js";
 export type Backend = import("./types.js").Backend;
 export type BufferHandle = import("./types.js").BufferHandle;
 export type BufferInfo = import("./types.js").BufferInfo;
@@ -8,3 +10,6 @@ export { loadWasm, instantiate } from "./wasm.js";
 export { createRegistry, buildOps } from "./ops.js";
 export { Session, SessionError, backendAdapter, hashScalars, hashFeatures } from "./session.js";
 export { parseStatement, parseScript, quoteString, ParseError } from "./parser.js";
+export { calibrateReadings, solvePose, estimatePose, frameReadings, pairAngles, carryForward, readingsOf, keyOf, modelAt, hingeFor, POINTS, ANGLES } from "./calibrate.js";
+export { solvePosition, solveLifted } from "./position.js";
+export { ledgeTable, flushLines, movingBelow } from "./ledge.js";

@@ -103,10 +103,10 @@ native/buffer.*        the buffer type: allocation, dtypes, overflow-checked siz
 native/kernels.*       the thirteen kernels, behind one uniform C signature
 native/render.*        display transforms and downsampling, done in C
 native/addon_*.c       the Node-API surface
-src/lab/registry.js    operation definitions, validation, provenance records
-src/lab/parser.js      the command language
-src/lab/session.js     slots, execution, the log, the provenance graph
-src/lab/corners.js     corner hypotheses (pure JS — no pixels involved)
+packages/vision/       the library, as the package rr consumes: operation
+                       definitions and validation, the command language, the
+                       session and its provenance log, corners, gap readings,
+                       calibration and pose; ESM, no Node built-ins
 src/main.js            main process: window, dialogs, menu wiring
 src/menu.js            the application menu template
 src/preload.js         owns the session and every buffer handle
