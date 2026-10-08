@@ -119,8 +119,10 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
                      to measure the shadow's width from. Slow; sharp images
   --ledge <file>     hold a ledge in every carried pair: npm run ledge's
                      table, matched by view and the angle a pair runs at.
-                     Where it ends follows the frame's COMMANDED lift, so the
-                     moving part must be the one above
+                     Where it ends follows the frame's COMMANDED lift
+  --curve <file>     the camera's response curve, measured by npm run
+                     response: each image loaded through it (load's curve=)
+                     instead of as sRGB
   --ledge-lift <mm>  the lift to place the ledge at, for every shot, instead
                      of the shot's own: a closed loop renders the part where
                      it really is and knows only where it believes it is
@@ -151,7 +153,7 @@ function parseArgs(argv) {
     gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], carryFrom: [], size: 512, samples: 96, skipRender: false, overwrite: false,
     script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
     yaw: null, elevation: null, offset: null, poses: null,
-    carry: false, carryMin: 3, ledgeMax: 1.2, ledgeFit: false, ledge: null, ledgeLift: null, dryRun: false,
+    carry: false, carryMin: 3, ledgeMax: 1.2, ledgeFit: false, ledge: null, ledgeLift: null, curve: null, dryRun: false,
   };
   const list = (s, what) => {
     const v = String(s).split(',').map(Number);
@@ -204,6 +206,7 @@ function parseArgs(argv) {
       case '--ledge-max': opts.ledgeMax = list(argv[++i], '--ledge-max')[0]; break;
       case '--ledge-fit': opts.ledgeFit = true; break;
       case '--ledge': opts.ledge = argv[++i]; break;
+      case '--curve': opts.curve = argv[++i]; break;
       case '--ledge-lift': opts.ledgeLift = list(argv[++i], '--ledge-lift')[0]; break;
       case '--overwrite': opts.overwrite = true; break;
       case '--script': opts.script = argv[++i]; break;
@@ -659,7 +662,7 @@ function main() {
 
   const images = shots.map((s) => path.join(gen, s.name));
   const lab = (extra = [], only = images) => electron('scripts/lab-cli.js', [
-    '--script', opts.script, '--as', 'linear',
+    '--script', opts.script, '--as', 'linear', ...(opts.curve ? ['--curve', path.resolve(ROOT, opts.curve)] : []),
     '--truth', gen, '--aovs', gen, '--out', res, '--quiet', ...extra, ...only,
   ]);
   lab();
@@ -784,6 +787,8 @@ function main() {
     ...(gridded ? { views: { yaw: opts.yaw, elevation: opts.elevation } } : {}),
     ...(opts.offset ? { offsetMm: opts.offset } : {}),
     ...(posed ? { poses: opts.poses } : {}),
+    ...(opts.curve ? { curve: { file: path.relative(ROOT, path.resolve(ROOT, opts.curve)),
+      sha256: crypto.createHash('sha256').update(fs.readFileSync(path.resolve(ROOT, opts.curve))).digest('hex') } } : {}),
     ...(carry ? { carry: { minPx: carry.minPx, ledgeMax: carry.ledgeMax, sources: carry.sources, missing: carry.missing,
       ...(carry.ledges ? { ledge: { file: opts.ledge, pairs: carry.ledges } } : {}), ...(opts.ledgeFit ? { ledgeFit: true } : {}) } } : {}),
     analysedAt: new Date().toISOString(), script, inputs, rows,

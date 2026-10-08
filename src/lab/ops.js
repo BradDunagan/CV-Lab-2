@@ -46,11 +46,37 @@ function nativeKernel(name, { scalars = false } = {}) {
  *
  * The 8-bit-to-f32 conversion still happens in C. Only the decode is borrowed.
  */
-function loadKernel(decodeFile) {
+function loadKernel(decodeFile, readTextFile) {
   return async ({ params }) => {
     if (!params.path) throw new Error('load: path is required');
     const native = require('../../native');
     const { width, height, pixels, declared, detail } = await decodeFile(params.path);
+
+    /*
+     * A camera's response curve, measured (`npm run response`): what each
+     * stored code means in linear light. It replaces `from` -- the file's own
+     * declaration is about the encoding a viewer should assume, not about
+     * what the sensor saw -- and is applied as an exact 256-entry table into
+     * f32, so no light the code distinguishes is rounded away again. A
+     * contrast curve left in costs four to nine times the gap error; undone,
+     * nothing (design-lab-model.md §5, "A thirty-sixth").
+     */
+    if (params.curve) {
+      const table = readCurve(await readTextFile(params.curve), params.curve);
+      const values = new Float32Array(width * height * 3);
+      for (let i = 0; i < width * height; i++) {
+        for (let c = 0; c < 3; c++) values[i * 3 + c] = table[pixels[i * 4 + c]];
+      }
+      const linear = native.createBuffer({ width, height, channels: 3, dtype: 'f32', space: 'linear' });
+      native.bufferWrite(linear, values);
+      if (params.as === 'linear') return { kind: 'buffer', handle: linear };
+      // The same kernel `toSrgb` runs, so the two routes to an encoded value agree (§5).
+      try {
+        return { kind: 'buffer', handle: native.runKernel('toSrgb', [linear], {}) };
+      } finally {
+        native.bufferRelease(linear);
+      }
+    }
 
     /*
      * `from` says what the stored bytes mean. Most files declare nothing and
@@ -72,6 +98,23 @@ function loadKernel(decodeFile) {
         { from: params.from, as: params.as }),
     };
   };
+}
+
+/**
+ * A response-curve file's table: 256 linear values, one per 8-bit code,
+ * finite, non-negative and non-decreasing. Anything else is refused by name
+ * rather than applied -- a curve that folds back maps two lights to one.
+ */
+function readCurve(text, where) {
+  let doc;
+  try { doc = JSON.parse(text); } catch (err) { throw new Error(`load: ${where} is not JSON (${err.message})`); }
+  const t = doc && doc.linear;
+  if (!Array.isArray(t) || t.length !== 256) throw new Error(`load: ${where} needs "linear", 256 values, one per 8-bit code`);
+  for (let u = 0; u < 256; u++) {
+    if (!(Number.isFinite(t[u]) && t[u] >= 0)) throw new Error(`load: ${where}: linear[${u}] is not a non-negative number`);
+    if (u > 0 && t[u] < t[u - 1]) throw new Error(`load: ${where}: linear[${u}] < linear[${u - 1}]; a response curve does not decrease`);
+  }
+  return Float64Array.from(t);
 }
 
 /**
@@ -194,7 +237,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
   return [
     defineOp({
       name: 'load',
-      version: 1,
+      version: 2,
       summary: 'Decode an image file into a new buffer.',
       inputs: [],
       params: [
@@ -209,10 +252,13 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'from', type: 'enum', values: ['srgb', 'linear'], default: 'srgb' },
         // What the buffer should hold.
         { name: 'as', type: 'enum', values: ['srgb', 'linear'], default: 'srgb' },
+        // A measured response curve (`npm run response`), in place of `from`:
+        // a JSON file whose "linear" holds the light each 8-bit code stands for.
+        { name: 'curve', type: 'string', default: '' },
       ],
       output: { channels: 3, dtype: 'f32' },
       cancellable: false,
-      kernel: decodeFile ? loadKernel(decodeFile) : null,
+      kernel: decodeFile ? loadKernel(decodeFile, readTextFile) : null,
     }),
 
     defineOp({

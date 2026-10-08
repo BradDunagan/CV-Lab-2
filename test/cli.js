@@ -215,6 +215,22 @@ test('--from and --as reach the load, and change the result', () => {
     'reading the same bytes as srgb and as linear must not produce the same buffer');
 });
 
+test('--curve reaches the load, recorded, and changes the result', () => {
+  // A measured response curve (npm run response) in place of --from.
+  const script = writeScript('stats-curve.lab', ['stats(A)']);
+  const curve = path.join(tmp, 'cube.json');
+  fs.writeFileSync(curve, JSON.stringify({ linear: Array.from({ length: 256 }, (_, u) => (u / 255) ** 3) }));
+  const outs = [[], ['--curve', curve]].map((extra, i) => {
+    const dir = path.join(tmp, `curve-${i}`);
+    const r = run(['--script', script, '--image', ramp, '--as', 'linear', ...extra, '--out', dir]);
+    assert.equal(r.code, 0, r.out);
+    return JSON.parse(fs.readFileSync(path.join(dir, 'ramp.session.json'), 'utf8')).entries[0];
+  });
+  assert.match(outs[0].text, /curve=""/);
+  assert.match(outs[1].text, /curve="[^"]*cube\.json"/);
+  assert.notEqual(outs[0].output.hash, outs[1].output.hash);
+});
+
 /* --- batching ------------------------------------------------------ */
 
 test('several images each get a fresh session', () => {
@@ -487,6 +503,40 @@ test('every suite under test/ is syntactically valid', () => {
     assert.ok(Math.abs(slope(b, 128) - 1.66) < 0.1, `middle slope ${slope(b, 128)}`);
     assert.ok(slope(b, 20) < 0.6, `end slope ${slope(b, 20)}`);
     assert.equal(at(a, 77), 77);
+  });
+
+  test('npm run response recovers degrade --scurve from a degrade --exposure bracket, up to scale', () => {
+    // A ramp of lights over two and a half decades, bracketed two stops
+    // either side; the curve that made the codes is the one to come back.
+    const src = path.join(tmp, 'resp-src'), w = 64, k = 3;
+    makeRun(src, w, (x, y) => Math.round(255 * (0.02 * 40 ** ((y * w + x) / (w * w - 1))) ** (1 / 2.2)));
+    const shots = [0.25, 0.5, 1, 2, 4].map((t) => {
+      const dst = path.join(tmp, `resp-${t}`);
+      const r = run(src, dst, '--exposure', String(t), '--scurve', String(k));
+      assert.equal(r.status, 0, r.stderr);
+      return `${path.join(dst, 'a.png')}@${t}`;
+    });
+    const out = path.join(tmp, 'curve.json');
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'response.js'), '--out', out, ...shots], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const { linear, shots: recorded } = JSON.parse(fs.readFileSync(out, 'utf8'));
+    assert.equal(recorded.length, 5);
+    assert.equal(linear[255], 1);
+    assert.equal(linear[0], 0, 'code 0 is black');
+    for (let z = 1; z < 256; z++) assert.ok(linear[z] >= linear[z - 1], `non-decreasing at ${z}`);
+    const toLin = (e) => (e <= 0.04045 ? e / 12.92 : ((e + 0.055) / 1.055) ** 2.4);
+    const truth = (z) => toLin(0.5 + Math.atanh((2 * z / 255 - 1) * Math.tanh(k / 2)) / k);
+    // Scale is not measurable; compare log ratios about their mean, over the
+    // codes the bracket reaches well.
+    const codes = [];
+    for (let z = 16; z < 240; z++) codes.push(z);
+    const lr = codes.map((z) => Math.log(linear[z] / truth(z)));
+    const mean = lr.reduce((a, b) => a + b) / lr.length;
+    for (let i = 0; i < codes.length; i++) assert.ok(Math.abs(lr[i] - mean) < 0.03, `code ${codes[i]}: ${(lr[i] - mean).toFixed(4)}`);
+    // A bracket of fewer than three is refused, not fitted.
+    const two = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'response.js'), '--out', out, ...shots.slice(0, 2)], { encoding: 'utf8' });
+    assert.equal(two.status, 2);
+    assert.match(two.stderr, /three shots or more/);
   });
 
   test('degrade --interp cubic carries a ramp through a distortion as a ramp; the pixels move, they do not blur', () => {

@@ -42,7 +42,7 @@ const ROOT = path.join(__dirname, '..');
 /* ------------------------------------------------------------------ */
 
 function parseArgs(argv) {
-  const opts = { images: [], script: null, out: null, from: 'srgb', as: 'srgb',
+  const opts = { images: [], script: null, out: null, from: 'srgb', as: 'srgb', curve: null,
                  slot: 'A', truth: null, truthSlot: 'T', aovs: null, extra: null, quiet: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -61,6 +61,8 @@ function parseArgs(argv) {
       // sRGB convention, silently. §11.
       case '--from': opts.from = next(); break;
       case '--as': opts.as = next(); break;
+      // A measured response curve (npm run response), in place of --from.
+      case '--curve': opts.curve = next(); break;
       case '--slot': opts.slot = next(); break;
       // Per image, like the load line above it, and for the same reason: §4
       // keeps the command language free of variables, so anything that varies
@@ -92,6 +94,9 @@ cv-lab-2 batch runner
                     per image (default: report to stdout only)
   --from srgb|linear   what the file's samples MEAN      (default srgb)
   --as   srgb|linear   what the buffer should hold       (default srgb)
+  --curve <file>    the camera's response curve, from npm run response:
+                    what each 8-bit code means in linear light, in place
+                    of --from
   --slot <name>     slot the image loads into            (default A)
   --truth <dir>     ground truth to score against: <dir>/<name>.gt.json
   --truth-slot <n>  slot the ground truth loads into     (default T)
@@ -194,7 +199,8 @@ async function runOne(win, { image, script, opts }) {
   await call('reset()');
 
   const quoted = await call(`quote(${JSON.stringify(image)})`);
-  const load = `${opts.slot} = load(${quoted}, from=${opts.from}, as=${opts.as})`;
+  const curve = opts.curve ? `, curve=${await call(`quote(${JSON.stringify(path.resolve(opts.curve))})`)}` : '';
+  const load = `${opts.slot} = load(${quoted}, from=${opts.from}, as=${opts.as}${curve})`;
 
   const prelude = [load];
   if (opts.truth) {

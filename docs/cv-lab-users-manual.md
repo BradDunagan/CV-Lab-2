@@ -123,7 +123,7 @@ linear values and will refuse sRGB ones (§9).
 
 ### Sources — they take no slot
 
-#### `load(path, from, as)` → 3-channel f32
+#### `load(path, from, as, curve)` → 3-channel f32
 
 Decode an image file.
 
@@ -132,6 +132,7 @@ Decode an image file.
 | `path` | `""` | the file |
 | `from` | `srgb` | what the stored bytes **mean** |
 | `as` | `srgb` | what the buffer should **hold** |
+| `curve` | `""` | a camera's measured response curve (`npm run response`), in place of `from`; see §9 |
 
 The two are different questions and both matter. Most files declare nothing and
 the universal convention is sRGB, which is the default. A file that *does*
@@ -974,6 +975,7 @@ Four scripts ship in `pipelines/`:
 | `--out <dir>` | write `<name>.session.json` and `<name>.features.json` per image |
 | `--from srgb\|linear` | what the file's samples mean (default `srgb`) |
 | `--as srgb\|linear` | what the buffer should hold (default `srgb`) |
+| `--curve <file>` | a measured response curve, in place of `--from` (`load`'s `curve=`; §9) |
 | `--slot <name>` | slot the image loads into (default `A`) |
 | `--truth <dir>` | ground truth to score against: `<dir>/<name>.gt.json` |
 | `--truth-slot <n>` | slot it loads into (default `T`) |
@@ -2052,6 +2054,49 @@ supplied `pipelines/geometry.lab` says so at the top and `npm run lab` needs
 renderer's depth or position pass — decodes wrongly under the sRGB convention,
 silently and nonlinearly. Nothing can detect it. The only defence is stating
 `from=linear`.
+
+### A camera's response curve
+
+sRGB is a convention, and a camera need not keep it. Most apply a "contrast"
+or "filmic" curve on top, and the lab, undoing only sRGB, leaves it in. A
+gamma left in costs nothing measurable; an S-curve costs four to nine times
+the gap error, because it moves an edge's half-way point
+(`design-lab-model.md` §5, "A thirty-sixth"). Undone, it costs nothing again.
+
+**Measure it** from an exposure bracket: the same still scene, the camera on
+a tripod, three or more shots at known exposures (shutter time times gain, in
+any unit, so long as all are in the same one), nothing else changing:
+
+```bash
+npm run response -- --out curves/cam.json a.png@0.25 b.png@0.5 c.png@1 d.png@2 e.png@4
+```
+
+It reports how many of the 254 unclipped codes the bracket reached (widen it,
+or shoot a scene with more tones, if few) and how well one curve explains
+every pixel, in log light. `--per <n>` samples more pixels per code (2);
+`--smooth <x>` holds the curve smoother (10). The file holds what each 8-bit
+code means in linear light, `linear[255] = 1` -- the scale cannot be
+measured and nothing depends on it -- and the shots it came from, with their
+hashes. One curve serves R, G and B.
+
+**Use it** with `load(..., curve="curves/cam.json")`, `npm run lab --
+--curve`, or `npm run gap-sweep -- --curve`, which records the file's hash in
+`gap-sweep.json`. It replaces `from`, and the file's own declaration is not
+consulted: the curve is the stronger statement. Each code goes through the
+table into f32, and `as=srgb` is `toSrgb` of that. A table that decreases
+anywhere is refused.
+
+**Expose so that nothing you measure reaches 255.** A code that clipped in
+every shot says only that the light was at least so much, and its value in
+the file is an extrapolation. Under a strong curve the lit faces of the stack
+reached it, and that one value cost 0.2 mm; one stop under, nothing did, and
+the measured curve gave the clean result. Code 0 is taken to be black.
+
+`npm run degrade -- --exposure <x> --scurve <k>` makes a bracket from a
+render, which is how this was checked: from one frame at five exposures the
+curve comes back within 0.1% of the true one over codes 1 to 254 with no
+noise, and within about 1% with shot noise (`design-lab-model.md` §5, "A
+thirty-seventh").
 
 ---
 
