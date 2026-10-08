@@ -21,7 +21,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { solvePosition, solveLifted } = require('../src/lab/position');
+const { solvePosition, solveLifted } = require('../packages/vision/src/position.js');
 
 const ROOT = path.join(__dirname, '..');
 

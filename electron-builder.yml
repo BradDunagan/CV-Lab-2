@@ -79,6 +79,11 @@ files:
   - dist-renderer/**/*
   - dist-generate/**/*
   - native/**/*.js
+  # The vision package: the preload requires it. Its package.json is not
+  # optional -- it says `"type": "module"`, and without it every file would
+  # be loaded as CommonJS and fail on its first `import`.
+  - packages/vision/package.json
+  - packages/vision/src/**/*.js
   - build/Release/*.node
 
 mac:

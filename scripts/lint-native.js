@@ -31,7 +31,7 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
-const SOURCES = ['native/buffer.c', 'native/fits.c', 'native/kernels.c', 'native/render.c', 'native/wasm_api.c'];
+const SOURCES = ['native/buffer.c', 'native/fits.c', 'native/kernels.c', 'native/render.c', 'native/sha256.c', 'native/wasm_api.c'];
 const FLAGS = ['-std=c11', '-Wall', '-Wextra', '-pedantic', '-fsyntax-only', '-I', 'native'];
 
 const compiler = process.env.CC || 'cc';

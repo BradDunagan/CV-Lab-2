@@ -1,0 +1,26 @@
+{
+  "name": "@cv-lab/vision",
+  "version": "0.1.0",
+  "description": "Images in, described geometry out -- reproducibly. cv-lab's measurement library: operations, sessions with a replayable log, gap readings, pose from several views; the C kernels as WebAssembly.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./cvlab.wasm": "./wasm/cvlab.wasm",
+    "./*": {
+      "types": "./types/*.d.ts",
+      "default": "./src/*.js"
+    }
+  },
+  "types": "./types/index.d.ts",
+  "files": [
+    "src",
+    "types",
+    "wasm"
+  ]
+}

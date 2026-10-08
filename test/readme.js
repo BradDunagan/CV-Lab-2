@@ -35,8 +35,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { createRegistry } = require('../src/lab/ops');
-const { Session } = require('../src/lab/session');
+const { createLabRegistry: createRegistry } = require('../src/lab-host');
+const { Session } = require('../packages/vision/src/session.js');
 
 let failures = 0;
 async function test(name, fn) {

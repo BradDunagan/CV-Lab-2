@@ -15,7 +15,7 @@
 const { app, BrowserWindow, protocol, net, session } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
-const { MIN_VISIBLE } = require('../lab/match');
+const { MIN_VISIBLE } = require('../../packages/vision/src/match.js');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 

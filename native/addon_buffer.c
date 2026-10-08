@@ -15,6 +15,7 @@
 
 #include "buffer.h"
 #include "fits.h"
+#include "sha256.h"
 
 #define THROW_RETURN(env, msg)             \
   do {                                     \
@@ -363,6 +364,38 @@ static napi_value BufferFromRGBA8(napi_env env, napi_callback_info info) {
 }
 
 /* ------------------------------------------------------------------ */
+/* bufferHash(handle) -- the content hash, computed where the bytes are */
+/*                                                                      */
+/* SHA-256 of the buffer's bytes, as lowercase hex: what a session      */
+/* records for every buffer. It used to be node:crypto over a copy of   */
+/* the whole buffer; now nothing crosses but 64 characters.             */
+/* ------------------------------------------------------------------ */
+
+static napi_value BufferHash(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argv[1];
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 1) {
+    THROW_RETURN(env, "bufferHash(handle) requires 1 argument");
+  }
+  CvBuffer *buffer = unwrap(env, argv[0]);
+  if (buffer == NULL) return NULL;
+  if (buffer->data == NULL) THROW_RETURN(env, "buffer has been released");
+
+  uint8_t digest[32];
+  cv_sha256(buffer->data, buffer->bytes, digest);
+  static const char hex[] = "0123456789abcdef";
+  char text[65];
+  for (int i = 0; i < 32; i++) {
+    text[2 * i] = hex[digest[i] >> 4];
+    text[2 * i + 1] = hex[digest[i] & 15];
+  }
+  text[64] = 0;
+  napi_value out;
+  napi_create_string_utf8(env, text, 64, &out);
+  return out;
+}
+
+/* ------------------------------------------------------------------ */
 /* bufferRelease(handle) -- explicit free, rather than waiting for GC  */
 /* ------------------------------------------------------------------ */
 
@@ -400,6 +433,7 @@ napi_status cv_register_buffer_api(napi_env env, napi_value exports) {
   if ((status = export_fn(env, exports, "bufferRead", BufferRead)) != napi_ok) return status;
   if ((status = export_fn(env, exports, "bufferWrite", BufferWrite)) != napi_ok) return status;
   if ((status = export_fn(env, exports, "bufferRelease", BufferRelease)) != napi_ok) return status;
+  if ((status = export_fn(env, exports, "bufferHash", BufferHash)) != napi_ok) return status;
   if ((status = export_fn(env, exports, "bufferFromRGBA8", BufferFromRGBA8)) != napi_ok) return status;
   return napi_ok;
 }

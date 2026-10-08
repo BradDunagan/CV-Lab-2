@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * The operation registry — design-lab-model.md §3.
  *
@@ -14,7 +12,7 @@
  * tested under plain node.
  */
 
-const { quoteString } = require('./parser');
+import { quoteString } from './parser.js';
 
 const PARAM_TYPES = new Set(['number', 'int', 'bool', 'enum', 'string']);
 const DTYPES = new Set(['f32', 'i32']);
@@ -415,7 +413,7 @@ class Registry {
   }
 }
 
-module.exports = {
+export {
   Registry,
   defineOp,
   resolveCall,
@@ -424,5 +422,5 @@ module.exports = {
   checkValue,
   OpDefinitionError,
   CallError,
-  PARAM_TYPES,
+  PARAM_TYPES
 };

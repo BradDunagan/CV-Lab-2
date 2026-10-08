@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Scoring what the pipeline found against what is really there.
  *
@@ -570,8 +568,8 @@ function summarise(records) {
   };
 }
 
-module.exports = {
+export {
   matchArcs, pointToArc, arcPoint, arcTangent, arcFraction,
   matchFeatures, summarise, MIN_VISIBLE,
-  lineAngleDifference, pointToSegment, nearestAlong, sampleCount, median,
+  lineAngleDifference, pointToSegment, nearestAlong, sampleCount, median
 };

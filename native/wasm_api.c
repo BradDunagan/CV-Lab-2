@@ -25,6 +25,7 @@
 #include "fits.h"
 #include "kernels.h"
 #include "render.h"
+#include "sha256.h"
 
 #if defined(__wasm__)
 #define CVW_EXPORT(name) __attribute__((export_name(#name)))
@@ -83,6 +84,11 @@ CVW_EXPORT(cvw_buffer_destroy) void cvw_buffer_destroy(CvBuffer *b) {
   if (b == NULL) return;
   cv_buffer_free(b);
   free(b);
+}
+
+/* The buffer's SHA-256 into `digest` (32 bytes): its content hash. */
+CVW_EXPORT(cvw_buffer_sha256) void cvw_buffer_sha256(const CvBuffer *b, uint8_t *digest) {
+  cv_sha256(b->data, b->bytes, digest);
 }
 
 CVW_EXPORT(cvw_buffer_from_rgba8)

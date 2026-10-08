@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Where one part is relative to another, from several gap readings.
  *
@@ -37,7 +35,7 @@
  * elimination in a fixed order.
  */
 
-const { solve } = require('./pairs');
+import { solve } from './pairs.js';
 
 /**
  * @param {{jacobian: number[], reference: number, measured: number, weight?: number}[]} observations
@@ -223,4 +221,4 @@ function solveLifted(observations, { prior = null, liftAxis = 1, iterations = 20
   return { ...s, residualRms: obs.length ? Math.sqrt(sse / obs.length) : null };
 }
 
-module.exports = { solvePosition, solveHinged, solveLifted };
+export { solvePosition, solveHinged, solveLifted };

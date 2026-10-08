@@ -859,7 +859,7 @@ test('fitPairs and findPairs refuse a colour image and one of another size, and 
    * the app with a colour A: it ran, fitted the red channel, and reported a
    * pair. The arithmetic itself is test/pairs.js; this is only the refusals.
    */
-  const { createRegistry } = require('../src/lab/ops');
+  const { createLabRegistry: createRegistry } = require('../src/lab-host');
   const features = (w, h) => ({ kind: 'features', features: [], width: w, height: h });
   const colour = run('pattern', [], { kind: 'ramp', width: 16, height: 16, channels: 3 });
   const gray = run('pattern', [], { kind: 'ramp', width: 16, height: 16, channels: 1 });
@@ -878,7 +878,7 @@ test('fitPairs and findPairs refuse a colour image and one of another size, and 
 });
 
 test('trackPair reads a half-pixel strip beside the carried line, and refuses what it cannot use', () => {
-  const op = require('../src/lab/ops').createRegistry().get('trackPair');
+  const op = require('../src/lab-host').createLabRegistry().get('trackPair');
   const defaults = Object.fromEntries(op.params.map((p) => [p.name, p.default]));
   const call = (handle, params) => op.kernel({ inputs: [{ kind: 'buffer', handle }], params: { ...defaults, ...params } });
   // 0.6 below y = 19.5, a strip at 0.12 up to y = 20, 0.31 above: pixel row

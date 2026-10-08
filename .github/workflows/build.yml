@@ -206,7 +206,7 @@ jobs:
       - name: Determinism (must agree across all three platforms)
         run: npm run test:determinism
 
-      # The same C as WebAssembly (native/wasm/cvlab.wasm, committed), against
+      # The same C as WebAssembly (packages/vision/wasm/cvlab.wasm, committed), against
       # the addon: side by side in one process, then every plain-node suite
       # again with CVLAB_BACKEND=wasm, test/determinism.js's hashes included.
       # The module is the same bytes on every runner; the engines running it

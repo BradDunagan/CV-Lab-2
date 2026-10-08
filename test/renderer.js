@@ -34,7 +34,7 @@ function flatten(items) {
   return out;
 }
 const zlibCrc = require('node:zlib');
-const { parseStatement } = require('../src/lab/parser');
+const { parseStatement } = require('../packages/vision/src/parser.js');
 
 const ROOT = path.join(__dirname, '..');
 

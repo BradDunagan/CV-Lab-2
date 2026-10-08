@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * The C kernels compiled to WebAssembly: native/wasm/cvlab.wasm, and beside
+ * The C kernels compiled to WebAssembly: packages/vision/wasm/cvlab.wasm, and beside
  * it cvlab.wasm.json saying what it was built from.
  *
  *   npm run build:wasm             build, and write the manifest
@@ -41,10 +41,10 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
-const OUT = path.join(ROOT, 'native', 'wasm', 'cvlab.wasm');
+const OUT = path.join(ROOT, 'packages', 'vision', 'wasm', 'cvlab.wasm');
 const MANIFEST = `${OUT}.json`;
-const SOURCES = ['native/buffer.c', 'native/fits.c', 'native/kernels.c', 'native/render.c', 'native/wasm_api.c'];
-const HEADERS = ['native/buffer.h', 'native/fits.h', 'native/kernels.h', 'native/portable.h', 'native/render.h'];
+const SOURCES = ['native/buffer.c', 'native/fits.c', 'native/kernels.c', 'native/render.c', 'native/sha256.c', 'native/wasm_api.c'];
+const HEADERS = ['native/buffer.h', 'native/fits.h', 'native/kernels.h', 'native/portable.h', 'native/render.h', 'native/sha256.h'];
 const FLAGS = ['--target=wasm32-wasip1', '-mexec-model=reactor', '-std=c11', '-O2', '-ffp-contract=off',
   '-Wall', '-Wextra', '-pedantic', '-Werror', '-I', 'native', '-ffile-prefix-map=' + ROOT + '=.',
   '-Wl,--strip-debug', '-Wl,--max-memory=4294967296'];

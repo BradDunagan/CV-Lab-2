@@ -84,7 +84,7 @@ test('the committed module is the one these sources build', () => {
   const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
   const now = sourceHashes();
   const stale = Object.keys(now).filter((f) => manifest.sources[f] !== now[f]);
-  assert.deepEqual(stale, [], `changed since native/wasm/cvlab.wasm was built: ${stale.join(', ')} -- run npm run build:wasm`);
+  assert.deepEqual(stale, [], `changed since packages/vision/wasm/cvlab.wasm was built: ${stale.join(', ')} -- run npm run build:wasm`);
   const sha = crypto.createHash('sha256').update(fs.readFileSync(OUT)).digest('hex');
   assert.equal(sha, manifest.sha256, 'cvlab.wasm is not the file its manifest describes');
 });
@@ -153,6 +153,17 @@ test('fitSegments and fitArcs give the same records, field for field', () => {
   assert.deepEqual(wasm.fitSegments(wasm.createBuffer({ width: 4, height: 4, dtype: 'i32' })), []);
 });
 
+test('a buffer hashes the same in both, and as node:crypto hashes its bytes', () => {
+  for (const [width, height, channels] of [[1, 1, 1], [1, 14, 1], [1, 16, 1], [3, 5, 1], [13, 7, 3], [512, 512, 3]]) {
+    const values = new Float32Array(width * height * channels);
+    for (let i = 0; i < values.length; i++) values[i] = Math.sin(i) * 1000;
+    const [a, b] = both({ width, height, channels, dtype: 'f32' }, values);
+    const expected = crypto.createHash('sha256').update(Buffer.from(values.buffer)).digest('hex');
+    assert.equal(addon.bufferHash(a), expected, `addon ${width}x${height}x${channels}`);
+    assert.equal(wasm.bufferHash(b), expected, `wasm ${width}x${height}x${channels}`);
+  }
+});
+
 test('the display path agrees: tiles, histograms, the probe', () => {
   const values = new Float32Array(80 * 60 * 3);
   for (let i = 0; i < values.length; i++) values[i] = ((i * 2654435761) % 4096) / 4096 - 0.2;
@@ -211,6 +222,8 @@ test('the same mistake throws the same error', () => {
     ['fitSegments', (n) => [n === addon ? f : g]],
     ['fitArcs', (n) => [n === addon ? l : m]],
     ['invertSync', () => [new Uint8Array(6)]],
+    ['bufferHash', () => [{}]],
+    ['bufferHash', (n) => [released[n === addon ? 0 : 1]]],
   ];
   const outcome = (n, fn, args) => {
     try { n[fn](...args(n)); return 'no error'; } catch (err) { return `${err.constructor.name}: ${err.message}`; }

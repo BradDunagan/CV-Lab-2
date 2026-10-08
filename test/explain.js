@@ -15,7 +15,7 @@ const assert = require('node:assert/strict');
 const {
   explainFeature, explainFeatures, crossings, sample, normalAt, angleBetween, median,
   viewGeometry, slantAt,
-} = require('../src/lab/explain');
+} = require('../packages/vision/src/explain.js');
 
 let failures = 0;
 function test(name, fn) {

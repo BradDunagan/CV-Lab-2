@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * One row of a gap sweep: how well the pipeline sees the gap between two
  * parts, measured against what the renderer says is there.
@@ -896,4 +894,4 @@ function orbitViews(camera, { yaw, elevation }) {
   return views;
 }
 
-module.exports = { gapRow, gapRows, numberPairs, pxPerMm, pxPerMmSlope, truthPair, truthPairs, facing, line, changedInputs, orbitViews, DEFAULTS };
+export { gapRow, gapRows, numberPairs, pxPerMm, pxPerMmSlope, truthPair, truthPairs, facing, line, changedInputs, orbitViews, DEFAULTS };

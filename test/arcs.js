@@ -23,8 +23,8 @@
 
 const assert = require('node:assert/strict');
 const native = require('../native');
-const { createRegistry } = require('../src/lab/ops');
-const { crossings } = require('../src/lab/explain');
+const { createLabRegistry: createRegistry } = require('../src/lab-host');
+const { crossings } = require('../packages/vision/src/explain.js');
 
 let failures = 0;
 function test(name, fn) {

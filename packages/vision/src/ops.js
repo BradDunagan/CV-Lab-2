@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * The first slice of operations — design-lab-model.md §10.
  *
@@ -10,26 +8,27 @@
  * exists for it.
  */
 
-const { Registry, defineOp } = require('./registry');
-const { findCorners } = require('./corners');
-const { readGroundTruth } = require('./groundtruth');
-const { matchFeatures } = require('./match');
-const { explainFeatures } = require('./explain');
-const { fitPairs, findPairs, trackPair } = require('./pairs');
+import { Registry, defineOp } from './registry.js';
+import { findCorners } from './corners.js';
+import { readGroundTruth } from './groundtruth.js';
+import { matchFeatures } from './match.js';
+import { explainFeatures } from './explain.js';
+import { fitPairs, findPairs, trackPair } from './pairs.js';
 
 /**
  * Bind a declared operation to its C kernel.
  *
- * `native` is required lazily so this module — and therefore the registry
- * tests — load without the addon built. Only actually running a kernel needs
- * it.
+ * `backend` is a getter for the compute backend the registry was given --
+ * the Node-API addon, or the WebAssembly module (`./wasm.js`) -- so this
+ * module, and the registry tests, load without either. Only running a kernel
+ * needs one.
  *
  * There is no per-operation code here: the kernels share a C signature, so
  * dispatch is one call whatever the op.
  */
-function nativeKernel(name, { scalars = false } = {}) {
+function nativeKernel(backend, name, { scalars = false } = {}) {
   return ({ inputs, params }) => {
-    const native = require('../../native');
+    const native = backend();
     const result = native.runKernel(name, inputs.map((v) => v.handle), params);
     return scalars ? { kind: 'scalars', values: result } : { kind: 'buffer', handle: result };
   };
@@ -46,10 +45,10 @@ function nativeKernel(name, { scalars = false } = {}) {
  *
  * The 8-bit-to-f32 conversion still happens in C. Only the decode is borrowed.
  */
-function loadKernel(decodeFile, readTextFile) {
+function loadKernel(backend, decodeFile, readTextFile) {
   return async ({ params }) => {
     if (!params.path) throw new Error('load: path is required');
-    const native = require('../../native');
+    const native = backend();
     const { width, height, pixels, declared, detail } = await decodeFile(params.path);
 
     /*
@@ -162,8 +161,8 @@ function groundTruthKernel(readTextFile) {
  * The kernel fitPairs and findPairs share: features and the gray image they
  * were detected in, checked against each other, then handed to `run`.
  */
-function pairKernel(name, run, inputs, params) {
-  const native = require('../../native');
+function pairKernel(backend, name, run, inputs, params) {
+  const native = backend();
   const [src, image] = inputs;
   const info = native.bufferInfo(image.handle);
   /*
@@ -201,8 +200,8 @@ function pairKernel(name, run, inputs, params) {
  * trackPair's kernel: the gray image alone, and what an earlier frame measured
  * as parameters. One `edge-track` record, or none.
  */
-function trackKernel(inputs, params) {
-  const native = require('../../native');
+function trackKernel(backend, inputs, params) {
+  const native = backend();
   const [image] = inputs;
   const info = native.bufferInfo(image.handle);
   if (info.channels !== 1) {
@@ -229,11 +228,19 @@ function trackKernel(inputs, params) {
   return { kind: 'features', features: record ? [record] : [], width: info.width, height: info.height };
 }
 
-function defaultReadTextFile(filePath) {
-  return require('node:fs/promises').readFile(filePath, 'utf8');
+/*
+ * The host's, always: this package reads no files and loads no addon of its
+ * own, so it runs where neither exists. cv-lab's host is src/lab-host.js.
+ */
+function missing(what, how) {
+  return () => { throw new Error(`no ${what}: ${how}`); };
 }
 
-function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
+/** @param {import('./types.js').HostOptions} [options] */
+function buildOps({ backend: given, decodeFile, readTextFile } = {}) {
+  const backend = given ? () => given
+    : missing('compute backend', 'pass createRegistry({ backend }), the addon or the WebAssembly module');
+  readTextFile ??= missing('file reader', 'pass createRegistry({ readTextFile })');
   return [
     defineOp({
       name: 'load',
@@ -258,7 +265,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       ],
       output: { channels: 3, dtype: 'f32' },
       cancellable: false,
-      kernel: decodeFile ? loadKernel(decodeFile, readTextFile) : null,
+      kernel: decodeFile ? loadKernel(backend, decodeFile, readTextFile) : null,
     }),
 
     defineOp({
@@ -274,7 +281,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'value', type: 'number', default: 0.5 },
       ],
       output: { channels: 'same', dtype: 'f32', space: 'linear' },
-      kernel: nativeKernel('pattern'),
+      kernel: nativeKernel(backend, 'pattern'),
     }),
 
     defineOp({
@@ -284,7 +291,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       inputs: [{ name: 'src', space: 'srgb' }],
       params: [],
       output: { channels: 'same', dtype: 'f32', space: 'linear' },
-      kernel: nativeKernel('toLinear'),
+      kernel: nativeKernel(backend, 'toLinear'),
     }),
 
     defineOp({
@@ -294,7 +301,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       inputs: [{ name: 'src', space: 'linear' }],
       params: [],
       output: { channels: 'same', dtype: 'f32', space: 'srgb' },
-      kernel: nativeKernel('toSrgb'),
+      kernel: nativeKernel(backend, 'toSrgb'),
     }),
 
     defineOp({
@@ -308,7 +315,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       inputs: [{ name: 'src', channels: [3], space: 'linear' }],
       params: [],
       output: { channels: 1, dtype: 'f32', space: 'linear' },
-      kernel: nativeKernel('gray'),
+      kernel: nativeKernel(backend, 'gray'),
     }),
 
     defineOp({
@@ -324,7 +331,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'preview', type: 'bool', default: false, semantic: false },
       ],
       output: { channels: 'same', dtype: 'f32', space: 'same' },
-      kernel: nativeKernel('gaussian'),
+      kernel: nativeKernel(backend, 'gaussian'),
     }),
 
     defineOp({
@@ -338,7 +345,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'axis', type: 'enum', values: ['x', 'y', 'mag'], default: 'mag' },
       ],
       output: { channels: 1, dtype: 'f32', space: 'none' },
-      kernel: nativeKernel('sobel'),
+      kernel: nativeKernel(backend, 'sobel'),
     }),
 
     defineOp({
@@ -361,7 +368,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'range', type: 'enum', values: ['signed', 'unsigned'], default: 'signed' },
       ],
       output: { channels: 1, dtype: 'f32', space: 'none' },
-      kernel: nativeKernel('orient'),
+      kernel: nativeKernel(backend, 'orient'),
     }),
 
     defineOp({
@@ -377,7 +384,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       ],
       params: [],
       output: { channels: 1, dtype: 'f32', space: 'none' },
-      kernel: nativeKernel('nms'),
+      kernel: nativeKernel(backend, 'nms'),
     }),
 
     defineOp({
@@ -390,7 +397,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'high', type: 'number', default: 0.15, min: 0 },
       ],
       output: { channels: 1, dtype: 'i32', space: 'none' },
-      kernel: nativeKernel('hysteresis'),
+      kernel: nativeKernel(backend, 'hysteresis'),
     }),
 
     defineOp({
@@ -422,7 +429,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'polarity', type: 'enum', values: ['signed', 'unsigned'], default: 'signed' },
       ],
       output: { channels: 1, dtype: 'i32', space: 'none' },
-      kernel: nativeKernel('segments'),
+      kernel: nativeKernel(backend, 'segments'),
     }),
 
     defineOp({
@@ -440,7 +447,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'angleTol', type: 'number', default: 15.0, min: 1, max: 90 },
       ],
       output: { channels: 1, dtype: 'i32', space: 'none' },
-      kernel: nativeKernel('merge'),
+      kernel: nativeKernel(backend, 'merge'),
     }),
 
     defineOp({
@@ -475,7 +482,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'minSagitta', type: 'number', default: 1.0, min: 0 },
       ],
       output: { channels: 1, dtype: 'i32', space: 'none' },
-      kernel: nativeKernel('chain'),
+      kernel: nativeKernel(backend, 'chain'),
     }),
 
     defineOp({
@@ -491,7 +498,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       params: [],
       output: { kind: 'features' },
       kernel: ({ inputs }) => {
-        const native = require('../../native');
+        const native = backend();
         const info = native.bufferInfo(inputs[0].handle);
         return {
           kind: 'features',
@@ -542,7 +549,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       ],
       output: { kind: 'features' },
       kernel: ({ inputs, params }) => {
-        const native = require('../../native');
+        const native = backend();
         const info = native.bufferInfo(inputs[0].handle);
         const candidates = native.fitArcs(inputs[0].handle);
         return {
@@ -673,7 +680,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'ledge', type: 'enum', values: ['detect', 'none'], default: 'detect' },
       ],
       output: { kind: 'features' },
-      kernel: ({ inputs, params }) => pairKernel('fitPairs', fitPairs, inputs, params),
+      kernel: ({ inputs, params }) => pairKernel(backend, 'fitPairs', fitPairs, inputs, params),
     }),
 
     defineOp({
@@ -726,7 +733,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'minOverlap', type: 'number', default: 10, min: 1 },
       ],
       output: { kind: 'features' },
-      kernel: ({ inputs, params }) => pairKernel('findPairs', findPairs, inputs, params),
+      kernel: ({ inputs, params }) => pairKernel(backend, 'findPairs', findPairs, inputs, params),
     }),
 
     defineOp({
@@ -798,7 +805,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
         { name: 'moving', type: 'enum', values: ['above', 'below'], default: 'above' },
       ],
       output: { kind: 'features' },
-      kernel: ({ inputs, params }) => trackKernel(inputs, params),
+      kernel: ({ inputs, params }) => trackKernel(backend, inputs, params),
     }),
 
     defineOp({
@@ -918,9 +925,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       ],
       output: { kind: 'features' },
       kernel: ({ inputs, params }) => {
-        // Lazily, like every other kernel that touches the addon: this module
-        // has to stay loadable without it so the pure-JS suites can require it.
-        const native = require('../../native');
+        const native = backend();
         const [src, depth, normal, albedo, truth] = inputs;
 
         const maxDepth = truth?.meta?.maxDepth;
@@ -1017,7 +1022,7 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       ],
       // A mask is an identity, not a measurement: i32, and no colour space.
       output: { channels: 1, dtype: 'i32', space: 'none' },
-      kernel: nativeKernel('threshold'),
+      kernel: nativeKernel(backend, 'threshold'),
     }),
 
     defineOp({
@@ -1029,19 +1034,22 @@ function buildOps({ decodeFile, readTextFile = defaultReadTextFile } = {}) {
       // Reductions must use a fixed summation order (§5): float addition is not
       // associative, so a thread-parallel sum would vary between runs.
       output: { kind: 'scalars' },
-      kernel: nativeKernel('stats', { scalars: true }),
+      kernel: nativeKernel(backend, 'stats', { scalars: true }),
     }),
   ];
 }
 
 /**
- * @param {{decodeFile?: (path: string) =>
- *   Promise<{width:number, height:number, pixels:Uint8ClampedArray}>}} [options]
+ * Every operation, bound to the host's backend, decoder and reader.
+ * @param {import('./types.js').HostOptions} [options]
+ * @returns {import('./registry.js').Registry & {backend: import('./types.js').Backend | null}}
  */
 function createRegistry(options = {}) {
   const registry = new Registry();
   for (const op of buildOps(options)) registry.register(op);
+  // The session hashes and releases buffers through the same backend.
+  registry.backend = options.backend ?? null;
   return registry;
 }
 
-module.exports = { createRegistry, buildOps };
+export { createRegistry, buildOps };

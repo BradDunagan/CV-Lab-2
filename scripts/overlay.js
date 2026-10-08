@@ -33,10 +33,10 @@ const zlib = require('node:zlib');
 const { encodePNG } = require('./png');
 // The same threshold the matcher scores with, so the picture and the tally
 // cannot disagree about which edges were findable.
-const { MIN_VISIBLE } = require('../src/lab/match');
+const { MIN_VISIBLE } = require('../packages/vision/src/match.js');
 // Through the lab's own loader, so the truth drawn is the truth that was
 // scored -- in the lab's pixel convention, like every detection here.
-const { parseGroundTruth, PIXEL_CENTRE } = require('../src/lab/groundtruth');
+const { parseGroundTruth, PIXEL_CENTRE } = require('../packages/vision/src/groundtruth.js');
 
 const USAGE = `
 cv-lab-2 overlay

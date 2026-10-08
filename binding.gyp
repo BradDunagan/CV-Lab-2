@@ -9,7 +9,8 @@
         "native/buffer.c",
         "native/fits.c",
         "native/kernels.c",
-        "native/render.c"
+        "native/render.c",
+        "native/sha256.c"
       ],
       "include_dirs": ["native"],
 

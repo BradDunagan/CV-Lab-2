@@ -17,7 +17,7 @@ const assert = require('node:assert/strict');
 const {
   fitPairs, findPairs, trackPair, pairFrame, loneFrame, bandSamples, fitBand, measureAperture, loneApertures,
   coverage, density, solve, DEFAULTS,
-} = require('../src/lab/pairs');
+} = require('../packages/vision/src/pairs.js');
 
 let failures = 0;
 function test(name, fn) {
