@@ -100,6 +100,54 @@ function loadKernel(backend, decodeFile, readTextFile) {
 }
 
 /**
+ * `frame`'s kernel: a float frame in linear light, from wherever the host
+ * keeps it -- a .pfm file in cv-lab, a capture from the analysis camera's
+ * render target in rr. This is the input contract rr is built on: light as
+ * the renderer computed it, never through 8 bits, a tone curve or a display
+ * transform, so nothing has to be undone and nothing has been clipped.
+ *
+ * Refused rather than repaired: a NaN, an infinity or a negative sample (a
+ * firefly, a denoiser's undershoot) would flow into every sum downstream, and
+ * which repair is right is the host's call, made where it can be recorded.
+ * Alpha is dropped -- a render target is RGBA -- and one channel is refused,
+ * because every operation after this one is written for colour.
+ */
+function frameKernel(backend, readFrame) {
+  return async ({ params }) => {
+    if (!params.source) throw new Error('frame: source is required');
+    const { width, height, channels, data } = await readFrame(params.source);
+    const where = `frame: ${params.source}`;
+    if (!(Number.isInteger(width) && width > 0 && Number.isInteger(height) && height > 0)) {
+      throw new Error(`${where}: size ${width} x ${height} is not two positive integers`);
+    }
+    if (channels !== 3 && channels !== 4) {
+      throw new Error(`${where}: ${channels} channel(s); a frame is RGB or RGBA`);
+    }
+    if (!(data instanceof Float32Array) || data.length !== width * height * channels) {
+      throw new Error(`${where}: needs a Float32Array of ${width * height * channels} samples`);
+    }
+    let rgb = data;
+    if (channels === 4) {
+      rgb = new Float32Array(width * height * 3);
+      for (let i = 0; i < width * height; i++) {
+        rgb[i * 3] = data[i * 4]; rgb[i * 3 + 1] = data[i * 4 + 1]; rgb[i * 3 + 2] = data[i * 4 + 2];
+      }
+    }
+    for (let i = 0; i < rgb.length; i++) {
+      const v = rgb[i];
+      if (!(v >= 0 && v < Infinity)) {
+        const p = Math.floor(i / 3);
+        throw new Error(`${where}: sample ${v} at (${p % width}, ${Math.floor(p / width)}); a frame is finite, non-negative light`);
+      }
+    }
+    const native = backend();
+    const handle = native.createBuffer({ width, height, channels: 3, dtype: 'f32', space: 'linear' });
+    native.bufferWrite(handle, rgb);
+    return { kind: 'buffer', handle };
+  };
+}
+
+/**
  * A response-curve file's table: 256 linear values, one per 8-bit code,
  * finite, non-negative and non-decreasing. Anything else is refused by name
  * rather than applied -- a curve that folds back maps two lights to one.
@@ -237,7 +285,7 @@ function missing(what, how) {
 }
 
 /** @param {import('./types.js').HostOptions} [options] */
-function buildOps({ backend: given, decodeFile, readTextFile } = {}) {
+function buildOps({ backend: given, decodeFile, readTextFile, readFrame } = {}) {
   const backend = given ? () => given
     : missing('compute backend', 'pass createRegistry({ backend }), the addon or the WebAssembly module');
   readTextFile ??= missing('file reader', 'pass createRegistry({ readTextFile })');
@@ -266,6 +314,21 @@ function buildOps({ backend: given, decodeFile, readTextFile } = {}) {
       output: { channels: 3, dtype: 'f32' },
       cancellable: false,
       kernel: decodeFile ? loadKernel(backend, decodeFile, readTextFile) : null,
+    }),
+
+    defineOp({
+      name: 'frame',
+      version: 1,
+      summary: 'A float frame in linear light, as a renderer computed it: no 8 bits, no tone curve.',
+      inputs: [],
+      params: [
+        // What the host knows the frame by: a .pfm path in cv-lab, a
+        // capture's id in rr. The frame's hash is in the record either way.
+        { name: 'source', type: 'string', default: '' },
+      ],
+      output: { channels: 3, dtype: 'f32', space: 'linear' },
+      cancellable: false,
+      kernel: readFrame ? frameKernel(backend, readFrame) : null,
     }),
 
     defineOp({

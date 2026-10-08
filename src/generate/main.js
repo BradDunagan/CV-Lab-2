@@ -274,8 +274,12 @@ const api = {
    *
    * It delivers the file by triggering a browser download, which the CLI
    * intercepts and writes wherever it wants.
+   *
+   * `frame`, a .pfm name, also downloads the same samples as linear float:
+   * the radiance times the exposure, before tone mapping clips it and sRGB
+   * rounds it to 8 bits. What rr's analysis camera hands the vision package.
    */
-  async render(size, filename) {
+  async render(size, filename, frame = null) {
     /*
      * Wait until it is demonstrably rendering before asking for an export.
      *
@@ -292,7 +296,7 @@ const api = {
       (s) => s.mode === 'pathtracing' && s.samples > 0,
       'the tracer to start accumulating samples'
     );
-    await lab.exportPNG(size, filename);
+    await lab.exportPNG(size, filename, undefined, frame ?? undefined);
     return filename;
   },
 };

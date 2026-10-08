@@ -264,6 +264,24 @@ const EXPORT_SAMPLES = 300;
 // small denoised exports. So denoise at >= this size, then downscale.
 const DENOISE_MIN_SIZE = 256;
 
+/** Linear RGB radiance, three floats a pixel, rows bottom-up. */
+export type LinearFrame = { width: number; height: number; rgb: Float32Array };
+
+/**
+ * A float frame as a Portable Float Map: `PF`, the size, a negative scale
+ * (little-endian), then the rows bottom-up, three float32s a pixel. The
+ * simplest format that holds linear light losslessly; cv-lab reads it with
+ * `frame()`, the other route in besides an 8-bit image.
+ */
+export function encodePFM({ width, height, rgb }: LinearFrame): Uint8Array<ArrayBuffer> {
+	const header = new TextEncoder().encode(`PF\n${width} ${height}\n-1.0\n`);
+	const out = new Uint8Array(header.length + rgb.length * 4);
+	out.set(header);
+	const view = new DataView(out.buffer, header.length);
+	for (let i = 0; i < rgb.length; i++) view.setFloat32(i * 4, rgb[i], true);
+	return out;
+}
+
 // canvas.toBlob() writes an untagged PNG (IHDR/IDAT/IEND only — no color
 // chunks at all), leaving the transfer function and gamut to whatever the
 // reader assumes. The beauty export IS sRGB (the renderer's default output
@@ -2562,9 +2580,24 @@ export class PathTracerLab {
 	 * Independent of viewport/display: the renderer is temporarily resized to
 	 * size×size at pixel-ratio 1 and a square camera, converged to
 	 * EXPORT_SAMPLES, captured, then the interactive view is restored.
+	 *
+	 * `linearFilename`, when given, also downloads the same samples as a float
+	 * frame (`encodePFM`): the accumulated radiance times the exposure, never
+	 * tone-mapped, clipped or rounded to 8 bits. It is read in the tick the PNG
+	 * is captured, so the two differ by the 8-bit encoding and nothing else. A
+	 * denoised export has no such frame -- the denoiser runs on the 8-bit
+	 * image -- so the two together are refused.
 	 */
-	async exportPNG(size: number, filename = 'pt-lab.png', onProgress?: (frac: number) => void) {
+	async exportPNG(
+		size: number,
+		filename = 'pt-lab.png',
+		onProgress?: (frac: number) => void,
+		linearFilename?: string,
+	) {
 		if (!this.ready || this.exporting) return;
+		if (linearFilename && this.denoiseEnabled) {
+			throw new Error('exportPNG: a float frame is the renderer\'s own light; turn denoising off for one');
+		}
 		this.exporting = true;
 		this.hideDenoise();
 
@@ -2612,6 +2645,7 @@ export class PathTracerLab {
 			const ctx = this.captureCanvas.getContext('2d', { willReadFrequently: true })!;
 			ctx.drawImage(this.renderer.domElement, 0, 0);
 			let image = ctx.getImageData(0, 0, renderSize, renderSize);
+			const linear = linearFilename ? this.readLinearFrame() : null;
 
 			// Denoise the export using the same UNet / aux choice as the live view.
 			if (unet) {
@@ -2655,6 +2689,7 @@ export class PathTracerLab {
 			}
 			// Beauty export: tone-mapped and sRGB-encoded, so declare it as sRGB.
 			await this.downloadCanvas(out, filename, true);
+			if (linear && linearFilename) this.downloadBlob(new Blob([encodePFM(linear)]), linearFilename);
 		} finally {
 			this.renderer.setPixelRatio(prevPixelRatio);
 			this.renderer.setSize(logical.x, logical.y, false);
@@ -3177,6 +3212,33 @@ export class PathTracerLab {
 		c.height = img.height;
 		c.getContext('2d')!.putImageData(img, 0, 0);
 		await this.downloadCanvas(c, filename, gammaEncoded);
+	}
+
+	/**
+	 * The path tracer's accumulated radiance, times the exposure: what the
+	 * canvas shows before tone mapping clips it to 1 and sRGB rounds it to 8
+	 * bits. Rows bottom-up, as GL reads them and as PFM stores them.
+	 */
+	private readLinearFrame(): LinearFrame {
+		const target = this.pathTracer.target;
+		const { width, height } = target;
+		const rgba = new Float32Array(width * height * 4);
+		this.renderer.readRenderTargetPixels(target, 0, 0, width, height, rgba);
+		const exposure = this.renderer.toneMappingExposure;
+		const rgb = new Float32Array(width * height * 3);
+		for (let i = 0; i < width * height; i++) {
+			for (let c = 0; c < 3; c++) rgb[i * 3 + c] = rgba[i * 4 + c] * exposure;
+		}
+		return { width, height, rgb };
+	}
+
+	private downloadBlob(blob: Blob, filename: string) {
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = filename;
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 
 	private async downloadCanvas(

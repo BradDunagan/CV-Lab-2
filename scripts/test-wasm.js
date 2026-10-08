@@ -16,7 +16,7 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
-const SUITES = ['sha256', 'smoke', 'buffer', 'kernels', 'arcs', 'render', 'registry', 'session', 'png', 'corners',
+const SUITES = ['sha256', 'smoke', 'buffer', 'kernels', 'arcs', 'render', 'registry', 'session', 'frame', 'png', 'corners',
   'explain', 'groundtruth', 'gapsweep', 'position', 'calibrate', 'pairs', 'determinism', 'readme'];
 
 const run = (file, env) => spawnSync(process.execPath, [path.join('test', `${file}.js`)],

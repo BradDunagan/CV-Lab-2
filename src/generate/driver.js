@@ -339,7 +339,7 @@ const DEFAULTS = {
   out: null, size: 512, samples: 96, positions: 3, lighting: 2,
   room: undefined, lights: undefined, scene: 'helmet', aovs: false, truth: false,
   creaseAngle: 20, denoise: false, show: false, dryRun: false,
-  toneMapping: 'aces', exposure: 1,
+  toneMapping: 'aces', exposure: 1, float: false,
 };
 
 const TONE_MAPPINGS = ['aces', 'linear'];
@@ -1190,6 +1190,9 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
   if (opts.aovs) fs.mkdirSync(aovDir, { recursive: true });
 
   checkToneMapping(opts);
+  // The denoiser runs on the 8-bit image, so a denoised render has no float
+  // frame of its own to give.
+  if (opts.float && opts.denoise) throw new Error('--float and --denoise together: a float frame is the renderer\'s own light, not the denoiser\'s');
   const shots = opts.shots ? checkShots(opts.shots) : plan(opts);
   if (opts.dryRun) {
     for (const shot of shots) onProgress({ type: 'shot', dryRun: true, ...shot });
@@ -1352,11 +1355,13 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
       downloads.clear();
 
       saveDir = opts.out;
-      await call(`render(${opts.size}, ${JSON.stringify(shot.name)})`);
+      // --float: the same samples as linear float, <name>.pfm beside the PNG.
+      const frameName = opts.float ? `${base}.pfm` : null;
+      await call(`render(${opts.size}, ${JSON.stringify(shot.name)}, ${JSON.stringify(frameName)})`);
       const file = await awaitDownload(shot.name);
       files.push(file);
 
-      const extra = { aovs: [], truth: null };
+      const extra = { aovs: [], truth: null, frame: frameName ? await awaitDownload(frameName) : null };
       if (opts.aovs) {
         saveDir = aovDir;
         const { files: names } = await call(`aovs(${opts.size}, ${JSON.stringify(base)})`);

@@ -1,0 +1,11 @@
+run      column    n    png err  float err  difference  max |diff|
+x        refit      46   0.449     0.107      0.394      0.693
+x        tracked    46   0.770     0.076      0.761      4.483
+y        refit      37   0.461     0.080      0.397      0.598
+y        tracked    42   0.446     0.098      0.379      0.951
+z        refit      46   0.462     0.080      0.404      0.671
+z        tracked    44   0.424     0.097      0.356      0.430
+turn     refit      32   0.445     0.079      0.380      0.474
+turn     tracked    35   0.396     0.079      0.340      0.434
+test     refit      49   0.410     0.109      0.356      0.683
+test     tracked    68   0.396     0.078      0.354      0.843

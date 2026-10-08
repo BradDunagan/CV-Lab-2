@@ -87,12 +87,26 @@ export type DecodedImage = {
     detail?: string | undefined;
 };
 /**
+ * A float frame, as a host's `readFrame` returns it for `frame`: linear
+ * light, rows top-down, samples interleaved. RGBA's alpha is dropped.
+ */
+export type Frame = {
+    width: number;
+    height: number;
+    /**
+     * 3 or 4 (a PFM file may say 1, which `frame` refuses)
+     */
+    channels: number;
+    data: Float32Array;
+};
+/**
  * What a host passes to `createRegistry`. Nothing is required to build a
- * registry; running a kernel needs a backend, `load` a decoder, and
- * `load(curve=)` and `groundTruth` a text reader.
+ * registry; running a kernel needs a backend, `load` a decoder, `frame` a
+ * frame reader, and `load(curve=)` and `groundTruth` a text reader.
  */
 export type HostOptions = {
     backend?: Backend | undefined;
     decodeFile?: ((path: string) => Promise<DecodedImage>) | undefined;
+    readFrame?: ((source: string) => Promise<Frame>) | undefined;
     readTextFile?: ((path: string) => Promise<string>) | undefined;
 };

@@ -1,0 +1,27 @@
+FAIL x-f (see notes/brads-notes/2026-10-08-float/logs/x-f-float-render.log)
+FAIL y-f (see notes/brads-notes/2026-10-08-float/logs/y-f-float-render.log)
+done z-f float
+done turn-f float
+done test-f float
+done x-f
+done y-f
+done z-f
+done turn-f
+done x-f
+done y-f
+done z-f
+done turn-f
+done test-f
+done x-f float
+done y-f float
+done z-f float
+done turn-f float
+done x-f float
+done y-f float
+done z-f float
+done turn-f float
+done test-f float
+stack-2g-f-float-hinged.json             10 sets 0.105 / 0.047 / 0.054 / 0.029   4 views 0.062 / 0.031 / 0.040 / 0.013  (10/10)
+stack-2g-f-float-joint.json              10 sets 0.131 / 0.057 / 0.056 / 0.026   4 views 0.058 / 0.020 / 0.026 / 0.011  (10/10)
+stack-2g-f-png-hinged.json               10 sets 0.109 / 0.048 / 0.054 / 0.030   4 views 0.067 / 0.032 / 0.040 / 0.015  (10/10)
+stack-2g-f-png-joint.json                10 sets 0.132 / 0.058 / 0.056 / 0.026   4 views 0.056 / 0.020 / 0.026 / 0.011  (10/10)

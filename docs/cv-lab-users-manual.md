@@ -153,6 +153,30 @@ Only works in a renderer: `load` borrows Chromium's decoder, which is why
 `node` the operation reports itself unimplemented instead of throwing when
 called.
 
+#### `frame(source)` → 3-channel f32, linear
+
+A float frame: light as a renderer computed it, never through 8 bits, a tone
+curve or a display transform. This is the input the vision package is built
+around -- rr's analysis camera hands it the path tracer's render target -- and
+in cv-lab it is a PFM file, which `npm run generate -- --float` writes beside
+each PNG from the same samples.
+
+| parameter | default | what it does |
+|---|---|---|
+| `source` | `""` | what the host knows the frame by: a `.pfm` path here, a capture's id in rr |
+
+Nothing to declare: a frame is linear by contract, so `from`, `as` and `curve`
+have no counterpart. Light above 1 is kept -- that is the point; an 8-bit image
+clips it, and clipping a bright face moves its edges (half a pixel on
+`test/frame.js`'s rectangle). RGBA's alpha is dropped. Refused rather than
+repaired, by position: a NaN, an infinity or a negative sample (a firefly, a
+denoiser's undershoot), one channel, or a sample count that does not match the
+size. The frame's content hash is in the record, so a replay given a different
+frame under the same name says so at its first entry.
+
+The host supplies the frames (`createRegistry({ readFrame })`); cv-lab's reads
+PFM, either byte order, rows bottom-up as the format stores them.
+
 #### `pattern(kind, width, height, channels, value)` → f32, linear
 
 A synthetic image needing no file. Useful for testing a pipeline and for
@@ -976,6 +1000,7 @@ Four scripts ship in `pipelines/`:
 | `--from srgb\|linear` | what the file's samples mean (default `srgb`) |
 | `--as srgb\|linear` | what the buffer should hold (default `srgb`) |
 | `--curve <file>` | a measured response curve, in place of `--from` (`load`'s `curve=`; §9) |
+| *an image ending `.pfm`* | a float frame: prepended as `A = frame("<image>")` instead of a `load`. Needs `--as linear`, takes no `--curve` |
 | `--slot <name>` | slot the image loads into (default `A`) |
 | `--truth <dir>` | ground truth to score against: `<dir>/<name>.gt.json` |
 | `--truth-slot <n>` | slot it loads into (default `T`) |
@@ -1232,6 +1257,7 @@ you are editing pt-lab and cv-lab-2 together.
 | `--denoise` | off | run OIDN over each export |
 | `--tone-mapping <k>` | `aces` | `aces` or `linear`. Use `linear` for measurement; see below |
 | `--exposure <x>` | 1 | multiplies radiance before tone mapping |
+| `--float` | off | also write `<name>.pfm`: the same samples as linear float, radiance times the exposure, never tone-mapped, clipped or rounded. Read with `frame()`. Not with `--denoise`, which works on the 8-bit image |
 | `--show` | off | show pt-lab's window and watch it converge |
 | `--shots <file>` | — | render this JSON list of shots instead of the scene's plan; each may place objects. See `npm run generate -- --help` |
 | `--dry-run` | off | print the sweep, render nothing |
@@ -1819,6 +1845,22 @@ record names the directory and hashes its truth files. On the stack a belief
 their error, and test poses nothing once identified again from a first solve
 (`design-lab-model.md` §5, "A thirty-eighth"). It takes about 20 s a shot.
 
+**`--float` reads float frames instead of PNGs.** Each shot is rendered as
+both, from the same samples (`npm run generate -- --float`), and the lab
+reads the `.pfm` with `frame()`: linear light with nothing to undo and nothing
+clipped. Results go to the results directory's `float/`, beside the PNG's, and
+the record says `frames: "float"` and hashes each frame. With
+`--skip-render` it needs a run rendered with `--float`. Not with `--curve`:
+a response curve maps 8-bit codes, and a frame has none.
+
+At the default exposure, chosen so the measured faces stay below 1, the two
+routes give the same answer: readings within 0.01 px RMS, test poses within
+0.005 mm. One stop over, with 12.8% of pixels clipped, the PNG route's test
+poses are five to eight times worse (0.3-0.4 mm) and the float route's are
+unchanged (`design-lab-model.md` §5, "A thirty-ninth"). Two renders of the
+same shots differ by more than that first comparison does -- hinged x 0.026
+against 0.067 mm -- so compare analyses only on the same renders.
+
 ### `npm run position`
 
 ```bash
@@ -2064,6 +2106,10 @@ because a gradient is not a colour and the question does not apply.
 **In practice:** if your pipeline blurs or greys, load with `as=linear`. The
 supplied `pipelines/geometry.lab` says so at the top and `npm run lab` needs
 `--as linear` to run it.
+
+**The way round all of it** is a float frame (`frame()`, §3): a renderer's
+linear light, never encoded, so there is nothing to undo and nothing clipped.
+`npm run generate -- --float` and `gap-sweep --float` produce and read them.
 
 **The trap worth naming:** an untagged PNG holding *linear* samples — a
 renderer's depth or position pass — decodes wrongly under the sRGB convention,

@@ -57,12 +57,23 @@
  */
 
 /**
+ * A float frame, as a host's `readFrame` returns it for `frame`: linear
+ * light, rows top-down, samples interleaved. RGBA's alpha is dropped.
+ * @typedef {object} Frame
+ * @property {number} width
+ * @property {number} height
+ * @property {number} channels  3 or 4 (a PFM file may say 1, which `frame` refuses)
+ * @property {Float32Array} data
+ */
+
+/**
  * What a host passes to `createRegistry`. Nothing is required to build a
- * registry; running a kernel needs a backend, `load` a decoder, and
- * `load(curve=)` and `groundTruth` a text reader.
+ * registry; running a kernel needs a backend, `load` a decoder, `frame` a
+ * frame reader, and `load(curve=)` and `groundTruth` a text reader.
  * @typedef {object} HostOptions
  * @property {Backend} [backend]
  * @property {(path: string) => Promise<DecodedImage>} [decodeFile]
+ * @property {(source: string) => Promise<Frame>} [readFrame]
  * @property {(path: string) => Promise<string>} [readTextFile]
  */
 
