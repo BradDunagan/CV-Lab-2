@@ -68,6 +68,13 @@ async function main() {
   });
 
   await test('async work actually runs off the JS thread', async () => {
+    // The WebAssembly backend has no thread pool: a module instance is one
+    // thread, and off the main one in a browser means a Worker, which is the
+    // host's to arrange. Said rather than skipped silently.
+    if (native.backend === 'wasm') {
+      console.log('       wasm backend: single-threaded by construction; a host runs it in a worker');
+      return;
+    }
     // 64 MP of RGBA. If this ran inline, the tick counter below would stay 0.
     const px = new Uint8ClampedArray(64 * 1024 * 1024);
     let ticks = 0;

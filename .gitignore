@@ -1,4 +1,6 @@
 node_modules/
+# The pinned wasi-sdk, fetched by `npm run build:wasm -- --fetch`.
+.tools/
 build/
 dist/
 out/

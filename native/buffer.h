@@ -57,7 +57,18 @@ typedef struct {
  * dimension is checked before it is ever used to size an allocation.
  */
 #define CV_MAX_DIM (1 << 20)                    /* 1,048,576 px per side */
-#define CV_MAX_BYTES ((size_t)8 << 30)          /* 8 GiB */
+/*
+ * 8 GiB where size_t is 64-bit; 2 GiB where it is 32 -- wasm32, whose whole
+ * address space is 4 GiB. `(size_t)8 << 30` in a 32-bit size_t is a defined
+ * unsigned wrap to ZERO, with no warning from any compiler, and every
+ * allocation then reported "buffer size overflows". Found by the first
+ * WebAssembly build's first kernel.
+ */
+#if SIZE_MAX > 0xFFFFFFFFu
+#define CV_MAX_BYTES ((size_t)8 << 30)
+#else
+#define CV_MAX_BYTES ((size_t)1 << 31)
+#endif
 #define CV_ALIGN 64                             /* room for future SIMD */
 
 size_t cv_dtype_size(CvDtype dtype);

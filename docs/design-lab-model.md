@@ -3210,6 +3210,49 @@ The rule generalises past label maps. Any operation that emits ids — feature
 records included — owes them an ordering derived from the data, because a hash
 over a set of identities is only stable if the identities are.
 
+**6. A second build of the same C gives the same hashes, or it is not the same
+lab.** rr runs this pipeline in a browser, so the C is also compiled to
+WebAssembly (`npm run build:wasm`: wasi-sdk 34, pinned by SHA-256; the same
+flags, `-ffp-contract=off` among them). The module is 70 KB, imports
+nothing, and carries its own libm -- musl's, compiled in -- so every engine
+runs the same `exp` and `pow`, which is more than the addon's three platform
+libms promise. It is committed, with a manifest of the sources it was built
+from, and CI rebuilds it on Linux and requires the same bytes the Mac built.
+`CVLAB_BACKEND=wasm` puts it behind `require('native')`, with the addon's
+functions and the addon's errors, message for message.
+
+Measured on 2026-10-08, against the addon on arm64 macOS:
+
+- **`test/determinism.js` passes on the module unchanged**: every hash
+  written for the addon, the feature records included, from the first run
+  that ran at all.
+- **Where the two libms meet, they agree to the bit**: both 8-bit transfer
+  tables for every byte value, `toLinear` and `toSrgb` over 12,288 values,
+  the Gaussian for forty values of sigma, `orient` over 4,096 gradients
+  (`test/wasm.js`). Rule 3b's exposure is real -- these call a libm -- but
+  musl and Apple's libm return the same values here.
+- **A real run, end to end**: the stack's 40 test-pose renders through
+  `pairs.lab` and `gap-sweep --carry`, once on each, give 83 output files
+  identical in everything but the environment record, 920 content hashes
+  among them (`notes/brads-notes/2026-10-08-wasm/`).
+
+Making it work found two defects that the addon could not show. A header
+named `features.h` beside the C: musl's and glibc's `stdlib.h` include
+`<features.h>`, and with `native/` on the include path the angle-bracket
+search found ours (it is `fits.h`). And `CV_MAX_BYTES`, `(size_t)8 << 30`,
+which in a 32-bit `size_t` is a defined unsigned wrap to zero -- no compiler
+warns -- so every allocation reported an overflow. The cap is 2 GiB there.
+
+To make the module possible, what `fitSegments`, `fitArcs` and
+`bufferFromRGBA8` compute moved out of the Node-API layer into
+`native/fits.c`; both surfaces call it, and the addon's hashes did not move.
+What the module does not do: run off the calling thread (a browser host puts
+it in a Worker), or cancel a running kernel. Its speed against the addon is
+pre-port item 5.
+
+The module has an identity the addon lacks: its SHA-256, which a session run
+on it records as `environment.build`.
+
 **What remains achievable:** bit-exact results within a machine, and — with
 rules 3 and 3b — across platforms, for the geometry and for every buffer this
 pipeline currently produces. What is not achievable is bit-exactness across

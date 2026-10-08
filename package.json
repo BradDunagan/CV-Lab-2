@@ -15,6 +15,7 @@
     "prebuild:renderer": "node scripts/check-node.js",
     "pretest": "node scripts/check-node.js",
     "build:native": "node-gyp rebuild",
+    "build:wasm": "node scripts/build-wasm.js",
     "build:renderer": "vite build",
     "build:generate": "vite build --config vite.generate.config.mjs",
     "postbuild:generate": "node scripts/check-generate-bundle.js",
@@ -43,8 +44,9 @@
     "smoke:package": "node scripts/smoke-package.js",
     "test:lab": "node test/registry.js && node test/session.js && node test/png.js && node test/corners.js && node test/explain.js && node test/groundtruth.js && node test/gapsweep.js && node test/position.js && node test/pairs.js && node test/repo.js",
     "test:determinism": "node test/determinism.js",
+    "test:wasm": "node scripts/test-wasm.js",
     "test:readme": "node test/readme.js",
-    "test": "npm run test:native && npm run test:lab && npm run test:determinism && npm run test:readme && npm run test:renderer && npm run test:cli",
+    "test": "npm run test:native && npm run test:lab && npm run test:determinism && npm run test:wasm && npm run test:readme && npm run test:renderer && npm run test:cli",
     "test:renderer": "electron test/renderer.js",
     "test:cli": "node test/cli.js"
   },

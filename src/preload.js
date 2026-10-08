@@ -88,6 +88,12 @@ const session = new Session({
     app: require('../package.json').version,
     electron: process.versions.electron,
     platform: `${process.platform}/${process.arch}`,
+    // Which build of the C computed the results: the addon, or the same C
+    // as WebAssembly (CVLAB_BACKEND=wasm). Their hashes agree, which is what
+    // test/determinism.js checks; the record says which ran regardless --
+    // and for the module, exactly which build: its SHA-256.
+    backend: native.backend,
+    build: native.build,
   },
 });
 

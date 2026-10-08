@@ -754,6 +754,14 @@ Three compilers: clang (macOS), MSVC (Windows), gcc (Linux). See
 
 Endianness is not a concern; all three targets are little-endian.
 
+A fourth target since 2026-10-08: **wasm32**, through wasi-sdk
+(`npm run build:wasm`, design-lab-model.md §5 rule 6). Its `size_t` is 32
+bits, which the three above never were -- the first build's first kernel
+found `(size_t)8 << 30` wrapping to zero, silently. And its libc is musl, whose
+`stdlib.h` includes `<features.h>`: a header of that name on the project's
+include path shadows it (glibc's does the same). Write `SIZE_MAX`-aware caps,
+and do not name a header after a system one.
+
 ### The renderer is a build now, and there is still no dev server
 
 The UI is Svelte 5 on top of [paneless](../../paneless-workspace), which means
@@ -909,6 +917,7 @@ above is only as good as its evidence.
 | The addon survives packaging | `app.asar` header entry marked `"unpacked": true`; archive is 16 KB, referenced addon 51 KB |
 | The packaged app can load it | `ELECTRON_RUN_AS_NODE=1 <packaged binary> -e "require(...)"` → `[245,235,225,128]` |
 | It works on a real Windows machine | NSIS installer run on Windows 10; app launched and ran |
+| The C as WebAssembly gives the addon's results | `test/determinism.js` on the module (`npm run test:wasm`); 83 analysis files from 40 stack renders identical on both, 920 content hashes |
 | Unsigned installers warn users | **Not verified** — the test file had no Mark of the Web, so SmartScreen never ran |
 
 The last row is the useful reminder: an untriggered check is not a passed check.

@@ -29,7 +29,13 @@ the claim and the correction are written down.
 native/buffer.*      the buffer type: allocation, dtypes, overflow-checked sizing
 native/kernels.*     the compute kernels, behind one uniform C signature
 native/render.*      display transforms and downsampling, done in C
+native/fits.*        the results that are not pixels -- fitSegments, fitArcs,
+                     8-bit RGBA in -- in plain C, for every surface
 native/addon_*.c     the Node-API surface
+native/wasm_api.c    the WebAssembly surface: the same C, flat exports
+native/wasm.js       the addon's functions from native/wasm/cvlab.wasm
+                     (committed, with a manifest); CVLAB_BACKEND=wasm swaps
+                     it in behind require('native')
 src/lab/ops.js       the twenty-four operations themselves: inputs, params,
                      defaults, and the kernel each one binds to
 src/lab/registry.js  the schema they are declared against — validation,
@@ -84,7 +90,8 @@ src/menu.js          the application menu — global commands live here, not in 
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
-test/                nineteen suites; eighteen run under plain node
+test/                twenty suites; nineteen run under plain node, and
+                     sixteen of those again on WebAssembly (test:wasm)
 pipelines/           .lab scripts for the batch runner
 ```
 
@@ -95,7 +102,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — nineteen suites, ~581 tests
+npm test                # everything — twenty suites, the node ones twice
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -116,6 +123,10 @@ npm run degrade -- generated/<run> generated/<run>-noisy --gain 2000   # a camer
 npm run response -- --out <curve.json> a.png@0.5 b.png@1 c.png@2   # its response curve
 npm run believed-truth -- generated/<run> generated/<new> --mm 0.5   # edges where it is believed
 npm run build:native    # compile the addon
+npm run build:wasm      # the same C as WebAssembly, into native/wasm/ -- commit
+                        # it (--fetch: the pinned wasi-sdk; --check: rebuild
+                        # must be byte-identical, as CI does on Linux)
+npm run test:wasm       # the module against the addon, and every node suite on it
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
 npm run check:pt-lab    # type-check pt-lab/ — the build strips types unchecked
 npm run dev:renderer    # the same, in watch mode
@@ -129,6 +140,11 @@ npm run smoke:package   # launch it and check it actually works
 ## Constraints that are not negotiable without a reason
 
 - **Node-API, never NAN.** One binary works under both Node and Electron. Verified, not assumed.
+- **The WebAssembly module gives the addon's hashes.** It is what rr runs in a
+  browser, so `test:wasm` runs `test/determinism.js` on it, on all three
+  runners. It imports nothing -- its libm is compiled in -- and the committed
+  file must be what the sources build, byte for byte (`build:wasm --check`).
+  A change to the C means `npm run build:wasm` and committing the result.
 - **Image generation ships in the app.** It is not a developer tool: varying lighting and pose to test a pipeline against is the lab's core loop, so `npm run package` builds `dist-generate/` into the `app.asar`. pt-lab's source lives in `pt-lab/` and its dependencies are devDependencies — the bundle carries the tracer, the model and the environment, so none is needed at run time. Needs a GPU; adds ~17 MB.
 - **`sandbox: false` on the window**, with `contextIsolation` on and `nodeIntegration` off. It exists so the preload can `require()` a real `.node`. Conditional on this window only ever loading local, first-party content.
 - **Pixels never cross the contextBridge.** It deep-copies typed arrays — measured. The preload owns the buffers and renders into the canvas directly. Svelte owns the DOM and only the DOM: a pane hands the preload a canvas **id**, because a DOM node cannot cross the bridge either.

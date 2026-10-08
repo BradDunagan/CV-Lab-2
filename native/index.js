@@ -41,9 +41,19 @@ function load() {
   );
 }
 
-const addon = load();
+/*
+ * CVLAB_BACKEND=wasm: the same C compiled to WebAssembly (native/wasm.js),
+ * behind the same functions. What a browser runs; here so every suite can be
+ * run against it, and test/determinism.js's hashes checked on both.
+ */
+const addon = process.env.CVLAB_BACKEND === 'wasm' ? require('./wasm').load() : load();
 
 module.exports = {
+  /** 'native' (the Node-API addon) or 'wasm' (CVLAB_BACKEND=wasm). */
+  backend: addon.backend ?? 'native',
+  /** The WebAssembly module's SHA-256; undefined for the addon, whose build has no single identity. */
+  build: addon.build,
+
   /**
    * Invert RGBA pixels in place on a background thread. Alpha is preserved.
    * @param {Uint8ClampedArray|Uint8Array} pixels length must be a multiple of 4
