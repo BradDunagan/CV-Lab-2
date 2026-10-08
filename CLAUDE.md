@@ -165,7 +165,10 @@ the table edge's share of the gap sweep's bias. `npm run generate --
   not gloss (a matte red cube keeps it), and not "toward the darker side". It
   tracks the face against the gap behind it. Closed unexplained by decision
   (`design-lab-model.md` §5): the 1-2 mm blur push-apart is 5-10x larger;
-- undoing a real camera's response curve on load.
+- undoing a real camera's response curve on load. A gamma left in costs
+  nothing; a contrast S-curve costs four to nine times the error, and undone
+  with the curve known costs nothing again ("A thirty-sixth"). Not built: the
+  load option, and measuring a camera's curve.
 
 The AOV passes are consumed now: `explain` says what put each detection in the
 picture, and **111 of 123 invented segments turned out to be shading** — the

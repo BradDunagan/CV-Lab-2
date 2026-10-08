@@ -872,7 +872,9 @@ an estimate.
 
 **Real cameras have the same problem,** a response curve applied after the
 sensor integrates light over each pixel. Undoing a measured response on load,
-with a `from=` that names a curve, is the general fix. It is not built.
+with a `from=` that names a curve, is the general fix. It is not built. (A
+gamma left in costs nothing, a contrast curve four to nine times the error,
+and the curve undone none: "A thirty-sixth".)
 
 #### A fifth: two edges close together displace each other
 
@@ -2727,6 +2729,44 @@ held shadow width taken up by the free edge -- which may be part of it.
 
 (`notes/brads-notes/2026-10-07-below/`: `render.sh`, `analyse.sh`,
 `solve.sh`, `signs.js`, `solves.log`.)
+
+#### A thirty-sixth: a response curve left in, and undone
+
+The twenty-fourth found a response curve left in costs nothing: gamma 2.2
+written where the lab decodes sRGB. That is the gentlest curve there is. A
+camera's own processing is not gentle -- a "contrast" setting, a filmic tone
+curve -- so `degrade --scurve <k>` applies one: a tanh about mid-grey on the
+encoded value, black, mid-grey and white kept, the middle steepened by
+k / (2 tanh(k/2)) (1.66 at k = 3, 3.0 at k = 6) and the ends flattened. The
+stack-2g sweeps and test poses, degraded, analysed with the pooled still edge
+(no ledge) and solved with no truth, four views, x / y / z mm and turn
+degrees:
+
+| curve | hinged | joint |
+|---|---|---|
+| none | 0.026 / 0.019 / 0.023 / 0.019 | 0.065 / 0.024 / 0.026 / 0.021 |
+| gamma 2.2 | 0.029 / 0.025 / 0.029 / 0.018 | 0.053 / 0.025 / 0.027 / 0.021 |
+| S, k = 3 | 0.236 / 0.103 / 0.181 / 0.022 | 0.105 / 0.039 / 0.047 / 0.035 |
+| S, k = 6 | 0.245 / 0.183 / 0.200 / 0.030 | 0.134 / 0.119 / 0.129 / 0.048 |
+| S, k = 3, undone | 0.026 / 0.020 / 0.024 / 0.019 | 0.063 / 0.023 / 0.024 / 0.019 |
+| S, k = 6, undone | 0.029 / 0.025 / 0.026 / 0.016 | 0.060 / 0.028 / 0.030 / 0.018 |
+
+- **A contrast curve is not free**: four to nine times the error, the hinged
+  calibration worst. The fit's levels are its own, but a step's shape is
+  not: the curve bends each edge's ramp, by more on one side than the
+  other, and the edge moves. A gamma bends little enough not to matter.
+- **Undone, it is free again.** Each 8-bit value through the exact inverse,
+  written back as 8 bits -- what `load` would do knowing the curve -- gives
+  back the clean result, k = 6 within 0.003 mm in x though one 8-bit step at
+  its flattened ends spans twenty of the original's.
+
+So the open item is real for a camera that applies a curve, and undoing it
+on load is the whole fix. What is not built is the load option and a way to
+measure a camera's curve; the second wants exposure brackets, which a render
+can supply with a known curve to check against, and a real camera only to
+confirm.
+
+(`notes/brads-notes/2026-10-07-scurve/`: `run.sh`, `invert.js`, `undo.sh`.)
 
 #### What twenty-four views measured
 

@@ -16,6 +16,10 @@
  *   --read <x>     read noise sd, as a fraction of full scale         (0)
  *   --gamma <g>    encode with v^(1/g) instead of sRGB; the lab decodes
  *                  sRGB, so this is a response curve left in          (off)
+ *   --scurve <k>   and then a filmic S-curve on the encoded value, a
+ *                  tanh of strength k about mid-grey: 0, 0.5 and 1 stay,
+ *                  the middle steepens k/(2 tanh(k/2)) times and the ends
+ *                  flatten -- a camera's "contrast" setting           (off)
  *   --seed <n>                                                        (1)
  *   --interp <k>   how the distortion resamples: bilinear, or cubic
  *                  (Catmull-Rom). Bilinear blurs: it adds a sixth of a
@@ -42,7 +46,7 @@ const zlib = require('node:zlib');
 const { encodePNG, decodePNG } = require('./png');
 
 const [src, dst, ...rest] = process.argv.slice(2);
-const opts = { k1: 0, blur: 0, gain: 0, read: 0, gamma: 0, seed: 1, interp: 'bilinear', downsample: 1 };
+const opts = { k1: 0, blur: 0, gain: 0, read: 0, gamma: 0, scurve: 0, seed: 1, interp: 'bilinear', downsample: 1 };
 for (let i = 0; i < rest.length; i += 2) {
   const k = rest[i].replace(/^--/, '');
   if (!(k in opts)) { console.error(`unknown option ${rest[i]}`); process.exit(2); }
@@ -56,6 +60,9 @@ if (!fs.existsSync(path.join(src, 'shots.json'))) { console.error(`${src} is not
 
 const toLinear = (u) => { const v = u / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
 const toSrgb = (v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055);
+
+/** The S-curve on an encoded value in [0, 1]; the identity at strength 0. */
+const sCurve = (e) => (opts.scurve > 0 ? 0.5 + 0.5 * Math.tanh(opts.scurve * (e - 0.5)) / Math.tanh(opts.scurve / 2) : e);
 
 let seed = opts.seed >>> 0;
 const uniform = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return (seed + 0.5) / 4294967296; };
@@ -135,7 +142,7 @@ function degrade({ width: W0, height: H0, channels: nc, data: rgba }) {
       const sd = Math.sqrt((opts.gain ? Math.max(v, 0) / opts.gain : 0) + opts.read * opts.read);
       if (sd > 0) v += gauss() * sd;
       v = Math.max(0, Math.min(1, v));
-      const e = opts.gamma ? v ** (1 / opts.gamma) : toSrgb(v);
+      const e = sCurve(opts.gamma ? v ** (1 / opts.gamma) : toSrgb(v));
       out[i * 4 + ch] = Math.round(e * 255);
     }
   }

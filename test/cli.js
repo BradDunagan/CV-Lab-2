@@ -472,6 +472,23 @@ test('every suite under test/ is syntactically valid', () => {
     assert.equal(depth.data[(3 * 8 + 2) * depth.channels], value(5, 7));
   });
 
+  test('degrade --scurve leaves black, mid-grey and white and steepens the middle, monotonically', () => {
+    const src = path.join(tmp, 'deg-s'), dst = path.join(tmp, 'deg-s3');
+    makeRun(src, 16, (x, y) => (y * 16 + x));
+    const r = run(src, dst, '--scurve', '3');
+    assert.equal(r.status, 0, r.stderr);
+    const a = decodePNG(fs.readFileSync(path.join(src, 'a.png'))), b = decodePNG(fs.readFileSync(path.join(dst, 'a.png')));
+    const at = (img, v) => img.data[v * img.channels];
+    for (const v of [0, 255]) assert.equal(at(b, v), v);
+    assert.ok(Math.abs(at(b, 128) - 128) <= 1, `mid-grey ${at(b, 128)}`);
+    for (let v = 1; v < 256; v++) assert.ok(at(b, v) >= at(b, v - 1), `monotonic at ${v}`);
+    // Steeper in the middle by about 3 / (2 tanh 1.5) = 1.66, flatter near the ends.
+    const slope = (img, v) => (at(img, v + 8) - at(img, v - 8)) / 16;
+    assert.ok(Math.abs(slope(b, 128) - 1.66) < 0.1, `middle slope ${slope(b, 128)}`);
+    assert.ok(slope(b, 20) < 0.6, `end slope ${slope(b, 20)}`);
+    assert.equal(at(a, 77), 77);
+  });
+
   test('degrade --interp cubic carries a ramp through a distortion as a ramp; the pixels move, they do not blur', () => {
     const src = path.join(tmp, 'deg-ramp'), dst = path.join(tmp, 'deg-ramp-k');
     const w = 64, ramp = (x) => 0.1 + 0.6 * (x / (w - 1));
