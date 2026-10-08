@@ -14,11 +14,11 @@
 
 const assert = require('node:assert/strict');
 const { parseGroundTruth, readGroundTruth, GroundTruthError } =
-  require('../src/lab/groundtruth');
+  require('../packages/vision/src/groundtruth.js');
 const {
   matchFeatures, summarise, lineAngleDifference, pointToSegment, pointToArc, arcTangent,
-} = require('../src/lab/match');
-const { createRegistry } = require('../src/lab/ops');
+} = require('../packages/vision/src/match.js');
+const { createLabRegistry: createRegistry } = require('../src/lab-host');
 
 let failures = 0;
 /*
@@ -1050,7 +1050,7 @@ test('a tile draws each feature as what it is, and truth only where it is visibl
    */
   const { overlayRole, isDetection, isVisibleTruth } =
     await import('../src/renderer/overlay-features.mjs');
-  const { MIN_VISIBLE } = require('../src/lab/match');
+  const { MIN_VISIBLE } = require('../packages/vision/src/match.js');
 
   /*
    * Every feature type the lab produces, and what a tile does with it. A new
@@ -1143,7 +1143,7 @@ test('a slot offers one checkbox per drawable overlay, counting what it would dr
    */
   const { OVERLAY_KINDS, overlayCounts, overlayRole } =
     await import('../src/renderer/overlay-features.mjs');
-  const { MIN_VISIBLE } = require('../src/lab/match');
+  const { MIN_VISIBLE } = require('../packages/vision/src/match.js');
 
   // Every kind that can be drawn is offered, once, and explains itself.
   const roles = OVERLAY_KINDS.map((k) => k.role);

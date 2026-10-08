@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Why is this edge in the picture?
  *
@@ -362,8 +360,8 @@ function explainFeatures(features, rasters, opts = {}) {
   return features.map((f) => ({ ...f, ...explainFeature(f, rasters, opts) }));
 }
 
-module.exports = {
+export {
   explainFeatures, explainFeature, crossings, sample, normalAt, angleBetween, median,
   viewGeometry, viewRay, surfaceResidual, slantAt,
-  CAUSES, DEFAULTS,
+  CAUSES, DEFAULTS
 };

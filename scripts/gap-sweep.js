@@ -13,7 +13,7 @@
  *                 from a shot list this script writes   -> generated/<name>/
  *   2. lab        pipelines/explained.lab over them      -> results/<name>/
  *                 (or --script <file>: results/<name>/<script name>/)
- *   3. analyse    one row per gap (src/lab/gapsweep.js)  -> results/<name>/gap-sweep.{csv,json}
+ *   3. analyse    one row per gap (packages/vision/src/gapsweep.js)  -> results/<name>/gap-sweep.{csv,json}
  *
  * plus an overlay per step, because a table reports numbers whether or not
  * the pairing behind them is right, and an overlay is where a wrong one shows.
@@ -41,8 +41,8 @@ const { movingBelow } = require('./ledge');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { resolveScene } = require('../src/generate/driver');
-const { readGroundTruth } = require('../src/lab/groundtruth');
-const { gapRows, numberPairs, pxPerMm, pxPerMmSlope, changedInputs, orbitViews } = require('../src/lab/gapsweep');
+const { readGroundTruth } = require('../packages/vision/src/groundtruth.js');
+const { gapRows, numberPairs, pxPerMm, pxPerMmSlope, changedInputs, orbitViews } = require('../packages/vision/src/gapsweep.js');
 
 const ROOT = path.join(__dirname, '..');
 const DEFAULT_SCRIPT = 'pipelines/explained.lab';

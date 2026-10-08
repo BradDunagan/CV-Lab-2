@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * The command language — design-lab-model.md §4.
  *
@@ -219,4 +217,4 @@ function quoteString(value) {
   return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
-module.exports = { parseStatement, parseScript, quoteString, ParseError };
+export { parseStatement, parseScript, quoteString, ParseError };

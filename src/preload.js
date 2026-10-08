@@ -19,11 +19,11 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const native = require('../native');
-const { createRegistry } = require('./lab/ops');
-const { MIN_VISIBLE } = require('./lab/match');
+const { createLabRegistry } = require('./lab-host');
+const { MIN_VISIBLE } = require('../packages/vision/src/match.js');
 const { readPngColour } = require('../scripts/png');
-const { Session } = require('./lab/session');
-const { quoteString } = require('./lab/parser');
+const { Session } = require('../packages/vision/src/session.js');
+const { quoteString } = require('../packages/vision/src/parser.js');
 
 /**
  * Decode an image using Chromium's decoder — the reason `load`'s kernel lives
@@ -81,7 +81,7 @@ async function decodeFile(filePath) {
   }
 }
 
-const registry = createRegistry({ decodeFile });
+const registry = createLabRegistry({ decodeFile });
 const session = new Session({
   registry,
   environment: {

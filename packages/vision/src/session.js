@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Slots, execution, and the session log — design-lab-model.md §5.
  *
@@ -11,10 +9,10 @@
  * what it meant. Entries are commits, slot names are refs.
  */
 
-const crypto = require('node:crypto');
+import { sha256 } from './sha256.js';
 
-const { bindArgs, resolveCall, formatCall, CallError } = require('./registry');
-const { parseStatement, parseScript } = require('./parser');
+import { bindArgs, resolveCall, formatCall, CallError } from './registry.js';
+import { parseStatement, parseScript } from './parser.js';
 
 class SessionError extends Error {}
 
@@ -22,36 +20,30 @@ const key = (slot, version) => `${slot}#${version}`;
 
 /**
  * Hashing and buffer inspection are injected so the session is testable
- * without the native addon. The default adapter uses it.
+ * without a backend. The default adapter is the registry's backend: the
+ * addon or the WebAssembly module, which hash a buffer in C where its bytes
+ * are (`bufferHash`), so nothing is copied out to be hashed.
  */
-function nativeAdapter() {
-  const native = require('../../native');
+function backendAdapter(backend) {
+  const need = () => {
+    if (!backend) throw new SessionError('no compute backend: pass createRegistry({ backend })');
+    return backend;
+  };
   return {
     describe(handle) {
-      const info = native.bufferInfo(handle);
+      const info = need().bufferInfo(handle);
       return {
         width: info.width, height: info.height, channels: info.channels,
         dtype: info.dtype, space: info.space,
       };
     },
-    hash(handle) {
-      // NOTE: bufferRead copies, because Electron forbids external
-      // ArrayBuffers (electron-guide.md §1). For a 48 MB buffer that is ~10 ms
-      // per operation. If it shows up in a profile, move the hash into C so
-      // the bytes never cross.
-      const values = native.bufferRead(handle);
-      return crypto.createHash('sha256')
-        .update(Buffer.from(values.buffer, values.byteOffset, values.byteLength))
-        .digest('hex');
-    },
-    release(handle) { native.bufferRelease(handle); },
+    hash(handle) { return need().bufferHash(handle); },
+    release(handle) { need().bufferRelease(handle); },
   };
 }
 
 function hashScalars(values) {
-  return crypto.createHash('sha256')
-    .update(JSON.stringify(values, Object.keys(values).sort()))
-    .digest('hex');
+  return sha256(JSON.stringify(values, Object.keys(values).sort()));
 }
 
 /**
@@ -75,7 +67,7 @@ function hashScalars(values) {
 function hashFeatures(features, meta) {
   const canonical = features.map((f) =>
     Object.keys(f).sort().map((k) => [k, f[k]]));
-  const hash = crypto.createHash('sha256').update(JSON.stringify(canonical));
+  let text = JSON.stringify(canonical);
 
   /*
    * Slot-level metadata is part of the content when there is any: ground truth
@@ -88,22 +80,23 @@ function hashFeatures(features, meta) {
    * exactly the bytes it always did.
    */
   if (meta && Object.keys(meta).length > 0) {
-    hash.update(JSON.stringify(Object.keys(meta).sort().map((k) => [k, meta[k]])));
+    // Appended: the same bytes node:crypto's second update() fed it.
+    text += JSON.stringify(Object.keys(meta).sort().map((k) => [k, meta[k]]));
   }
-  return hash.digest('hex');
+  return sha256(text);
 }
 
 class Session {
   /**
    * @param {object} options
-   * @param {import('./registry').Registry} options.registry
+   * @param {import('./registry.js').Registry} options.registry
    * @param {object} [options.buffers] adapter: { describe, hash, release }
    * @param {object} [options.environment] recorded once per session (§5)
    */
   constructor({ registry, buffers, environment } = {}) {
     if (!registry) throw new SessionError('Session requires a registry');
     this.registry = registry;
-    this.buffers = buffers ?? nativeAdapter();
+    this.buffers = buffers ?? backendAdapter(registry.backend);
     this.environment = environment ?? {};
 
     /** @type {Map<string, {version:number, value:object}>} name -> binding */
@@ -465,4 +458,4 @@ class Session {
   }
 }
 
-module.exports = { Session, SessionError, nativeAdapter, hashScalars, hashFeatures };
+export { Session, SessionError, backendAdapter, hashScalars, hashFeatures };

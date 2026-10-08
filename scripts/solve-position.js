@@ -30,7 +30,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { solvePosition, solveLifted } = require('../src/lab/position');
+const { solvePosition, solveLifted } = require('../packages/vision/src/position.js');
 const { movingBelow } = require('./ledge');
 const AXES = ['x', 'y', 'z'];
 

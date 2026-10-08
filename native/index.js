@@ -117,6 +117,14 @@ module.exports = {
    * large enough that leaving 400 MB to the collector is not acceptable.
    * @param {object} handle
    */
+  /**
+   * SHA-256 of the buffer's bytes, lowercase hex: its content hash, computed
+   * in C where the bytes are (native/sha256.c), so nothing is copied out.
+   * @param {object} handle
+   * @returns {string}
+   */
+  bufferHash: addon.bufferHash,
+
   bufferRelease: addon.bufferRelease,
 
   /**

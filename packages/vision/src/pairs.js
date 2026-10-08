@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Two edges too close together to be placed one at a time.
  *
@@ -1411,8 +1409,8 @@ function trackPair(raster, carried, options = {}) {
   };
 }
 
-module.exports = {
+export {
   fitPairs, findPairs, trackPair, hiddenIn, candidates, pairFrame, loneFrame, bandSamples, fitBand,
   measureAperture, loneApertures, medianAperture,
-  coverage, density, solve, DEFAULTS,
+  coverage, density, solve, DEFAULTS
 };

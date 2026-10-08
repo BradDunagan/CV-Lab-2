@@ -54,8 +54,8 @@
 const assert = require('node:assert/strict');
 
 const native = require('../native');
-const { createRegistry } = require('../src/lab/ops');
-const { Session } = require('../src/lab/session');
+const { createLabRegistry: createRegistry } = require('../src/lab-host');
+const { Session } = require('../packages/vision/src/session.js');
 
 let failures = 0;
 async function test(name, fn) {
@@ -300,7 +300,7 @@ async function run() {
    * `fit` three ways, and it is where these stages would split too.
    */
   await test('the curve stages reproduce their recorded hashes', () => {
-    const { hashFeatures } = require('../src/lab/session');
+    const { hashFeatures } = require('../packages/vision/src/session.js');
     const native = require('../native');
 
     /*
@@ -391,7 +391,7 @@ async function run() {
    * most four products and means the same bits everywhere.
    */
   await test('fitPairs places a pair identically on every platform', () => {
-    const { hashFeatures } = require('../src/lab/session');
+    const { hashFeatures } = require('../packages/vision/src/session.js');
     const W = 96, H = 64;
     const Q = [2560, 2860, 5120];           // 8Y - X at each line, in 1/16 px
     const LEVEL = [0.6, 0.12, 0.31, 0.05];
@@ -453,7 +453,7 @@ async function run() {
    * in q, 1.163 px: close enough that a detector finds one edge.
    */
   await test('findPairs finds a hidden pair identically on every platform', () => {
-    const { hashFeatures } = require('../src/lab/session');
+    const { hashFeatures } = require('../packages/vision/src/session.js');
     const W = 96, H = 64;
     const Q = [2560, 2710, 5120];
     const LEVEL = [0.6, 0.12, 0.31, 0.05];

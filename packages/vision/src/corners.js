@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Corner hypotheses from fitted segments.
  *
@@ -199,4 +197,4 @@ function findCorners(features, opts = {}) {
   return corners.map((c, i) => ({ type: 'edge-corner', id: i + 1, ...c }));
 }
 
-module.exports = { findCorners };
+export { findCorners };

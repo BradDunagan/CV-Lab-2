@@ -11,7 +11,7 @@
  */
 
 const assert = require('node:assert/strict');
-const { solvePosition, solveHinged, solveLifted } = require('../src/lab/position');
+const { solvePosition, solveHinged, solveLifted } = require('../packages/vision/src/position.js');
 
 let failures = 0;
 function test(name, fn) {

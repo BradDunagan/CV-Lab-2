@@ -13,7 +13,7 @@
 const assert = require('node:assert/strict');
 const {
   gapRow, gapRows, numberPairs, pxPerMm, pxPerMmSlope, truthPair, truthPairs, changedInputs, orbitViews, DEFAULTS,
-} = require('../src/lab/gapsweep');
+} = require('../packages/vision/src/gapsweep.js');
 
 let failures = 0;
 function test(name, fn) {

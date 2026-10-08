@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Reading a renderer's ground truth into the lab as features.
  *
@@ -168,4 +166,4 @@ function readGroundTruth(text, where) {
   return parseGroundTruth(doc, where);
 }
 
-module.exports = { parseGroundTruth, readGroundTruth, GroundTruthError, PIXEL_CENTRE };
+export { parseGroundTruth, readGroundTruth, GroundTruthError, PIXEL_CENTRE };

@@ -11,7 +11,7 @@
  */
 
 const assert = require('node:assert/strict');
-const { findCorners } = require('../src/lab/corners');
+const { findCorners } = require('../packages/vision/src/corners.js');
 
 let failures = 0;
 function test(name, fn) {

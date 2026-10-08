@@ -12,9 +12,9 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
-const { parseStatement, parseScript, quoteString, ParseError } = require('../src/lab/parser');
-const { Registry, defineOp } = require('../src/lab/registry');
-const { Session, SessionError, hashFeatures } = require('../src/lab/session');
+const { parseStatement, parseScript, quoteString, ParseError } = require('../packages/vision/src/parser.js');
+const { Registry, defineOp } = require('../packages/vision/src/registry.js');
+const { Session, SessionError, hashFeatures } = require('../packages/vision/src/session.js');
 
 let failures = 0;
 const queue = [];
@@ -220,7 +220,7 @@ test('a buffer op needs a target; a scalar op must not have one', async () => {
 });
 
 test('a declared-but-unimplemented op is refused', async () => {
-  const { createRegistry } = require('../src/lab/ops');
+  const { createLabRegistry: createRegistry } = require('../src/lab-host');
   const s = new Session({ registry: createRegistry(), buffers: fakeBuffers });
   await assert.rejects(async () => s.execute('A = load("x.png")'), /no kernel yet/);
 });

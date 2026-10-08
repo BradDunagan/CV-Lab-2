@@ -23,13 +23,15 @@
     "native/fits.c": "586359c3573a7ea4495c94ef63b7e73925969ef2867d66838e5bc0fef8709dcc",
     "native/kernels.c": "e8d2e5fd2165d8ebade5c2ec522e65a638962b6ab9e5501e31f8a4cc4175bac7",
     "native/render.c": "9606e8b20ac58dec2e6a0adf8cc333ab703ab9606ba6ba4b63d99da434445ba4",
-    "native/wasm_api.c": "5954cbb0d238a66d0c08dd7dab4ed490cae53e4417d9b3edb24dbcffb596d512",
+    "native/sha256.c": "2ceabfecc5839879e5cdc18ebf4c125206a6ea11c33a25963732fcb92c5760be",
+    "native/wasm_api.c": "8f5071329204761b6991185630e8f7dde947802c32ab7a6ce741859fc93afbf2",
     "native/buffer.h": "bd801b3180fc8695fc5846c6b7b267a0060dfab89c5f012054e259573fa3031a",
     "native/fits.h": "ffe4f7885329e92ee31cdf6b42053b47c758f2cbeec93d3b098695d9790f5f60",
     "native/kernels.h": "919ada931e682fa842c8de9c3189314a3ca0613a256ab97c4f1672a648ba88e5",
     "native/portable.h": "43d80df9f83ff1b48b39f10a67f2a2de6c15121833ea418412a37dc06f25a9c5",
-    "native/render.h": "ece6cf70db95fc063e5cacf501fe8e87fb5a306d878f1e0edd614d2da75b099b"
+    "native/render.h": "ece6cf70db95fc063e5cacf501fe8e87fb5a306d878f1e0edd614d2da75b099b",
+    "native/sha256.h": "3be149f5abbc6bb2ebdfacfe5576f210356867e74e326cb4268e3420869ff310"
   },
-  "sha256": "680ad2d777fdd5a05638ebf2e981909913b40731e5552439f47b897e34ad3736",
-  "bytes": 70788
+  "sha256": "8f54b9f9b695c22c6bd75efe465cfc41202c7ac1b69efd805801f26c625094b3",
+  "bytes": 72293
 }

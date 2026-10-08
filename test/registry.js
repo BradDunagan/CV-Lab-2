@@ -9,9 +9,9 @@
 const assert = require('node:assert/strict');
 const {
   defineOp, resolveCall, formatCall, OpDefinitionError, CallError,
-} = require('../src/lab/registry');
-const { parseStatement } = require('../src/lab/parser');
-const { createRegistry } = require('../src/lab/ops');
+} = require('../packages/vision/src/registry.js');
+const { parseStatement } = require('../packages/vision/src/parser.js');
+const { createLabRegistry: createRegistry } = require('../src/lab-host');
 
 let failures = 0;
 function test(name, fn) {
