@@ -116,8 +116,16 @@ function build(out) {
   return version;
 }
 
+/*
+ * Of the text, with CRLF read as LF: a Windows checkout converts line endings,
+ * and the first CI run on Windows called every source stale for that alone.
+ * The manifest describes what the compiler reads, which line endings do not
+ * change.
+ */
 function sourceHashes() {
-  return Object.fromEntries([...SOURCES, ...HEADERS].map((f) => [f, sha256(path.join(ROOT, f))]));
+  const text = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\r\n/g, '\n');
+  return Object.fromEntries([...SOURCES, ...HEADERS].map((f) =>
+    [f, crypto.createHash('sha256').update(text(f)).digest('hex')]));
 }
 
 function main() {
