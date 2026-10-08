@@ -83,7 +83,7 @@ hashes. That holds across hosts because:
   pinned hashes on macOS, Linux and Windows;
 - buffers are hashed in C (`bufferHash`), and records with the package's own
   SHA-256, never an engine's;
-- the module carries its own maths library, so `exp` and `pow` do not depend
+- the module carries its own math library, so `exp` and `pow` do not depend
   on the browser.
 
 Not yet: the JavaScript in `src/` still calls the engine's `Math.hypot`,
