@@ -107,7 +107,8 @@ console.log('cv-lab-2 math tests');
     const dir = path.join(__dirname, '..', 'packages', 'vision', 'src');
     const found = [];
     for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.js') && f !== 'math.js')) {
-      let source = fs.readFileSync(path.join(dir, file), 'utf8');
+      // LF: a Windows checkout's CRLF leaves a \r that hides a comment's end.
+      let source = fs.readFileSync(path.join(dir, file), 'utf8').replace(/\r\n/g, '\n');
       // gapsweep.js's orbitViews places a renderer's camera: recorded in
       // shots.json and checked against those bytes, so it keeps the engine's.
       if (file === 'gapsweep.js') source = source.replace(/function orbitViews\([\s\S]*?\n}\n/, '');
