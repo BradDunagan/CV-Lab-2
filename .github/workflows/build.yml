@@ -206,6 +206,31 @@ jobs:
       - name: Determinism (must agree across all three platforms)
         run: npm run test:determinism
 
+      # The same C as WebAssembly (native/wasm/cvlab.wasm, committed), against
+      # the addon: side by side in one process, then every plain-node suite
+      # again with CVLAB_BACKEND=wasm, test/determinism.js's hashes included.
+      # The module is the same bytes on every runner; the engines running it
+      # and the libms the addon it is compared with calls are not. This is
+      # what rr's browser build rests on (pre-port item 2).
+      - name: WebAssembly (same results as the addon)
+        run: npm run test:wasm
+
+      # The committed module must be what the sources build, byte for byte, on
+      # a machine that is not the one it was built on. Linux only: the pinned
+      # toolchain is ~190 MB and one rebuild proves the bytes.
+      - name: Cache wasi-sdk
+        if: runner.os == 'Linux'
+        uses: actions/cache@v6
+        with:
+          path: cv-lab-2/.tools
+          key: wasi-sdk-34-${{ runner.os }}-${{ runner.arch }}
+
+      - name: WebAssembly rebuilds byte-identical
+        if: runner.os == 'Linux'
+        run: |
+          npm run build:wasm -- --fetch
+          npm run build:wasm -- --check
+
       # Executes the ```lab blocks in README.md. The documented pipeline
       # produced nothing at all for several commits: every stage succeeded and
       # every result was empty. Documentation that is never run is a claim.

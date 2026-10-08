@@ -1,0 +1,5 @@
+done test-native
+native: 150 s
+done test-wasm
+wasm: 144 s
+83 files: 83 identical, 0 differ; 920 content hashes compared

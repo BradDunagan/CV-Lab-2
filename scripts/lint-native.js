@@ -10,9 +10,9 @@
  * implicit declaration is undefined behaviour that happens to work, and gcc 14
  * rejects it outright — a build break waiting for a newer runner image.
  *
- * Only buffer.c, kernels.c and render.c are checked: they include no Node
- * headers, so they compile standalone, and they are where the portability risk
- * lives. The addon_*.c files need node_api.h and are covered by the real build.
+ * Only buffer.c, fits.c, kernels.c, render.c and wasm_api.c are checked:
+ * they include no Node headers, so they compile standalone, and they are where
+ * the portability risk lives. The addon_*.c files need node_api.h and are covered by the real build.
  *
  * IMPORTANT: running this on macOS would NOT have caught the bug that prompted
  * it. Apple's stdlib.h declares posix_memalign unconditionally, so the code
@@ -31,7 +31,7 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
-const SOURCES = ['native/buffer.c', 'native/kernels.c', 'native/render.c'];
+const SOURCES = ['native/buffer.c', 'native/fits.c', 'native/kernels.c', 'native/render.c', 'native/wasm_api.c'];
 const FLAGS = ['-std=c11', '-Wall', '-Wextra', '-pedantic', '-fsyntax-only', '-I', 'native'];
 
 const compiler = process.env.CC || 'cc';

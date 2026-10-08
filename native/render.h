@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "buffer.h"
+#include "kernels.h"
 
 typedef enum {
   CV_RANGE_AUTO = 0,     /* the actual min and max */
@@ -67,6 +68,11 @@ typedef struct {
   double lo, hi;              /* the range actually used, after the curve */
   int64_t width, height;
 } CvRenderResult;
+
+/* The spec renderTile and histogram take, from named parameters: width,
+ * height, x, y, w, h, range, lo, hi, percentile, curve, colormap, channel,
+ * interpolate. The defaults are here, for every surface. */
+void cv_render_spec_from_params(const CvParams *params, CvRenderSpec *spec);
 
 /*
  * Writes width*height*4 bytes of RGBA into `rgba`, which the caller owns.

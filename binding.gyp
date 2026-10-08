@@ -7,6 +7,7 @@
         "native/addon_buffer.c",
         "native/addon_kernels.c",
         "native/buffer.c",
+        "native/fits.c",
         "native/kernels.c",
         "native/render.c"
       ],

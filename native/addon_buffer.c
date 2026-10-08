@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "buffer.h"
+#include "fits.h"
 
 #define THROW_RETURN(env, msg)             \
   do {                                     \
@@ -278,38 +279,12 @@ static napi_value BufferWrite(napi_env env, napi_callback_info info) {
 }
 
 /* ------------------------------------------------------------------ */
-/* bufferFromRGBA8(pixels, width, height, { as })                       */
+/* bufferFromRGBA8(pixels, width, height, { as, from })                 */
 /*                                                                      */
-/* The bridge from Chromium's image decoder into a lab buffer. The      */
-/* decoder hands back 8-bit RGBA in sRGB; this converts to the f32      */
-/* working format and drops alpha.                                      */
-/*                                                                      */
-/* Because the source is 8-bit, sRGB -> linear is an EXACT 256-entry    */
-/* lookup rather than a per-pixel power function -- no approximation,   */
-/* and no transcendental in the inner loop.                             */
+/* The bridge from Chromium's image decoder into a lab buffer; the      */
+/* conversion itself is cv_buffer_from_rgba8 (fits.c), shared with  */
+/* the WebAssembly module.                                              */
 /* ------------------------------------------------------------------ */
-
-/*
- * Note the deliberate round through float: the value is narrowed to f32
- * BEFORE the transfer function is applied.
- *
- * Without it, `load(as=linear)` and `toLinear(load(...))` disagree by one f32
- * ULP on about half the byte values -- mathematically the same result reached
- * by two routes, differing because one of them stores an intermediate as f32
- * and the other does not. Numerically that is nothing; for a lab that compares
- * content hashes it is the difference between two provenance chains agreeing
- * and not. Where two routes to the same value exist, make them agree on
- * purpose.
- */
-static float srgb_to_linear_byte(int i) {
-  const double s = (double)(float)((double)i / 255.0);
-  return (float)(s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4));
-}
-
-static float linear_to_srgb_byte(int i) {
-  const double l = (double)(float)((double)i / 255.0);
-  return (float)(l <= 0.0031308 ? 12.92 * l : 1.055 * pow(l, 1.0 / 2.4) - 0.055);
-}
 
 static napi_value BufferFromRGBA8(napi_env env, napi_callback_info info) {
   size_t argc = 4;
@@ -341,19 +316,6 @@ static napi_value BufferFromRGBA8(napi_env env, napi_callback_info info) {
     return NULL;
   }
 
-  /* Hostile input (§3): check the geometry against the actual byte count
-   * before trusting either. */
-  size_t expected = 0;
-  if (!cv_mul_checked((size_t)(width > 0 ? width : 0), (size_t)(height > 0 ? height : 0), &expected) ||
-      !cv_mul_checked(expected, 4, &expected)) {
-    THROW_RETURN(env, "bufferFromRGBA8: dimensions overflow");
-  }
-  if (expected == 0 || length != expected) {
-    napi_throw_range_error(env, NULL,
-        "bufferFromRGBA8: pixel length does not match width * height * 4");
-    return NULL;
-  }
-
   char as_name[16] = "srgb";
   char from_name[16] = "srgb";
   if (argc >= 4) {
@@ -376,45 +338,18 @@ static napi_value BufferFromRGBA8(napi_env env, napi_callback_info info) {
     THROW_RETURN(env, "bufferFromRGBA8: `as` and `from` must be \"srgb\" or \"linear\"");
   }
 
-  /*
-   * 8-bit input means the whole transfer function is exactly 256 values, so
-   * every combination is a lookup rather than a per-pixel power function.
-   *
-   * `from` says what the stored bytes MEAN; `as` says what the buffer should
-   * hold. When they agree there is no curve to apply at all -- linear samples
-   * stored as bytes are already linear once divided by 255.
-   */
-  float lut[256];
-  for (int i = 0; i < 256; i++) {
-    if (from_linear == as_linear) {
-      lut[i] = (float)((double)i / 255.0);
-    } else if (as_linear) {
-      lut[i] = srgb_to_linear_byte(i);      /* srgb bytes -> linear values */
-    } else {
-      lut[i] = linear_to_srgb_byte(i);      /* linear bytes -> srgb values */
-    }
-  }
-  const bool to_linear = as_linear;
-
   CvBuffer *buffer = (CvBuffer *)calloc(1, sizeof(CvBuffer));
   if (buffer == NULL) THROW_RETURN(env, "out of memory");
 
-  const CvStatus status = cv_buffer_alloc(buffer, width, height, 3, CV_DTYPE_F32,
-                                          to_linear ? CV_SPACE_LINEAR : CV_SPACE_SRGB);
+  const CvStatus status = cv_buffer_from_rgba8(buffer, (const uint8_t *)data, length,
+                                               width, height, from_linear, as_linear);
   if (status != CV_OK) {
     free(buffer);
-    napi_throw_range_error(env, NULL, cv_status_str(status));
+    if (status == CV_ERR_OVERFLOW) THROW_RETURN(env, "bufferFromRGBA8: dimensions overflow");
+    napi_throw_range_error(env, NULL, status == CV_ERR_SHAPE
+        ? "bufferFromRGBA8: pixel length does not match width * height * 4"
+        : cv_status_str(status));
     return NULL;
-  }
-
-  const uint8_t *src = (const uint8_t *)data;
-  float *dst = (float *)buffer->data;
-  const size_t pixels = (size_t)width * (size_t)height;
-  for (size_t i = 0; i < pixels; i++) {
-    dst[i * 3 + 0] = lut[src[i * 4 + 0]];
-    dst[i * 3 + 1] = lut[src[i * 4 + 1]];
-    dst[i * 3 + 2] = lut[src[i * 4 + 2]];
-    /* alpha is dropped: the lab has no compositing model yet */
   }
 
   napi_value handle;

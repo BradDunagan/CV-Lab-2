@@ -443,3 +443,50 @@ CvStatus cv_sample(const CvBuffer *src, int64_t x, int64_t y,
   if (n_values) *n_values = src->channels;
   return CV_OK;
 }
+
+/* ------------------------------------------------------------------ */
+/* a render spec from named parameters -- shared by every surface, so   */
+/* the defaults live in one place                                       */
+/* ------------------------------------------------------------------ */
+
+static CvRangeMode parse_range(const char *s) {
+  if (strcmp(s, "fixed") == 0) return CV_RANGE_FIXED;
+  if (strcmp(s, "percentile") == 0) return CV_RANGE_PERCENTILE;
+  if (strcmp(s, "symmetric") == 0) return CV_RANGE_SYMMETRIC;
+  return CV_RANGE_AUTO;
+}
+
+static CvCurve parse_curve(const char *s) {
+  if (strcmp(s, "log") == 0) return CV_CURVE_LOG;
+  if (strcmp(s, "abs") == 0) return CV_CURVE_ABS;
+  if (strcmp(s, "sqrt") == 0) return CV_CURVE_SQRT;
+  return CV_CURVE_LINEAR;
+}
+
+static CvColormap parse_map(const char *s) {
+  if (strcmp(s, "viridis") == 0) return CV_MAP_VIRIDIS;
+  if (strcmp(s, "turbo") == 0) return CV_MAP_TURBO;
+  if (strcmp(s, "diverging") == 0) return CV_MAP_DIVERGING;
+  if (strcmp(s, "categorical") == 0) return CV_MAP_CATEGORICAL;
+  if (strcmp(s, "cyclic") == 0) return CV_MAP_CYCLIC;
+  if (strcmp(s, "mask") == 0) return CV_MAP_MASK;
+  return CV_MAP_GRAY;
+}
+
+void cv_render_spec_from_params(const CvParams *params, CvRenderSpec *spec) {
+  memset(spec, 0, sizeof(*spec));
+  spec->width = (int64_t)cv_param_num(params, "width", 256);
+  spec->height = (int64_t)cv_param_num(params, "height", 256);
+  spec->src.x = (int64_t)cv_param_num(params, "x", 0);
+  spec->src.y = (int64_t)cv_param_num(params, "y", 0);
+  spec->src.width = (int64_t)cv_param_num(params, "w", 0);
+  spec->src.height = (int64_t)cv_param_num(params, "h", 0);
+  spec->range = parse_range(cv_param_str(params, "range", "auto"));
+  spec->lo = cv_param_num(params, "lo", 0.0);
+  spec->hi = cv_param_num(params, "hi", 1.0);
+  spec->percentile = cv_param_num(params, "percentile", 2.0);
+  spec->curve = parse_curve(cv_param_str(params, "curve", "linear"));
+  spec->colormap = parse_map(cv_param_str(params, "colormap", "gray"));
+  spec->channel = (int32_t)cv_param_num(params, "channel", -1);
+  spec->interpolate = cv_param_bool(params, "interpolate", true);
+}
