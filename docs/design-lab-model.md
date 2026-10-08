@@ -3161,7 +3161,7 @@ from, and CI rebuilds it on Linux and requires the same bytes the Mac built.
 `CVLAB_BACKEND=wasm` puts it behind `require('native')`, with the addon's
 functions and the addon's errors, message for message.
 
-Measured on 2026-10-08, against the addon on arm64 macOS:
+Measured on 2026-10-08, against the addon:
 
 - **`test/determinism.js` passes on the module unchanged**: every hash
   written for the addon, the feature records included, from the first run
@@ -3170,7 +3170,10 @@ Measured on 2026-10-08, against the addon on arm64 macOS:
   tables for every byte value, `toLinear` and `toSrgb` over 12,288 values,
   the Gaussian for forty values of sigma, `orient` over 4,096 gradients
   (`test/wasm.js`). Rule 3b's exposure is real -- these call a libm -- but
-  musl and Apple's libm return the same values here.
+  musl returns the same values here as Apple's libm, glibc and MSVC's UCRT:
+  the CI matrix runs the comparison against the addon on all three.
+- **The build reproduces across machines**: x86-64 Linux rebuilds the
+  module the arm64 Mac built, byte for byte (`build:wasm --check` in CI).
 - **A real run, end to end**: the stack's 40 test-pose renders through
   `pairs.lab` and `gap-sweep --carry`, once on each, give 83 output files
   identical in everything but the environment record, 920 content hashes
