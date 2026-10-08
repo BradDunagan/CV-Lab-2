@@ -912,7 +912,7 @@ detections read +1.18, +0.55 and +0.36 px at σ = 1.4, 1.0 and 0.7. The refit
 read −0.11, −0.09 and −0.10 from the same three sets of detections.
 
 Two things were wrong before that table was right, and both are in
-`src/lab/pairs.js` as decisions:
+`packages/vision/src/pairs.js` as decisions:
 
 - **The aperture cannot be assumed.** How far a pixel gathers light from sets
   how soft every step looks. Held at 1 px (a pixel that averages exactly its
@@ -1775,7 +1775,7 @@ An error on one side of flush only, fitted with one line through both, is a
 steep line, wrong at both ends. **`--calibrate hinged`** is the joint fit
 with two more columns per reading -- min(x, 0) and min(z, 0) -- so each
 reading gets a second slope that applies only below zero, measured the same
-way, with no truth. `solveHinged` (src/lab/position.js) solves the piecewise-
+way, with no truth. `solveHinged` (packages/vision/src/position.js) solves the piecewise-
 linear model exactly on a side and re-solves until no axis changes side.
 
 With the hinge, the side pair's slope above zero matches the truth's to 0.5%
@@ -3386,6 +3386,52 @@ guide will want.
 
 The architecture already validated in the skeleton — addon in the renderer
 process, preload owning the pixels — is exactly what this needs.
+
+### The library as a package (2026-10-08)
+
+rr and rr-desktop are to measure with this library, so it is one: everything
+that was `src/lab/` is `packages/vision/` (`@cv-lab/vision`), ES modules with
+no Node built-in and no global state, and the C as a WebAssembly module
+inside it. What a host must supply it is given -- `createRegistry({ backend,
+decodeFile, readTextFile })` -- and cv-lab supplies its own in
+`src/lab-host.js`, the addon among them. cv-lab's CommonJS keeps
+`require()`ing the package: Node 22.12 and Electron 43 load an ES module that
+way, so nothing else had to change to ESM at once.
+
+Two things the library did through Node had no browser equivalent. A
+buffer's content hash was `node:crypto` over a copy of the buffer; it is C
+now (`native/sha256.c`, `bufferHash` on both surfaces), synchronous where
+`crypto.subtle` is not, and with no copy. Feature lists and scalars hash with
+the package's own SHA-256. Both reproduce node:crypto's digests, so no pinned
+hash moved.
+
+What the scripts computed and a cell needs moved too: calibration and the
+pose solve (`calibrate.js`, from `solve-position`), a closed loop's frame
+(from `servo`), the carry plan (`carry.js`, from `gap-sweep --carry`) and the
+ledge table (`ledge.js`). Each was held to its earlier output byte for byte --
+every mode of `solve-position`, two `servo --dry-run`s, and `gap-sweep`'s
+analysis of the test poses from their own frames and pooled with a ledge held
+and fitted (`notes/brads-notes/2026-10-08-package/`). The move found three
+things:
+
+- `gap-sweep --ledge` took any JSON as a ledge table: a file with no
+  `entries` was read as a table with no ledges, and every frame analysed as
+  if there were none. It is refused now, before anything runs.
+- `servo`'s model hinged on the side where the part is above, always: a
+  calibration of the part below (the thirty-fifth) would have been read on
+  the wrong side. A saved calibration says `movingBelow` now, and the
+  library's `estimatePose` reads it.
+- The joint calibration's 0.05 px floor on its outlier cut never binds on
+  the stack: moving it changed nothing, where 2.5 MADs for 3 changed the
+  result.
+
+`test/package.js` is what says the package works where cv-lab does not run:
+it bundles it for a browser (any Node built-in fails the build), runs the
+bundle in a bare context with nothing of Node's, from the module's bytes, and
+gets the addon's hashes; and `npm run build:types -- --check` compiles a
+TypeScript host against the committed declarations. That check found the
+first thing rr would have hit: under TypeScript 6 a `Uint8Array` is not a
+`BufferSource`, so `loadWasm` could not have been given bytes without a cast.
 
 ---
 

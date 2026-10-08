@@ -21,7 +21,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { solvePosition, solveLifted } = require('../packages/vision/src/position.js');
+const { gaussians, modelAt, pairAngles, frameReadings, carryForward, estimatePose } =
+  require('../packages/vision/src/calibrate.js');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -121,82 +122,11 @@ function parseArgs(argv) {
   return opts;
 }
 
-/** Seeded normal deviates (the same generator solve-position uses). */
-function gaussians(seed) {
-  let x = seed >>> 0;
-  const u = () => { x = (Math.imul(x, 1664525) + 1013904223) >>> 0; return (x + 0.5) / 4294967296; };
-  return () => Math.sqrt(-2 * Math.log(u())) * Math.cos(2 * Math.PI * u());
-}
-
 const fmt = (v, d = 3) => (v === null || v === undefined || !Number.isFinite(v) ? '-' : v.toFixed(d));
 const vec = (v, d = 2) => v.map((x) => fmt(x, d).padStart(d + 4)).join(' ');
-const viewOf = (r) => `yaw ${r.yaw}, elev ${r.elevation}`;
-const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[(s.length - 1) >> 1] : null; };
-/** A calibrated reading's model of the displacement d: slopes, hinges, and the lift's terms (y is d[1]). */
-const modelOf = (p) => (d) => p.reference + p.jacobian.reduce((acc, j, a) => acc + j * d[a]
-  + (p.hinge?.[a] ?? 0) * Math.min(d[a], 0) + (p.lift?.[a] ?? 0) * d[1] * d[a]
-  + (p.liftHinge?.[a] ?? 0) * d[1] * Math.min(d[a], 0), 0);
-
-/**
- * Each view's pairs by the angle they run at in the image, from the sweeps
- * the calibration was made from. gap-sweep numbers a run's pairs by angle
- * within that run, so a step that lost one pair would call the other "1";
- * matching on the angle keeps a reading the reading it was calibrated as.
- */
-function pairAngles(cal) {
-  const angles = new Map();
-  for (const dir of Object.values(cal.sweeps)) {
-    const run = JSON.parse(fs.readFileSync(path.resolve(ROOT, dir, 'gap-sweep.json'), 'utf8'));
-    for (const r of run.rows) {
-      if (r.pair == null || r.pairAngle == null) continue;
-      const k = `${viewOf(r)} / pair ${r.pair}`;
-      if (!angles.has(k)) angles.set(k, []);
-      angles.get(k).push(r.pairAngle);
-    }
-  }
-  return new Map([...angles].map(([k, a]) => [k, median(a)]));
-}
-
-function pairOf(r, angles) {
-  let best = null;
-  for (const [k, a] of angles) {
-    if (!k.startsWith(`${viewOf(r)} / `)) continue;
-    const d = Math.abs(((r.pairAngle - a + 90) % 180 + 180) % 180 - 90);
-    if (d <= 10 && (!best || d < best.d)) best = { d, pair: Number(k.split(' pair ')[1]) };
-  }
-  return best?.pair ?? null;
-}
-
-/** One reading per point of each pair, the carried mode's: tracked, else refit, else detected. */
-function readingsOf(rows, angles) {
-  const out = new Map();
-  for (const r of rows) {
-    if (r.pairAngle == null) continue;
-    const pair = pairOf(r, angles);
-    if (pair === null) continue;
-    const pick = (truth, tracked, refit, detected, sigmaT, sigmaR) => (tracked != null ? [tracked, sigmaT]
-      : refit != null ? [refit, sigmaR] : [detected, null]);
-    const points = {
-      mid: pick(r.trueGapPx, r.tracked?.gapPx, r.refit?.gapPx, r.pairFound ? r.measuredGapPx : null, r.tracked?.gapSigma, r.refit?.gapSigma),
-      'end 1': pick(r.endsTruePx?.[0], r.tracked?.endsPx?.[0], r.refit?.endsPx?.[0], r.endsDetectedPx?.[0], r.tracked?.gapSigma, r.refit?.gapSigma),
-      'end 2': pick(r.endsTruePx?.[1], r.tracked?.endsPx?.[1], r.refit?.endsPx?.[1], r.endsDetectedPx?.[1], r.tracked?.gapSigma, r.refit?.gapSigma),
-    };
-    for (const [p, v] of Object.entries(points)) {
-      if (v[0] != null && Number.isFinite(v[0])) out.set(`${viewOf(r)} / pair ${pair} / ${p}`, v);
-    }
-    // A track that could not tell a strip from one edge: both readings, for
-    // the prior to choose between (trackPair's `hypotheses`).
-    if (r.tracked?.hypotheses?.length && r.tracked.gapPx == null && r.refit?.gapPx == null) {
-      const at = { mid: (h) => h.gapPx, 'end 1': (h) => h.endsPx?.[0], 'end 2': (h) => h.endsPx?.[1] };
-      for (const [p, f] of Object.entries(at)) {
-        const key = `${viewOf(r)} / pair ${pair} / ${p}`;
-        const hs = r.tracked.hypotheses.map(f).filter((v) => v != null && Number.isFinite(v));
-        if (!out.has(key) && hs.length === 2) out.set(key, [null, r.tracked.hypotheses[0].gapSigma, hs]);
-      }
-    }
-  }
-  return out;
-}
+/** Every row of the sweeps the calibration was made from: what pairAngles matches against. */
+const calibrationRows = (cal) => Object.values(cal.sweeps).flatMap((dir) =>
+  JSON.parse(fs.readFileSync(path.resolve(ROOT, dir, 'gap-sweep.json'), 'utf8')).rows);
 
 function gapSweep(opts, stepName, pose, believedLift) {
   const args = [path.join(ROOT, 'scripts/gap-sweep.js'), '--name', stepName, '--scene', opts.scene,
@@ -222,7 +152,7 @@ function main() {
   const cal = JSON.parse(fs.readFileSync(path.resolve(ROOT, opts.calibration), 'utf8'));
   if (cal.unknowns.join() !== 'x,y,z,turn') throw new Error('the calibration must solve x, y, z and the turn');
   const reference = [...cal.reference, 0];
-  const angles = pairAngles(cal);
+  const angles = pairAngles(calibrationRows(cal));
   const used = cal.calibrated;
   const g = gaussians(opts.seed);
 
@@ -237,10 +167,6 @@ function main() {
   let state = null;           // the last solve: d (from the reference) and covariance
   let lastMove = null;
   const motion = [0, 1, 2, 3].map(() => opts.motionSigma ** 2);
-  const weightOf = (sigma) => {
-    const rel = sigma > 0 && cal.medianSigma ? sigma / cal.medianSigma : 1;
-    return 1 / (opts.readingSigma * rel) ** 2;
-  };
 
   const steps = [];
   console.log(`servo ${opts.name}: start ${vec(truth)} (true), believed ${vec(believed)}; robot scale ${scale.map((s) => fmt(s, 3)).join(' ')}`);
@@ -250,33 +176,14 @@ function main() {
     // The prior: the last estimate moved by the move commanded since, or the
     // believed start, in displacement from the reference.
     const prior = state
-      ? { d: state.d.map((v, a) => v + lastMove[a]), covariance: state.covariance.map((row, a) => row.map((x, b) => x + (a === b ? motion[a] : 0))) }
+      ? carryForward(state, lastMove, motion)
       : { d: believed.map((v, a) => v - reference[a]), covariance: [0, 1, 2, 3].map((a) => [0, 1, 2, 3].map((b) => (a === b ? opts.startSigma ** 2 : 0))) };
     const reads = opts.dryRun
-      ? new Map(used.map((p) => [p.key, [modelOf(p)(truth.map((v, a) => v - reference[a])) + g() * opts.dryNoise, null]]))
-      : readingsOf(gapSweep(opts, stepName, truth, prior.d[1] + reference[1]), angles);
-    const obs = used.map((p) => {
-      const v = reads.get(p.key);
-      return { jacobian: p.jacobian, hinge: p.hinge, lift: p.lift, liftHinge: p.liftHinge, reference: p.reference, measured: v ? v[0] : null, weight: weightOf(v?.[1]) };
-    });
+      ? new Map(used.map((p) => [p.key, [modelAt(p, truth.map((v, a) => v - reference[a])) + g() * opts.dryNoise, null]]))
+      : frameReadings(gapSweep(opts, stepName, truth, prior.d[1] + reference[1]), angles);
+    const { solution: s, alone, observations: obs, hypotheses: { resolved, unresolved } } =
+      estimatePose(cal, reads, prior, { readingSigma: opts.readingSigma });
     const n = () => obs.filter((o) => Number.isFinite(o.measured)).length;
-    /*
-     * A reading given as two hypotheses is taken where the prior predicts one
-     * of them: the prediction (with its own uncertainty, through the
-     * Jacobian, and the reading's) must be nearer one by three sigmas.
-     */
-    let resolved = 0, unresolved = 0;
-    for (const [i, p] of used.entries()) {
-      const v = reads.get(p.key);
-      if (!v?.[2]) continue;
-      const predicted = modelOf(p)(prior.d);
-      const jp = p.jacobian.map((_, a) => prior.covariance[a].reduce((acc, c, b) => acc + c * p.jacobian[b], 0));
-      const sigma = Math.sqrt(p.jacobian.reduce((acc, j, a) => acc + j * jp[a], 0) + opts.readingSigma ** 2);
-      const [near, far] = [...v[2]].sort((x, y) => Math.abs(x - predicted) - Math.abs(y - predicted));
-      if (Math.abs(far - predicted) - Math.abs(near - predicted) >= 3 * sigma) { obs[i].measured = near; resolved++; } else unresolved++;
-    }
-    const s = solveLifted(obs, { prior });
-    const alone = solveLifted(obs.map((o) => ({ ...o, weight: 1 })));
     if (!s.determined) throw new Error(`step ${k}: ${s.reason}`);
     state = s;
     const estimate = s.d.map((v, a) => v + reference[a]);
