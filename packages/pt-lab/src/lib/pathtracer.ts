@@ -4,8 +4,10 @@ import {
 	Box3,
 	BoxGeometry,
 	CanvasTexture,
+	CapsuleGeometry,
 	CircleGeometry,
 	Color,
+	CylinderGeometry,
 	DataTexture,
 	EquirectangularReflectionMapping,
 	FloatType,
@@ -151,10 +153,35 @@ export interface LabMaterial {
 	texture?: LabTexture; // absent = 'none'
 }
 
+/**
+ * A primitive solid, plain data: what a scene object is when it is not from
+ * the library. For a host whose parts are boxes and cylinders of its own
+ * sizes -- rr's world, converted -- rather than this editor's built-ins.
+ *
+ * Metres, centred on the object's origin. Round shapes have their axis along
+ * the object's local y, as three.js builds them. Curved surfaces are
+ * tessellated finely enough to read as smooth (a sphere 48 x 24, a cylinder 64
+ * round), and their ground truth is that polygon's edges, as for the Ball.
+ */
+export type LabShape =
+	| { kind: 'box'; size: [number, number, number] }
+	| { kind: 'sphere'; radius: number }
+	| { kind: 'ellipsoid'; radii: [number, number, number] }
+	| { kind: 'cylinder'; radius: number; length: number }
+	| { kind: 'capsule'; radius: number; length: number };
+
 /** One object's persisted state within a scene. */
 export interface SceneObjectState {
 	key: string; // stable library key (the object's name for built-ins)
 	included: boolean;
+	/**
+	 * A shape object: built from this, not from the library, so the scene
+	 * carries its own geometry and needs nothing registered first. Its key
+	 * must not be a library key. Absent for library objects.
+	 */
+	shape?: LabShape;
+	/** A shape object's name, what ground truth attributes its edges to; absent = its key. */
+	name?: string;
 	/**
 	 * Imported objects only: the file name Export writes the model's .glb under
 	 * (see modelFileName), and the SHA-256 of those bytes. The key alone names
@@ -664,6 +691,34 @@ const AMBIENT_FILL = 0.35;
 const PATCH_AREA = PATCH_HALF_X * 2 * PATCH_HALF_Z * 2;
 const AREA_LIGHT_AREA = AREA_LIGHT_SIZE * AREA_LIGHT_SIZE;
 
+/** A shape's geometry; throws on a size that is not a positive, finite number. */
+function shapeGeometry(shape: LabShape, key: string) {
+	const ok = (...v: number[]) => {
+		if (!v.every((x) => typeof x === 'number' && Number.isFinite(x) && x > 0)) {
+			throw new Error(`applyScene: shape "${key}" (${shape.kind}) needs positive sizes, not ${JSON.stringify(shape)}`);
+		}
+	};
+	switch (shape.kind) {
+		case 'box':
+			ok(...shape.size);
+			return new BoxGeometry(...shape.size);
+		case 'sphere':
+			ok(shape.radius);
+			return new SphereGeometry(shape.radius, 48, 24);
+		case 'ellipsoid':
+			ok(...shape.radii);
+			return new SphereGeometry(1, 48, 24).scale(...shape.radii);
+		case 'cylinder':
+			ok(shape.radius, shape.length);
+			return new CylinderGeometry(shape.radius, shape.radius, shape.length, 64);
+		case 'capsule':
+			ok(shape.radius, shape.length);
+			return new CapsuleGeometry(shape.radius, shape.length, 16, 64);
+		default:
+			throw new Error(`applyScene: shape "${key}" has unknown kind ${JSON.stringify((shape as { kind: unknown }).kind)}`);
+	}
+}
+
 /**
  * Framework-agnostic wrapper around WebGLPathTracer. This class is the piece
  * intended to port into a larger app: the host UI only talks to its public
@@ -921,7 +976,7 @@ export class PathTracerLab {
 	// the display name so imported duplicates never collide).
 	private objects = new Map<
 		string,
-		{ object3d: Object3D; name: string; key: string; included: boolean }
+		{ object3d: Object3D; name: string; key: string; included: boolean; shape?: LabShape }
 	>();
 	private objectCounter = 0;
 	private objectsChanged?: (objects: LabObject[]) => void;
@@ -1248,6 +1303,38 @@ export class PathTracerLab {
 			obj.visible = false;
 			this.registerObject(obj, item.name, item.key);
 			this.scene.add(obj);
+		}
+	}
+
+	/**
+	 * Refuse a scene whose shapes cannot be built, before anything is torn
+	 * down: a key that is also a library key, or used twice, would make the
+	 * scene's reference to it ambiguous, and a size that is not a positive
+	 * number is a mistake.
+	 */
+	private checkShapes(objects: SceneObjectState[]) {
+		const keys = new Set<string>();
+		for (const o of objects) {
+			if (!o.shape) continue;
+			if (this.library.some((i) => i.key === o.key)) throw new Error(`applyScene: shape "${o.key}" is a library key`);
+			if (keys.has(o.key)) throw new Error(`applyScene: shape key "${o.key}" is used twice`);
+			keys.add(o.key);
+			shapeGeometry(o.shape, o.key).dispose();
+		}
+	}
+
+	/** The scene's shape objects, each its own mesh, hidden until state is applied. */
+	private instantiateShapes(objects: SceneObjectState[]) {
+		for (const o of objects.filter((o) => o.shape)) {
+			const mesh = new Mesh(
+				shapeGeometry(o.shape!, o.key),
+				new MeshPhysicalMaterial({ color: 0xb3b3bf, roughness: 0.5 }),
+			);
+			mesh.visible = false;
+			const name = o.name ?? o.key;
+			mesh.name = name;
+			this.registerObject(mesh, name, o.key, structuredClone(o.shape!));
+			this.scene.add(mesh);
 		}
 	}
 
@@ -1776,10 +1863,11 @@ export class PathTracerLab {
 		}
 	}
 
-	private registerObject(object3d: Object3D, name: string, key: string = name) {
+	private registerObject(object3d: Object3D, name: string, key: string = name, shape?: LabShape): string {
 		setShadowFlags(object3d, true, true);
 		const id = `obj-${++this.objectCounter}`;
-		this.objects.set(id, { object3d, name, key, included: object3d.visible });
+		this.objects.set(id, { object3d, name, key, included: object3d.visible, ...(shape ? { shape } : {}) });
+		return id;
 	}
 
 	listObjects(): LabObject[] {
@@ -2346,6 +2434,10 @@ export class PathTracerLab {
 			const transform = this.getObjectTransform(id);
 			if (!material || !transform) continue;
 			const state: SceneObjectState = { key: entry.key, included: entry.included, material, transform };
+			if (entry.shape) {
+				state.shape = structuredClone(entry.shape);
+				state.name = entry.name;
+			}
 			const item = this.library.find((i) => i.key === entry.key);
 			if (item?.sha256) {
 				state.glb = modelFileName(item.name, item.sha256);
@@ -2478,6 +2570,7 @@ export class PathTracerLab {
 	/** Replace the whole scene with a saved (or new) editor scene. */
 	applyScene(data: SceneData) {
 		if (!this.ready) return;
+		this.checkShapes(data.objects);
 		this.hideDenoise();
 		this.buildEditorScene(data);
 		this.emitObjects();
@@ -2528,8 +2621,10 @@ export class PathTracerLab {
 		floor.receiveShadow = true;
 		this.scene.add(floor);
 
-		// Instantiate the whole library (built-ins + imports), then apply state.
+		// Instantiate the whole library (built-ins + imports) and the scene's
+		// own shapes, then apply state to all of them alike.
 		this.instantiateLibrary();
+		this.instantiateShapes(data.objects);
 		// Before the room is built, which reads it.
 		this.lamp = data.lamp ? { ...data.lamp } : { ...DEFAULT_LAMP };
 		this.applyRoom(data.room);
