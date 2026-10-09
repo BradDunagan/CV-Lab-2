@@ -3681,6 +3681,34 @@ generator page alike; 1.166-1.177 over three Electron ones). Few renders,
 so a finding to watch rather than a number to correct for; a calibration
 absorbs a constant one.
 
+**rr's own world, rendered and read** (port step 3, second half,
+2026-10-09). rr's parts are its own primitives -- boxes, spheres,
+cylinders, capsules, ellipsoids, Z-up -- so a pt-lab scene object may now
+be a **shape**, plain data the scene carries, rather than a library key.
+rr's `worldScene` turns its world into one: -90 degrees about x, applied to
+each object's local frame as well as its pose, so an axis-aligned part needs
+no rotation and a cylinder's axis lands on pt-lab's without a special case.
+Every vertex pt-lab builds is within 10 nm of where rr's own pose math puts
+the part's surface (float32, the rest), and a test that applied a wrong
+rotation both ways passed that check and failed the next: a part's height
+above rr's floor must be its height above pt-lab's. Meshes are listed, not
+converted: step 8.
+
+The check: cv-lab's stacking fixture built in rr -- the table as five rr
+boxes, the two cubes, its light -- three of the y sweep's float shots
+rendered in Chrome, each one's truth predicted from the geometry pt-lab
+rendered (step 0), and the gaps read as cv-lab reads them. The true gaps are
+cv-lab's renderer's to 10⁻³ px, so the world is the fixture, part for part.
+Every pair is read, within 0.17 px of the truth and 0.02 px of what cv-lab's
+render of the same shot read. Rendered by cv-lab's generator, the same scene
+is stack-2 to within render noise. Two of rr's checks turned out to depend
+on noise, not on rr. `findPairs`' one pair in the conformance crop is 0.68
+px wide and rr's renders missed it in 2 of 7. And `fitPairs` declines a
+pair near 6 px: y35-e20's 5.99 px pair was refit in four of seven. Each is
+now read as the solve reads it, the refit where there is one and the
+detections' own reading where there is not -- good that wide (-0.02 px),
+wrong narrow (+1.48 at 2.06 px), so a narrow pair with no refit still fails.
+
 ---
 
 ## 9. Decide now vs. defer
