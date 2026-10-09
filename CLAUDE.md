@@ -74,6 +74,11 @@ packages/vision/     @cv-lab/vision: the library, ESM, host-free -- what rr
                      creases, what is hidden -- a .gt.json in ~3 ms, no GPU
   wasm/cvlab.wasm    the module, committed, with a manifest of its sources
   types/             TypeScript declarations from the JSDoc, committed
+packages/pt-lab/     @cv-lab/pt-lab: the path tracer + scene editor, TypeScript
+                     source, moved in from its own repository -- see its
+                     README.md. The generator bundles it here; rr takes it
+                     from source, and renderFrame() hands rr's analysis camera
+                     linear float frames in memory
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
 scripts/generate-cli.js  drives pt-lab to render varied images (needs a GPU)
 scripts/score.js     tallies match records: precision, recall, and which
@@ -101,8 +106,6 @@ scripts/conformance.js  writes test/conformance/ from a bench frame, cropped
 scripts/bench.js     what a frame costs, per statement: the addon, the module,
                      and the module in browsers' Web Workers (bench-core.mjs
                      runs in all of them; bench-worker.mjs is the Worker)
-pt-lab/              the path tracer + scene editor library, TypeScript, moved in
-                     from its own repository — see pt-lab/README.md
 src/generate/        the generator: page (bundled separately) + main-process
                      driver shared by the CLI and the app's Generate frame;
                      also the Scene Editor page (pt-lab's view and a
@@ -162,7 +165,7 @@ npm run test:wasm       # the module against the addon, and every node suite on 
 npm run build:types     # the package's .d.ts from its JSDoc -- commit them (--check:
                         # current, and a TypeScript host compiles against them)
 npm run build:renderer  # Vite build of src/renderer/ into dist-renderer/
-npm run check:pt-lab    # type-check pt-lab/ — the build strips types unchecked
+npm run check:pt-lab    # type-check packages/pt-lab/ — the build strips types unchecked
 npm run dev:renderer    # the same, in watch mode
 npm run build:generate  # the generator bundle — rerun whenever pt-lab's source
                         # changes; a stale one is refused rather than run
@@ -179,13 +182,17 @@ npm run smoke:package   # launch it and check it actually works
   `tests/vision-conformance.spec.ts` runs `test/conformance/` in Chrome through
   rr's build. A change that moves a hash there means `node
   scripts/conformance.js ...` (its `case.json` says from what) and a commit,
-  and rr's test then holds rr to it.
+  and rr's test then holds rr to it. The case also says how its frame was
+  rendered (`render`: scene, shot, tone mapping, sample cap), and rr's
+  `tests/analysis-camera.spec.ts` renders that shot through
+  `@cv-lab/pt-lab` and must read the same gaps to within render noise --
+  not by hash: no two renders are the same bits.
 - **The WebAssembly module gives the addon's hashes.** It is what rr runs in a
   browser, so `test:wasm` runs `test/determinism.js` on it, on all three
   runners. It imports nothing -- its libm is compiled in -- and the committed
   file must be what the sources build, byte for byte (`build:wasm --check`).
   A change to the C means `npm run build:wasm` and committing the result.
-- **Image generation ships in the app.** It is not a developer tool: varying lighting and pose to test a pipeline against is the lab's core loop, so `npm run package` builds `dist-generate/` into the `app.asar`. pt-lab's source lives in `pt-lab/` and its dependencies are devDependencies — the bundle carries the tracer, the model and the environment, so none is needed at run time. Needs a GPU; adds ~17 MB.
+- **Image generation ships in the app.** It is not a developer tool: varying lighting and pose to test a pipeline against is the lab's core loop, so `npm run package` builds `dist-generate/` into the `app.asar`. pt-lab's source lives in `packages/pt-lab/` and its dependencies are devDependencies (peerDependencies of the package, for rr) — the bundle carries the tracer, the model and the environment, so none is needed at run time. Needs a GPU; adds ~17 MB.
 - **`sandbox: false` on the window**, with `contextIsolation` on and `nodeIntegration` off. It exists so the preload can `require()` a real `.node`. Conditional on this window only ever loading local, first-party content.
 - **Pixels never cross the contextBridge.** It deep-copies typed arrays — measured. The preload owns the buffers and renders into the canvas directly. Svelte owns the DOM and only the DOM: a pane hands the preload a canvas **id**, because a DOM node cannot cross the bridge either.
 - **The macOS menu-bar name is `CFBundleName` in the running bundle**, not `app.setName()`. A dev run says "Electron" because it runs Electron's own bundle; the packaged app is always right. `scripts/brand-dev-electron.js` patches the dev copy from `postinstall`.

@@ -1,0 +1,20 @@
+{
+  "name": "@cv-lab/pt-lab",
+  "version": "0.1.0",
+  "description": "The path tracer cv-lab renders its images with, and its scene editor: three.js and three-gpu-pathtracer, TypeScript source, compiled by the host's Vite. Renders linear float frames for @cv-lab/vision.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./assets/*": "./assets/*"
+  },
+  "types": "./src/index.ts",
+  "peerDependencies": {
+    "oidn-web": "^0.3.5",
+    "svelte": "^5.39.0",
+    "three": "^0.185.1",
+    "three-gpu-pathtracer": "^0.0.24",
+    "three-mesh-bvh": "0.9.13"
+  }
+}

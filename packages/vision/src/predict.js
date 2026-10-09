@@ -12,7 +12,7 @@
  * returning the document `groundTruth` reads (`parseGroundTruth`), so
  * anything that takes a `.gt.json` takes this.
  *
- * It follows `groundTruthGeometry` step for step (pt-lab/src/lib/pathtracer.ts):
+ * It follows `groundTruthGeometry` step for step (packages/pt-lab/src/lib/pathtracer.ts):
  * edges keyed by quantised position across the whole scene, a silhouette
  * where one face turns toward the eye and the other away, a crease past
  * `creaseAngle`, a boundary where an edge has one face, clipped at the near

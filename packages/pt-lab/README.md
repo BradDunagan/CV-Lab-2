@@ -18,17 +18,20 @@ This maps well onto "photo-realistic stills": let the tracer run for seconds-to-
 
 ## Project structure
 
-The library is consumed from source: `vite.generate.config.mjs` aliases `'pt-lab'` to `pt-lab/src/index.ts`, and cv-lab's Vite compiles it into `dist-generate/`. Its dependencies (three, three-gpu-pathtracer, three-mesh-bvh, oidn-web) are cv-lab's devDependencies — bundled, so none is needed at run time.
+The library is `@cv-lab/pt-lab`, consumed from source by two hosts, and built by neither on its own:
+
+- **cv-lab**: `vite.generate.config.mjs` aliases `'@cv-lab/pt-lab'` to `packages/pt-lab/src/index.ts`, and cv-lab's Vite compiles it into `dist-generate/`. Its dependencies (three, three-gpu-pathtracer, three-mesh-bvh, oidn-web) are cv-lab's devDependencies — bundled, so none is needed at run time.
+- **rr** (`../rr`): `"@cv-lab/pt-lab": "../cv-lab-2/packages/pt-lab"`, as it takes `@cv-lab/vision`. The same dependencies are the package's `peerDependencies`, at the versions cv-lab renders with, and rr's Vite config dedupes them so the source here uses rr's one copy of three.js. rr's analysis camera (`src/app/vision/analysis-camera.ts` there) renders through `renderFrame`, below.
 
 | Path | Role |
 |---|---|
-| `pt-lab/src/index.ts` | Public barrel — what `'pt-lab'` resolves to. Exports `PathTracerLab` + types, the components, and the persistence/bundled modules. |
-| `pt-lab/src/lib/pathtracer.ts` | **The reusable core.** Framework-agnostic class wrapping renderer, scene, controls, and `WebGLPathTracer`. Talks to the host only through public methods and callbacks (`onStatus`, `onObjectsChanged`). Also owns the Scene Editor model — object registry, room swapping, serialize/apply, `.glb` import — and the ground-truth and AOV exports. Asset URLs are configurable via `LabOptions`. |
-| `pt-lab/src/lib/PathTracerViewer.svelte` | Thin Svelte binding: mounts the class on a canvas, wires `ResizeObserver`, disposes on unmount. |
-| `pt-lab/src/lib/TransformPanel.svelte`, `MaterialPanel.svelte`, `LightPanel.svelte`, `BundleTree.svelte` | Inspector panels + the bundled-objects tree. |
-| `pt-lab/src/lib/scenes.ts`, `library-store.ts` | Persistence for named scenes (localStorage — unused by cv-lab, which saves scenes as files) and imported `.glb` objects (IndexedDB). |
-| `pt-lab/src/lib/bundled.ts` + `src/assets/imports/` | Build-time enumeration of bundled importable objects (travels with the library). |
-| `pt-lab/assets/` | The default model, HDR environment and denoiser weights. Nothing imports them — the page fetches them by URL — so the build copies them beside it into `dist-generate/assets/`. |
+| `packages/pt-lab/src/index.ts` | Public barrel — what `'pt-lab'` resolves to. Exports `PathTracerLab` + types, the components, and the persistence/bundled modules. |
+| `packages/pt-lab/src/lib/pathtracer.ts` | **The reusable core.** Framework-agnostic class wrapping renderer, scene, controls, and `WebGLPathTracer`. Talks to the host only through public methods and callbacks (`onStatus`, `onObjectsChanged`). Also owns the Scene Editor model — object registry, room swapping, serialize/apply, `.glb` import — and the ground-truth and AOV exports. Asset URLs are configurable via `LabOptions`. |
+| `packages/pt-lab/src/lib/PathTracerViewer.svelte` | Thin Svelte binding: mounts the class on a canvas, wires `ResizeObserver`, disposes on unmount. |
+| `packages/pt-lab/src/lib/TransformPanel.svelte`, `MaterialPanel.svelte`, `LightPanel.svelte`, `BundleTree.svelte` | Inspector panels + the bundled-objects tree. |
+| `packages/pt-lab/src/lib/scenes.ts`, `library-store.ts` | Persistence for named scenes (localStorage — unused by cv-lab, which saves scenes as files) and imported `.glb` objects (IndexedDB). |
+| `packages/pt-lab/src/lib/bundled.ts` + `src/assets/imports/` | Build-time enumeration of bundled importable objects (travels with the library). |
+| `packages/pt-lab/assets/` | The default model, HDR environment and denoiser weights. Nothing imports them — the page fetches them by URL — so the build copies them beside it into `dist-generate/assets/`. |
 | `src/generate/main.js` | The generator's page: drives `PathTracerLab` for `npm run generate` and the Generate frame. |
 | `src/generate/Editor.svelte` | The Scene Editor: pt-lab's editor UI, ported from the old demo, saving to `scenes/`. |
 
@@ -113,7 +116,7 @@ In pt-lab's old demo, scenes were named and saved to localStorage (**New** / **S
 
 **Import .glb…** (in the Objects group) adds a model to the object library; it persists (raw bytes in IndexedDB — see [Where the editor's data lives](#where-the-editors-data-lives)) and appears in every editor scene without re-importing. The **×** beside an imported object removes it. Imports are parsed once into a template and cloned per scene with independent materials, so editing one scene's copy doesn't affect others.
 
-**Bundled objects**: a "Bundled objects" browser lists `.glb` files that ship with the library under `pt-lab/src/assets/imports/`, as a tree mirroring the folder layout. `src/lib/bundled.ts` enumerates them at build time with `import.meta.glob('../assets/imports/**/*.glb', { query: '?url', eager: true })` and assembles the flat result into a directory tree — drop a new file or subdirectory into `assets/imports/` and it appears automatically, no manifest to maintain. Clicking a file fetches its URL and runs it through the same `importGLB` as the file picker (so it joins the persistent library); files already in the library are marked and disabled.
+**Bundled objects**: a "Bundled objects" browser lists `.glb` files that ship with the library under `packages/pt-lab/src/assets/imports/`, as a tree mirroring the folder layout. `src/lib/bundled.ts` enumerates them at build time with `import.meta.glob('../assets/imports/**/*.glb', { query: '?url', eager: true })` and assembles the flat result into a directory tree — drop a new file or subdirectory into `assets/imports/` and it appears automatically, no manifest to maintain. Clicking a file fetches its URL and runs it through the same `importGLB` as the file picker (so it joins the persistent library); files already in the library are marked and disabled.
 
 Recommended Blender export: **File → Export → glTF 2.0**, format **glTF Binary (.glb)**. Use the **Principled BSDF** (its base color, roughness, metallic, transmission, IOR, and emission map to the material via KHR extensions). **Turn off Draco / mesh compression** — no decompressor is wired in. Apply object transforms (**Ctrl+A → All Transforms**) so the position/rotation/scale sliders behave predictably; the exporter's default **+Y up** is correct. Textured multi-MB models are fine since imports moved to IndexedDB — see [Where the editor's data lives](#where-the-editors-data-lives).
 
@@ -171,7 +174,13 @@ Progressive accumulation means clean output takes hundreds of samples. Practical
 - **Sample cap + UI feedback**: expose `pathTracer.samples` (the lab shows samples + elapsed time). Users tolerate waiting when they can see progress.
 - **`filterGlossyFactor`** (~0.5): blurs caustic-ish glossy paths slightly to kill fireflies at a small quality cost.
 - **`renderScale`**: converge at 0.5× for previews, 1× for finals.
-- **AI denoising**: the "AI denoise" checkbox runs [oidn-web](https://github.com/pissang/oidn-web) (Intel Open Image Denoise via tfjs/WebGPU — WebGPU-only). Implementation: the tone-mapped canvas is captured and denoised on a doubling schedule (4, 8, 16, … samples, plus a final pass at the sample cap), with the result drawn to a 2D overlay canvas that fades in over the live render; any accumulation reset hides it. `oidn-web` is dynamically imported on first enable (it pulls in tfjs); weights live in `pt-lab/assets/` (`rt_ldr.tza`, `rt_ldr_alb_nrm.tza` — Git LFS files in their source repos, fetch via the LFS media endpoint or batch API, not `raw.githubusercontent.com`).
+- **AI denoising**: the "AI denoise" checkbox runs [oidn-web](https://github.com/pissang/oidn-web) (Intel Open Image Denoise via tfjs/WebGPU — WebGPU-only). Implementation: the tone-mapped canvas is captured and denoised on a doubling schedule (4, 8, 16, … samples, plus a final pass at the sample cap), with the result drawn to a 2D overlay canvas that fades in over the live render; any accumulation reset hides it. `oidn-web` is dynamically imported on first enable (it pulls in tfjs); weights live in `packages/pt-lab/assets/` (`rt_ldr.tza`, `rt_ldr_alb_nrm.tza` — Git LFS files in their source repos, fetch via the LFS media endpoint or batch API, not `raw.githubusercontent.com`).
+
+### Float frames in memory
+
+`renderFrame(size)` converges exactly as `exportPNG` does — the two share `convergeSquare` and `saveViewForExport` — and returns the float frame instead of downloading it: the accumulated radiance times the exposure, rows top-down, `{ width, height, channels: 3, data }`, which is `@cv-lab/vision`'s `Frame`. With it, the camera that took it (`sceneGeometry`'s camera fields: position, target, up, vertical `fov`, `near`), the samples and the exposure. It throws where `exportPNG` returns silently.
+
+Two things decide what such a frame is, beyond the scene. The live view's sample cap (`setMaxSamples`): the animation loop draws samples beside the export's own until the cap pauses it, and a frame made with no cap read about 1% brighter, and a pair's gap 0.25 px narrower, than one made under cv-lab's 96 — so a host matches cv-lab's cap. And the browser: the same page and shot read carried gaps ~0.02 px narrower in Chrome than in Electron, over a handful of renders. Neither is bit-for-bit anyway; no two renders are.
 
 ### Fixed-size PNG export
 

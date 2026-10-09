@@ -3651,6 +3651,36 @@ Chrome through rr's dev build and gets all fifteen. The bench frames
 themselves (3 MB each, local renders) were the plan's check and are not in
 any repository; a 312 KB crop that exercises every operation is.
 
+Step 2 (2026-10-09) runs it in a Web Worker in rr: the crop alone stalls a
+page 0.8-1 s on the main thread, and no frame is missed in the worker.
+
+**pt-lab is a package too** (port step 3, 2026-10-09): `packages/pt-lab`,
+`@cv-lab/pt-lab`, taken from source by rr as the vision package is. Its
+`renderFrame` returns the float frame in memory, rows top-down, with the
+camera that took it. The conformance case now also records how its frame was
+rendered (`render` in `case.json`: `scenes/stack-2.json`, the shot, linear
+tone mapping at 0.5, the live view's sample cap of 96), and rr's
+`tests/analysis-camera.spec.ts` renders that shot in Chrome and runs the
+statements over the same crop. A render is not bit-reproducible -- two of
+the same shot from one build differ by 0.009 mean absolute -- so it compares
+what the statements read: the carried gaps to 0.1 px, the pair fit's to 0.2.
+(The scene is inferred, not recorded: the y sweep's run kept no record of
+it. Rendered from `stack-2.json`, the shot matches the original to within
+render noise, 0.0083-0.0086 against 0.0094 between two new renders.)
+
+Two things moved a render that are not in the scene, both found by reading
+gaps over six renders of the one shot. **The live view's sample cap**:
+pt-lab's animation loop draws samples beside an export's own until
+`setMaxSamples` pauses it, and with no cap -- rr's first try -- a frame came
+out ~1% brighter and its pair fit read 1.02-1.22 px against cv-lab's
+1.27-1.35; under the generator's 96 it reads 1.27-1.29. Why extra samples
+from the loop should bias rather than only add is not understood. **The
+browser**: carried gaps read ~0.02-0.03 px narrower in Chrome than in
+Electron (K2 1.136-1.161 over seven Chrome renders, rr's page and cv-lab's
+generator page alike; 1.166-1.177 over three Electron ones). Few renders,
+so a finding to watch rather than a number to correct for; a calibration
+absorbs a constant one.
+
 ---
 
 ## 9. Decide now vs. defer

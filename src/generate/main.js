@@ -6,7 +6,7 @@
  * Nothing here decides WHAT to render — that is the CLI's job. This is the
  * part that has to live in a browser context, because path tracing is WebGL.
  */
-import { PathTracerLab } from 'pt-lab';
+import { PathTracerLab } from '@cv-lab/pt-lab';
 
 /** @type {PathTracerLab|null} */
 let lab = null;

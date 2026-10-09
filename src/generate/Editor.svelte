@@ -35,7 +35,7 @@
     newSceneData,
     LIGHT_TYPES,
     lightTypeInfo,
-  } from 'pt-lab';
+  } from '@cv-lab/pt-lab';
   import { previewFinished, SAMPLES_MIN, SAMPLES_MAX, SAMPLES_DEFAULT } from './preview.mjs';
 
   const host = window.cvlab;

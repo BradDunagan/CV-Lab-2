@@ -16,6 +16,15 @@
  * Writes test/conformance/: frame.pfm and case.json (where the frame came
  * from, the statements, the native addon's hash for each). Refuses to write
  * if the module under Node does not give the same hashes.
+ *
+ * With --scene and --shots, case.json also says how the frame was rendered --
+ * the scene file, the shot, the size, the tone mapping (from the frame's
+ * .gt.json) and the live view's sample cap -- so a host can render the same
+ * shot through its own copy of pt-lab and compare what the statements read
+ * (rr's tests/analysis-camera.spec.ts). A render is not bit-reproducible, so
+ * that comparison is to within render noise, never by hash.
+ *
+ *   ... --scene scenes/stack-2.json --shots generated/<run>/shots.json [--samples 96]
  */
 'use strict';
 const fs = require('node:fs');
@@ -27,20 +36,37 @@ const OUT = path.join(ROOT, 'test', 'conformance');
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
 function args(argv) {
-  const o = { frame: null, carry: null, name: null, crop: null, script: 'pipelines/pairs.lab' };
+  const o = { frame: null, carry: null, name: null, crop: null, script: 'pipelines/pairs.lab', scene: null, shots: null, samples: 96 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--carry') o.carry = argv[++i];
     else if (a === '--name') o.name = argv[++i];
     else if (a === '--crop') o.crop = argv[++i].split(',').map(Number);
     else if (a === '--script') o.script = argv[++i];
+    else if (a === '--scene') o.scene = argv[++i];
+    else if (a === '--shots') o.shots = argv[++i];
+    else if (a === '--samples') o.samples = Number(argv[++i]);
     else if (!a.startsWith('--') && !o.frame) o.frame = a;
     else throw new Error(`unknown argument ${a}`);
   }
   if (!o.frame || !o.carry || !o.name || o.crop?.length !== 4 || !o.crop.every(Number.isInteger)) {
     throw new Error('usage: conformance.js <frame.pfm> --carry <file> --name <shot> --crop x,y,w,h');
   }
+  if (!o.scene !== !o.shots) throw new Error('--scene and --shots go together');
   return o;
+}
+
+/** How the frame was rendered: enough for a host to render the same shot again. */
+function renderOf(o, size) {
+  if (!o.scene) return undefined;
+  const rel = (f) => path.relative(ROOT, f).split(path.sep).join('/');
+  const shot = JSON.parse(fs.readFileSync(o.shots, 'utf8')).find((s) => s.name === `${o.name}.png`);
+  if (!shot) throw new Error(`${o.shots} has no shot ${o.name}.png`);
+  const gt = JSON.parse(fs.readFileSync(o.frame.replace(/\.pfm$/, '.gt.json'), 'utf8'));
+  if (!gt.toneMapping) throw new Error(`${o.name}.gt.json records no tone mapping`);
+  const { camera, target, intensity, transforms } = shot;
+  return { scene: rel(o.scene), shots: rel(o.shots), size, toneMapping: gt.toneMapping, samples: o.samples,
+    shot: { name: shot.name, camera, target, intensity, transforms } };
 }
 
 /** The pipeline's statements, less what scores against truth: as `npm run bench` runs it. */
@@ -98,6 +124,7 @@ async function main() {
       from: { file: path.relative(ROOT, o.frame).split(path.sep).join('/'), sha256: sha(sourceBytes), crop: o.crop } },
     carry: { file: path.relative(ROOT, o.carry).split(path.sep).join('/'), shot: o.name },
     script: o.script,
+    render: renderOf(o, whole.width),
     module: wasmBackend.build,
     statements: statements.map((statement, i) => ({ statement, hash: native[i] })),
   };

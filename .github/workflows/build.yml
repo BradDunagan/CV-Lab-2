@@ -133,7 +133,7 @@ jobs:
 
       # pt-lab, the path tracer behind image generation and the scene editor,
       # used to be checked out here as a sibling, the way paneless still is.
-      # It lives in this repository now (pt-lab/), so there is nothing to check
+      # It lives in this repository now (packages/pt-lab/), so there is nothing to check
       # out -- and no way for the build to package a pt-lab one commit behind
       # the code calling it, which two of three jobs once did.
 

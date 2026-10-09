@@ -1237,14 +1237,14 @@ places the camera 20° off the axis so no view lands on a degenerate one and 25�
 above so three faces and seven vertices show. That is the case
 `design-lab-model.md` §5's claim is about.
 
-**pt-lab is in this repository, under `pt-lab/`, and only the build reads
+**pt-lab is in this repository, under `packages/pt-lab/`, and only the build reads
 it** — which is what lets the feature ship at all. It used to be a sibling
-checkout; see [pt-lab/README.md](../pt-lab/README.md) for why it moved and
+checkout; see [packages/pt-lab/README.md](../packages/pt-lab/README.md) for why it moved and
 what it is. Only `generate` needs a GPU:
 
-| | reads `pt-lab/` | GPU |
+| | reads `packages/pt-lab/` | GPU |
 |---|---|---|
-| `build:generate` | **yes** — `pt-lab/src/` for the code, `pt-lab/assets/` for the model, environment and denoiser weights; three, three-gpu-pathtracer, three-mesh-bvh and oidn-web come from this repository's devDependencies | no — it is a Vite build |
+| `build:generate` | **yes** — `packages/pt-lab/src/` for the code, `packages/pt-lab/assets/` for the model, environment and denoiser weights; three, three-gpu-pathtracer, three-mesh-bvh and oidn-web come from this repository's devDependencies | no — it is a Vite build |
 | `generate`, and the installed app | **no** — a built `dist-generate/` carries everything it needs | **yes** — path tracing is WebGL |
 
 `npm run package` runs `build:generate` and puts `dist-generate/` inside the
@@ -1255,14 +1255,14 @@ rather than assumed — a 3.7 MB glTF comes back byte-identical.
 That is what the copy step in `vite.generate.config.mjs` is for. pt-lab's
 default URLs are `./assets/…`, resolved against `gen://lab/index.html`, and
 nothing imports those files — so without the copy they would be fetched from
-`pt-lab/assets/` at render time, which a packaged app does not have. (Before
+`packages/pt-lab/assets/` at render time, which a packaged app does not have. (Before
 the copy existed, that meant fetching them from the sibling checkout, and a
 complete, correct build could fail on its first frame because the checkout had
 moved.) They are fetched on **every** run, `--scene cube` included, because
 `init()` loads the model and the environment before `applyScene` replaces them.
 
 A bundle built before that copy existed still works: the handler falls back to
-`pt-lab/assets/` when the bundle has no assets of its own. One function,
+`packages/pt-lab/assets/` when the bundle has no assets of its own. One function,
 `assetsDir()`, decides for both the handler and the prerequisite check, so the
 two cannot disagree about where a file is meant to come from.
 
@@ -1477,15 +1477,17 @@ timestamp against every file it was built from and refuses first:
 
 ```
 The generator build is older than its sources.
-  pt-lab/src/lib/pathtracer.ts changed after
+  packages/pt-lab/src/lib/pathtracer.ts changed after
   dist-generate/generate.js was built.
 Run: npm run build:generate
 ```
 
-**pt-lab is a Vite alias, not a package.** `vite.generate.config.mjs` points
-`'pt-lab'` at `pt-lab/src/index.ts` and bundles its *source*; it is never
-built or published on its own. Only that one config knows pt-lab exists, and
-only `npm run build:generate` reads it. That is also why this is a separate
+**pt-lab is source, compiled by whoever uses it.** It is a package,
+`@cv-lab/pt-lab`, so rr can take it from source as it takes `@cv-lab/vision`;
+here `vite.generate.config.mjs` points `'@cv-lab/pt-lab'` at
+`packages/pt-lab/src/index.ts` and bundles its *source*. It is never built or
+published on its own. In this repository only that config knows pt-lab
+exists, and only `npm run build:generate` reads it. That is also why this is a separate
 bundle: three.js and an OIDN WASM blob have no business in the app's
 renderer.
 

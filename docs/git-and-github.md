@@ -279,7 +279,7 @@ where it usually ends up, which is what makes this easy to do by accident.
 
 Three machines — macOS, Ubuntu, Windows — each: check out this repo *and* the
 sibling `paneless-workspace` repo (pt-lab lives in this one now, under
-`pt-lab/`), type-check pt-lab on Ubuntu, build the native addon twice
+`packages/pt-lab/`), type-check pt-lab on Ubuntu, build the native addon twice
 (Node ABI, then Electron ABI), run all fourteen suites, package the app, and
 **launch the packaged artifact and ask whether it works**.
 

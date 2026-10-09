@@ -10,18 +10,24 @@ at `29b9957`; history before that is there.
 ## Shape
 
 ```
-pt-lab/src/index.ts           the barrel — what `import … from 'pt-lab'` resolves to
-pt-lab/src/lib/pathtracer.ts  the core: PathTracerLab, framework-agnostic
-pt-lab/src/lib/*.svelte       the viewer and the inspector panels
-pt-lab/src/assets/imports/    bundled importable .glb files, found by import.meta.glob
-pt-lab/assets/                default model, HDR, denoiser weights — fetched by URL,
+package.json                  @cv-lab/pt-lab; three & co. as peerDependencies
+src/index.ts                  the barrel — what `import … from '@cv-lab/pt-lab'` resolves to
+src/lib/pathtracer.ts         the core: PathTracerLab, framework-agnostic
+src/lib/*.svelte              the viewer and the inspector panels
+src/assets/imports/           bundled importable .glb files, found by import.meta.glob
+assets/                       default model, HDR, denoiser weights — fetched by URL,
                               copied into dist-generate/assets/ by the build
 ```
 
-Consumers are in `src/generate/`: `main.js` (the generator's page) and
-`Editor.svelte` (the Scene Editor's view and its `__editor` API — its controls
-are a paneless column in the app window). Nothing else imports pt-lab, and
-nothing in `src/renderer/` may — the app window never hosts the tracer.
+In cv-lab the consumers are in `src/generate/`: `main.js` (the generator's
+page) and `Editor.svelte` (the Scene Editor's view and its `__editor` API —
+its controls are a paneless column in the app window). Nothing in
+`src/renderer/` may import it — the app window never hosts the tracer.
+
+rr takes the package from source (`"../cv-lab-2/packages/pt-lab"`), and its
+analysis camera renders with `renderFrame`. rr's `tests/analysis-camera.spec.ts`
+renders the conformance case's shot and must read cv-lab's gaps to within
+render noise, so a change here that moves a render is seen there too.
 
 ## Commands (from the repository root)
 
@@ -60,4 +66,5 @@ Scene Editor and generator are checked by driving them.
 `three-gpu-pathtracer` reaches into three.js internals. The known-good pairing
 is `three@0.185` + `three-gpu-pathtracer@0.0.24` (+ `three-mesh-bvh@0.9.13`,
 pinned exactly in package.json); don't bump any of them without re-rendering
-and re-scoring. Only `MeshPhysicalMaterial` translates well to the path tracer.
+and re-scoring. The package's peerDependencies say the same, and rr is on
+the same versions (it moved from three 0.183 for this). Only `MeshPhysicalMaterial` translates well to the path tracer.

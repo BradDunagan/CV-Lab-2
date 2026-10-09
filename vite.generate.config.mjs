@@ -5,10 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-// pt-lab lives in this repository now, under pt-lab/: the library's source,
+// pt-lab lives in this repository now, under packages/pt-lab/: the library's source,
 // and the assets its default URLs name. It used to be a sibling checkout.
-const PT_LAB = path.join(HERE, 'pt-lab', 'src', 'index.ts');
-const PT_ASSETS = path.join(HERE, 'pt-lab', 'assets');
+const PT_LAB = path.join(HERE, 'packages', 'pt-lab', 'src', 'index.ts');
+const PT_ASSETS = path.join(HERE, 'packages', 'pt-lab', 'assets');
 const OUT = path.resolve(HERE, 'dist-generate');
 
 /**
@@ -16,7 +16,7 @@ const OUT = path.resolve(HERE, 'dist-generate');
  *
  * pt-lab's default URLs are `./assets/…` — the glTF model, the HDR
  * environment, and the denoiser weights — relative to the PAGE, so they have
- * to sit beside it in `dist-generate/`. They live in pt-lab/assets/, apart
+ * to sit beside it in `dist-generate/`. They live in packages/pt-lab/assets/, apart
  * from the library's source, because nothing imports them: the page fetches
  * them at run time. (In pt-lab's own repository they were its demo app's
  * public files, and before this copy existed the generator fetched them from
@@ -67,18 +67,19 @@ function copyPtLabAssets() {
  * GPU path tracer and an OIDN WASM blob, and the app's window has no use for
  * any of it. It runs in views of its own, loaded from dist-generate/.
  *
- * pt-lab is reached through an alias rather than as a package: it is source
- * in this repository, compiled here, never published. Its dependencies (three,
+ * pt-lab is reached through an alias: it is source in this repository,
+ * compiled here, never published. (It is a package too, @cv-lab/pt-lab, for
+ * rr, which takes it from source; the alias is the same name.) Its dependencies (three,
  * three-gpu-pathtracer, three-mesh-bvh, oidn-web) are this repository's
  * devDependencies, like everything else Vite bundles, and resolve from
- * pt-lab/src/ by ordinary upward node resolution.
+ * packages/pt-lab/src/ by ordinary upward node resolution.
  */
 export default defineConfig({
   root: 'src/generate',
   base: './',
   plugins: [svelte(), copyPtLabAssets()],
   resolve: {
-    alias: { 'pt-lab': PT_LAB },
+    alias: { '@cv-lab/pt-lab': PT_LAB },
   },
   build: {
     outDir: '../../dist-generate',
