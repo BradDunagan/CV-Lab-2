@@ -7,7 +7,7 @@ out/
 *.node
 .DS_Store
 # The ROOT assets/ -- local test images. Anchored with the slash: unanchored,
-# this matched a directory called assets ANYWHERE, and pt-lab/assets/ (the
+# this matched a directory called assets ANYWHERE, and packages/pt-lab/assets/ (the
 # model, environment and denoiser weights the generator is built with) would
 # have been silently left out of every commit.
 /assets/

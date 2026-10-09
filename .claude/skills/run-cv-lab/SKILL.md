@@ -18,7 +18,7 @@ Verified on macOS (Apple silicon, Retina). Both commands run from the repo root.
 export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:$PATH"   # or: nvm use
 node -v                         # must be 22.x; the shell default here was 18.17
 npm run build:renderer          # ALWAYS: Electron loads dist-renderer/, never src/
-npm run build:generate          # if anything under pt-lab/ or src/generate/ changed
+npm run build:generate          # if anything under packages/pt-lab/ or src/generate/ changed
 ```
 
 - **There is no dev server.** A stale `dist-renderer/` means you are testing

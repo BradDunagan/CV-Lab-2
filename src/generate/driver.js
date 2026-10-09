@@ -21,7 +21,7 @@ const { pathToFileURL } = require('node:url');
 
 const ROOT = path.join(__dirname, '..', '..');
 const PAGE = path.join(ROOT, 'dist-generate');
-const PT_ASSETS = path.join(ROOT, 'pt-lab', 'assets');
+const PT_ASSETS = path.join(ROOT, 'packages', 'pt-lab', 'assets');
 const BUNDLED_ASSETS = path.join(PAGE, 'assets');
 
 /**
@@ -34,11 +34,11 @@ const BUNDLED_ASSETS = path.join(PAGE, 'assets');
 const CORE_ASSETS = ['damaged-helmet.glb', 'royal_esplanade_1k.hdr'];
 
 /**
- * Where pt-lab's assets are coming from this run — the bundle, or pt-lab/assets/
+ * Where pt-lab's assets are coming from this run — the bundle, or packages/pt-lab/assets/
  * in this working copy, or nowhere.
  *
  * `build:generate` copies them into the bundle, so a built generator is
- * self-contained -- which is what lets a packaged app, with no pt-lab/ beside
+ * self-contained -- which is what lets a packaged app, with no packages/pt-lab/ beside
  * it, generate at all. The fallback keeps an older bundle, built before that
  * copy existed, working rather than failing on its first frame.
  *
@@ -142,7 +142,7 @@ function installHandler() {
         : new Response('not a model this run verified', { status: 404 });
     }
     // pt-lab's default model and environment URLs are ./assets/…, which the
-    // build copies into the bundle; assetsDir() falls back to pt-lab/assets/
+    // build copies into the bundle; assetsDir() falls back to packages/pt-lab/assets/
     // for a bundle built before it did.
     const file = rel.startsWith('assets/')
       ? path.join(assetsDir() ?? BUNDLED_ASSETS, rel.slice('assets/'.length))
@@ -175,7 +175,7 @@ function openSceneForEditor(name) {
   };
 }
 
-const PT_SRC = path.join(ROOT, 'pt-lab', 'src');
+const PT_SRC = path.join(ROOT, 'packages', 'pt-lab', 'src');
 
 /**
  * The files under src/generate/ that Electron loads as they are, rather than
@@ -287,8 +287,8 @@ function checkPrerequisites() {
       : `pt-lab's assets are missing.\n` +
         `  Not in the bundle: ${BUNDLED_ASSETS}\n` +
         `  Nor in the working copy: ${PT_ASSETS}\n` +
-        `They are committed under pt-lab/assets/, so this means that directory ` +
-        `is missing or incomplete -- check \`git status pt-lab/assets\`.\n${rebuild}`;
+        `They are committed under packages/pt-lab/assets/, so this means that directory ` +
+        `is missing or incomplete -- check \`git status packages/pt-lab/assets\`.\n${rebuild}`;
   }
 
   /*

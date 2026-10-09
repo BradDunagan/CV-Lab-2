@@ -19,11 +19,11 @@
  * installers whose headline feature could not run, because the sibling
  * checkout had a commit that had not been pushed.
  *
- * pt-lab is in this repository now, under pt-lab/, so a checkout that is
+ * pt-lab is in this repository now, under packages/pt-lab/, so a checkout that is
  * BEHIND can no longer happen -- the caller and the callee move in the same
  * commit. The check stays because the rest of the reasoning does: the pages
  * are plain JavaScript and Svelte without type-checking, so renaming a method
- * in pt-lab/src/ and missing one caller still builds, packages and launches
+ * in packages/pt-lab/src/ and missing one caller still builds, packages and launches
  * clean. `npm run check:pt-lab` type-checks pt-lab itself, not its callers.
  *
  * THE SUBTLETY THAT MAKES THIS MORE THAN A GREP.
@@ -56,7 +56,7 @@ const PAGES = ['main.js', 'Editor.svelte']
   .map((f) => path.join(ROOT, 'src', 'generate', f));
 const OUT = path.join(ROOT, 'dist-generate');
 const BUNDLE = path.join(OUT, 'generate.js');
-const PT_SRC = path.join(ROOT, 'pt-lab', 'src');
+const PT_SRC = path.join(ROOT, 'packages', 'pt-lab', 'src');
 
 /**
  * Every method the page calls on the PathTracerLab instance.

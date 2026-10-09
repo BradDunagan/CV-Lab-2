@@ -585,7 +585,7 @@ test('the assets a run cannot start without, and the ones it can', () => {
 test('a built bundle carries its own assets, so a run needs no checkout', () => {
   /*
    * The point of copying them in at build time: `build:generate` reads
-   * pt-lab/assets/, and a packaged app, which has no pt-lab/, does not. Checked
+   * packages/pt-lab/assets/, and a packaged app, which has no packages/pt-lab/, does not. Checked
    * against the real bundle, and skipped when there is not one, because this
    * suite runs under plain node where a build may never have happened.
    */
@@ -595,7 +595,7 @@ test('a built bundle carries its own assets, so a run needs no checkout', () => 
   const built = CORE_ASSETS.every((f) => fs.existsSync(path.join(BUNDLED_ASSETS, f)));
   if (!built) return; // nothing built here; the flag below is what would catch a regression
   assert.equal(assetsDir(), BUNDLED_ASSETS,
-    'a bundle with its own assets must be preferred over pt-lab/assets/');
+    'a bundle with its own assets must be preferred over packages/pt-lab/assets/');
 });
 
 test("pt-lab's assets count as build inputs, so swapping one is caught", () => {

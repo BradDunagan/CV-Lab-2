@@ -21,6 +21,39 @@
     "shot": "y60-e50-gap-m2mm"
   },
   "script": "pipelines/pairs.lab",
+  "render": {
+    "scene": "scenes/stack-2.json",
+    "shots": "generated/stack-2g-y-f/shots.json",
+    "size": 512,
+    "toneMapping": {
+      "kind": "linear",
+      "exposure": 0.5
+    },
+    "samples": 96,
+    "shot": {
+      "name": "y60-e50-gap-m2mm.png",
+      "camera": [
+        -0.0494983203481113,
+        1.19471999940354,
+        0.3446272121794714
+      ],
+      "target": [
+        -0.3,
+        0.85,
+        0.2
+      ],
+      "intensity": 1,
+      "transforms": {
+        "Cube2": {
+          "position": [
+            -0.3,
+            0.902,
+            0.2
+          ]
+        }
+      }
+    }
+  },
   "module": "8f54b9f9b695c22c6bd75efe465cfc41202c7ac1b69efd805801f26c625094b3",
   "statements": [
     {

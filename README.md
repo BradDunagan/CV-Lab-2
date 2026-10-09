@@ -132,7 +132,7 @@ notes/                   working notes; unlike docs/, never obliged to be curren
 | `npm run build:native` | Compile the addon with node-gyp |
 | `npm run build:renderer` | Vite build of the Svelte renderer |
 | `npm run lab` | Run a pipeline over images, headless — see below |
-| `npm run build:generate` | Build the image generator and the Scene Editor from `pt-lab/`; refuses a bundle missing a pt-lab method the pages call |
+| `npm run build:generate` | Build the image generator and the Scene Editor from `packages/pt-lab/`; refuses a bundle missing a pt-lab method the pages call |
 | `npm run dev:generate` | The same, in watch mode, for editing pt-lab |
 | `npm run check:pt-lab` | Type-check pt-lab — the build strips types without checking them |
 | `npm run generate` | Render images with varying position and lighting, optionally with ground truth |
@@ -194,7 +194,7 @@ npm run generate -- --out generated/ --positions 3 --lighting 2
 npm run lab -- --script pipelines/geometry.lab --out results/ generated/*.png
 ```
 
-It hosts [pt-lab](pt-lab/README.md) — a GPU path tracer — orbits the camera,
+It hosts [pt-lab](packages/pt-lab/README.md) — a GPU path tracer — orbits the camera,
 varies the environment intensity, and writes one PNG per combination. `--show`
 puts the render in a window of its own, which the CLI needs and the app does
 not. `--dry-run` prints the sweep without rendering, which is worth doing
@@ -222,7 +222,7 @@ image recorded so far carries the raw path-traced noise floor.
 
 ### Where pt-lab comes from
 
-`pt-lab/` in this repository: the library's TypeScript source, and the model,
+`packages/pt-lab/` in this repository: the library's TypeScript source, and the model,
 environment and denoiser weights the build copies into the bundle. It used to
 be a sibling checkout, and moved in because a build could package a pt-lab one
 commit behind the code calling it — which shipped once. Only the build reads

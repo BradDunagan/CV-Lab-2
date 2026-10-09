@@ -38,7 +38,6 @@ import {
 	type Light,
 	type Material,
 	type Object3D,
-	type Texture,
 } from 'three';
 import { RectAreaLight } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -266,6 +265,19 @@ const DENOISE_MIN_SIZE = 256;
 
 /** Linear RGB radiance, three floats a pixel, rows bottom-up. */
 export type LinearFrame = { width: number; height: number; rgb: Float32Array };
+
+/**
+ * One rendered frame, in memory (`renderFrame`): linear float RGB, rows
+ * top-down -- @cv-lab/vision's `Frame` -- and the camera that took it.
+ */
+export interface RenderedFrame {
+	frame: { width: number; height: number; channels: 3; data: Float32Array };
+	camera: SceneGeometry['camera'];
+	/** Samples accumulated per pixel. */
+	samples: number;
+	/** The exposure the radiance was multiplied by. */
+	exposure: number;
+}
 
 /**
  * A float frame as a Portable Float Map: `PF`, the size, a negative scale
@@ -2631,13 +2643,7 @@ export class PathTracerLab {
 		}
 		this.exporting = true;
 		this.hideDenoise();
-
-		const logical = this.renderer.getSize(new Vector2());
-		const prevPixelRatio = this.renderer.getPixelRatio();
-		const prevAspect = this.camera.aspect;
-		const prevRenderScale = this.pathTracer.renderScale;
-		const prevEnabled = this.pathTracer.enablePathTracing;
-		const prevPaused = this.pathTracer.pausePathTracing;
+		const restore = this.saveViewForExport();
 
 		try {
 			// If denoising is on, make sure the right UNet is loaded before we
@@ -2651,21 +2657,7 @@ export class PathTracerLab {
 			const renderSize = unet ? Math.max(size, DENOISE_MIN_SIZE) : size;
 			const convergeSpan = unet ? 0.85 : 1; // leave headroom for the denoise phase
 
-			this.renderer.setPixelRatio(1);
-			this.renderer.setSize(renderSize, renderSize, false);
-			this.camera.aspect = 1;
-			this.camera.updateProjectionMatrix();
-			this.pathTracer.renderScale = 1;
-			this.pathTracer.enablePathTracing = true;
-			this.pathTracer.pausePathTracing = false;
-			this.pathTracer.updateCamera();
-			this.pathTracer.reset();
-
-			while (this.pathTracer.samples < EXPORT_SAMPLES && !this.disposed) {
-				this.pathTracer.renderSample();
-				onProgress?.(convergeSpan * (this.pathTracer.samples / EXPORT_SAMPLES));
-				await new Promise(requestAnimationFrame);
-			}
+			await this.convergeSquare(renderSize, (frac) => onProgress?.(convergeSpan * frac));
 			if (this.disposed) return;
 
 			// Redraw and snapshot the color in the SAME tick: the WebGL drawing
@@ -2722,6 +2714,72 @@ export class PathTracerLab {
 			await this.downloadCanvas(out, filename, true);
 			if (linear && linearFilename) this.downloadBlob(new Blob([encodePFM(linear)]), linearFilename);
 		} finally {
+			restore();
+			this.exporting = false;
+		}
+	}
+
+	/**
+	 * Render the scene at size x size and hand back the float frame, in memory:
+	 * what `exportPNG`'s `linearFilename` writes to a .pfm, without the PNG or
+	 * the download. The same convergence (EXPORT_SAMPLES, then the one more
+	 * sample exportPNG draws to capture in the same tick) and the same readback
+	 * -- the accumulated radiance times the exposure, never tone-mapped,
+	 * clipped or rounded to 8 bits.
+	 *
+	 * The frame is in @cv-lab/vision's layout, rows TOP-DOWN, so it goes
+	 * straight to `frame()`; a .pfm stores them bottom-up and `decodePfm`
+	 * flips them, so the two routes give the same samples. With it, the camera
+	 * that took it, as `sceneGeometry` reports one -- what `predictEdges` needs
+	 * for the frame's truth. A pinhole: square pixels, the principal point at
+	 * the centre, `fov` vertical.
+	 *
+	 * Throws where it cannot render, unlike exportPNG, whose silent return
+	 * once read as a successful export.
+	 */
+	async renderFrame(size: number, onProgress?: (frac: number) => void): Promise<RenderedFrame> {
+		if (!this.ready) throw new Error('renderFrame: the scene is not ready to render');
+		if (this.exporting) throw new Error('renderFrame: another render is in progress');
+		if (!(Number.isInteger(size) && size > 0)) throw new Error(`renderFrame: size ${size} is not a positive integer`);
+		this.exporting = true;
+		this.hideDenoise();
+		const restore = this.saveViewForExport();
+		try {
+			await this.convergeSquare(size, onProgress);
+			if (this.disposed) throw new Error('renderFrame: disposed while rendering');
+			this.pathTracer.renderSample();
+			const { width, height, rgb } = this.readLinearFrame();
+			const data = new Float32Array(rgb.length);
+			const row = width * 3;
+			for (let y = 0; y < height; y++) data.set(rgb.subarray((height - 1 - y) * row, (height - y) * row), y * row);
+			onProgress?.(1);
+			return {
+				frame: { width, height, channels: 3, data },
+				camera: {
+					position: this.camera.position.toArray() as [number, number, number],
+					target: this.controls.target.toArray() as [number, number, number],
+					up: this.camera.up.toArray() as [number, number, number],
+					fov: this.camera.fov,
+					near: this.camera.near,
+				},
+				samples: this.pathTracer.samples,
+				exposure: this.renderer.toneMappingExposure,
+			};
+		} finally {
+			restore();
+			this.exporting = false;
+		}
+	}
+
+	/** What an export changes about the live view, and the function that puts it back. */
+	private saveViewForExport(): () => void {
+		const logical = this.renderer.getSize(new Vector2());
+		const prevPixelRatio = this.renderer.getPixelRatio();
+		const prevAspect = this.camera.aspect;
+		const prevRenderScale = this.pathTracer.renderScale;
+		const prevEnabled = this.pathTracer.enablePathTracing;
+		const prevPaused = this.pathTracer.pausePathTracing;
+		return () => {
 			this.renderer.setPixelRatio(prevPixelRatio);
 			this.renderer.setSize(logical.x, logical.y, false);
 			this.camera.aspect = prevAspect;
@@ -2732,7 +2790,25 @@ export class PathTracerLab {
 			this.pathTracer.updateCamera();
 			this.pathTracer.reset();
 			this.lastResetAt = performance.now();
-			this.exporting = false;
+		};
+	}
+
+	/** Square, pixel ratio 1, full render scale, from sample 0 to EXPORT_SAMPLES. */
+	private async convergeSquare(size: number, onProgress?: (frac: number) => void) {
+		this.renderer.setPixelRatio(1);
+		this.renderer.setSize(size, size, false);
+		this.camera.aspect = 1;
+		this.camera.updateProjectionMatrix();
+		this.pathTracer.renderScale = 1;
+		this.pathTracer.enablePathTracing = true;
+		this.pathTracer.pausePathTracing = false;
+		this.pathTracer.updateCamera();
+		this.pathTracer.reset();
+
+		while (this.pathTracer.samples < EXPORT_SAMPLES && !this.disposed) {
+			this.pathTracer.renderSample();
+			onProgress?.(this.pathTracer.samples / EXPORT_SAMPLES);
+			await new Promise(requestAnimationFrame);
 		}
 	}
 
