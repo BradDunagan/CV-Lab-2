@@ -43,7 +43,7 @@
     "package": "npm run build:renderer && npm run build:generate && electron-builder --publish never",
     "verify:package": "node scripts/verify-package.js",
     "smoke:package": "node scripts/smoke-package.js",
-    "test:lab": "node test/sha256.js && node test/math.js && node test/package.js && node test/registry.js && node test/session.js && node test/frame.js && node test/png.js && node test/corners.js && node test/explain.js && node test/groundtruth.js && node test/predict.js && node test/gapsweep.js && node test/position.js && node test/calibrate.js && node test/pairs.js && node test/repo.js",
+    "test:lab": "node test/sha256.js && node test/math.js && node test/package.js && node test/registry.js && node test/session.js && node test/frame.js && node test/png.js && node test/corners.js && node test/explain.js && node test/groundtruth.js && node test/predict.js && node test/conformance.js && node test/gapsweep.js && node test/position.js && node test/calibrate.js && node test/pairs.js && node test/repo.js",
     "test:determinism": "node test/determinism.js",
     "test:wasm": "node scripts/test-wasm.js",
     "test:readme": "node test/readme.js",
