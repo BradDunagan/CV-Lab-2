@@ -383,7 +383,10 @@ class Session {
    * This is what makes reproducibility assertable rather than aspirational:
    * a kernel change that altered results announces itself here.
    *
-   * @returns {{entries:Array, mismatches:Array}}
+   * The session is returned with its slots: a caller that keeps nothing of it
+   * resets it, which frees its buffers.
+   *
+   * @returns {Promise<{session: Session, entries: Array, mismatches: Array}>}
    */
   static async replay(saved, options) {
     if (saved?.format !== 'cv-lab-2/session') {
