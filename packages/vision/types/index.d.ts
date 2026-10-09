@@ -15,3 +15,4 @@ export { decodePfm, encodePfm } from "./pfm.js";
 export { calibrateReadings, solvePose, estimatePose, frameReadings, pairAngles, carryForward, readingsOf, keyOf, modelAt, hingeFor, POINTS, ANGLES } from "./calibrate.js";
 export { solvePosition, solveLifted } from "./position.js";
 export { ledgeTable, flushLines, movingBelow } from "./ledge.js";
+export { predictEdges, poseMatrix } from "./predict.js";

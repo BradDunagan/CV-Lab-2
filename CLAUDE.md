@@ -70,6 +70,8 @@ packages/vision/     @cv-lab/vision: the library, ESM, host-free -- what rr
                      Math differs in the last bit, even V8 from V8
   src/pfm.js         float frames as files: frame() is the input contract --
                      a renderer's linear light, never through 8 bits
+  src/predict.js     the edges a pose shows, from triangles: silhouettes,
+                     creases, what is hidden -- a .gt.json in ~3 ms, no GPU
   wasm/cvlab.wasm    the module, committed, with a manifest of its sources
   types/             TypeScript declarations from the JSDoc, committed
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
@@ -93,7 +95,8 @@ scripts/degrade.js   a rendered run made to look like a camera's: noise,
 scripts/response.js  a camera's response curve, measured from an exposure
                      bracket, for load(curve=) to undo
 scripts/believed-truth.js  a run's ground truth again, the part where it is
-                     believed to be, for gap-sweep --identify (needs a GPU)
+                     believed to be, for gap-sweep --identify: rendered (needs
+                     a GPU), or predicted from geometry.json (--predict)
 scripts/bench.js     what a frame costs, per statement: the addon, the module,
                      and the module in browsers' Web Workers (bench-core.mjs
                      runs in all of them; bench-worker.mjs is the Worker)
@@ -143,6 +146,8 @@ npm run generate -- --float ...      # each PNG's samples as linear float too, <
 npm run degrade -- generated/<run> generated/<run>-noisy --gain 2000   # a camera's image
 npm run response -- --out <curve.json> a.png@0.5 b.png@1 c.png@2   # its response curve
 npm run believed-truth -- generated/<run> generated/<new> --mm 0.5   # edges where it is believed
+                        # (--predict <geometry.json>: projected, not rendered;
+                        #  npm run generate -- --scene <s> --geometry writes it)
 npm run bench -- <frames.pfm> --carry <carry-commands.json>   # ms a frame, per backend
                         # (--browsers chromium,firefox --playwright ../rr/node_modules)
 npm run build:native    # compile the addon
@@ -415,5 +420,10 @@ JavaScript because it uses `packages/vision/src/math.js` and never the
 engine's `Math.sin`, `atan2`, `log` or `hypot`, on which even Chrome's V8 and
 Node's disagree (`design-lab-model.md` §5, rule 7).
 
-Still open: the moving-below x; a real camera's bracket; predicting a part's
-edges fast enough for a loop, without a path tracer; the pair fits' speed.
+Which edge is which part is predicted, not rendered ("A forty-first"):
+`predictEdges` projects the parts' triangles from the believed pose, about 3
+ms a view, the same edges as pt-lab's to 10⁻¹² px. Visibility is exact, which
+lost pairs the belief tucked under an overhang by less than a pixel; with a
+1.5 px margin (`believed-truth --predict`) every reading is pt-lab's.
+
+Still open: the moving-below x; a real camera's bracket; the pair fits' speed.

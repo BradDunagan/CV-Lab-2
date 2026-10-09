@@ -337,7 +337,7 @@ function defaultOutputDir() {
 
 const DEFAULTS = {
   out: null, size: 512, samples: 96, positions: 3, lighting: 2,
-  room: undefined, lights: undefined, scene: 'helmet', aovs: false, truth: false,
+  room: undefined, lights: undefined, scene: 'helmet', aovs: false, truth: false, geometry: false,
   creaseAngle: 20, denoise: false, show: false, dryRun: false,
   toneMapping: 'aces', exposure: 1, float: false,
 };
@@ -1342,6 +1342,22 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
      * Turn it on deliberately, and say so when reporting.
      */
     if (opts.denoise) await call('denoise(true)');
+
+    /*
+     * --geometry: the scene's meshes and camera as data, written once, and no
+     * render. The edges a pose shows are geometry, so with this file they are
+     * predicted in milliseconds without a GPU (scripts/believed-truth.js
+     * --predict); pt-lab's own extraction renders a depth pass for each.
+     */
+    if (opts.geometry) {
+      const geometry = await call('geometry()');
+      if (!geometry) throw new Error('pt-lab returned no scene geometry: not ready');
+      if (geometry.skipped.length > 0) throw new Error(`pt-lab could not read the meshes of ${geometry.skipped.join(', ')}`);
+      const file = path.join(opts.out, 'geometry.json');
+      fs.writeFileSync(file, `${JSON.stringify({ scene: opts.scene, room, ...geometry })}\n`);
+      onProgress({ type: 'done', files: [file], truth: [], errors, elapsedMs: Date.now() - started });
+      return { files: [file], truth: [], errors };
+    }
 
     for (const [index, shot] of shots.entries()) {
       await call(`camera(${JSON.stringify(shot.camera)}, ${JSON.stringify(shot.target)})`);

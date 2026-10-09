@@ -3017,6 +3017,63 @@ done for this.
 (`notes/brads-notes/2026-10-08-bench/`: `run.sh`, the three runs' JSON, and
 `mathprobe.js`.)
 
+#### A forty-first: which edge is which part, predicted in milliseconds
+
+The thirty-eighth identified edges from a belief at the cost of a render a
+shot, about 20 s: pt-lab's `groundTruthGeometry` needs a depth pass for its
+visibility. The edges a pose shows are geometry, so the package now predicts
+them (`predictEdges`, `packages/vision/src/predict.js`). pt-lab hands out
+the scene once as triangles and a camera (`sceneGeometry`, `npm run
+generate -- --geometry`), and each shot's edges are projected from those,
+with each part at its believed pose, into the document `groundTruth` reads.
+The steps are pt-lab's: edges keyed by quantised position, silhouette, crease
+and boundary, near-plane and frame clipping, samples along the image. Only
+visibility differs. A sample is hidden when a triangle crosses the line of
+sight before it, tested exactly against the triangles binned over that part
+of the image, not read off a raster. It is built from the package's own math,
+so the document is the same bits in every engine, and `believed-truth
+--predict` writes it in place of a render. Item 1's runs again, with the same
+seeds and so the same believed poses:
+
+- **The edges are pt-lab's.** Over 152 shots, every one of pt-lab's 6,055
+  edges has its predicted twin, nothing extra, endpoints within 1.1 × 10⁻¹²
+  px and vertices within 4 × 10⁻¹¹ px.
+- **About 3 ms a shot, against 20 s**, for 98 triangles (two cubes, a table,
+  a floor and a room) at 512 px, under Node, with no GPU.
+- **Exact visibility lost seven pairs, and the margin is why.** Nine edges
+  changed side of `minVisible` (0.5), all of them the base cube's top crease
+  seen from 50° up, where pt-lab said visible and the prediction hidden. The
+  prediction was right about the belief: one of them sits 0.73 px inside the
+  top cube's outline, because the believed top cube overhangs it by 3.5 mm.
+  The real cube does not, and pt-lab's depth test, whose tolerance admits
+  almost anything within a pixel of a silhouette, had kept the edge. Without
+  them, seven pairs were never identified, and hinged x went 0.027 → 0.040
+  mm. A belief is itself a fraction of a pixel off, so `predictEdges` takes a
+  `margin`: a sample hidden by less than that, seen again moved that far in
+  any of eight directions at its own depth, counts as seen. At 0.5 px two
+  edges still changed side, at 1 px one, and at 1.5 px none.
+  `believed-truth --predict` uses 1.5 px; `predictEdges` alone stays exact.
+- **At 1.5 px nothing moves.** All 275 rows of the five runs agree with
+  pt-lab's believed truth analysed by today's code, within 10⁻⁶ px in every
+  field, and the 266 tracked readings within 6 × 10⁻¹⁴ px. The solve is the
+  same to the third decimal: four views, hinged 0.027 / 0.021 / 0.029 mm and
+  0.014°, joint 0.064 / 0.028 / 0.034 mm and 0.016°.
+
+Item 1's own records were not the comparison. Re-analysed by today's code,
+pt-lab's believed truth gives the same solve, but its rows' `endsTruePx`
+differs by up to half a pixel, because that column's definition changed after
+those runs (the thirty-eighth's last paragraph). `explain` still needs the
+depth pass's `maxDepth`, which belongs to the pass and not to the geometry,
+so `--predict` copies it from the run's own truth file. rr has no depth pass,
+and no `explain`.
+
+What is not tested: a part with thousands of triangles, where the 32 × 32
+image grid stops being a fast enough index; frames other than square; and
+any scene but this one.
+
+(`notes/brads-notes/2026-10-08-predict/`: `run.sh` (m05 at 1.5 px, p05 at 0),
+`baseline.sh` (r05), `compare.mjs`, `rows.py`, and the logs.)
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

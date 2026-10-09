@@ -1,0 +1,42 @@
+  x y35-e50-gap-0mm.png pair 2: errorMm,pxPerMm,refit,tracked; tracked 1.5681487056675023 -> 1.5681487056675023, true 1.6515479721314412 -> 1.6515479721314519
+  x y35-e50-gap-1mm.png pair 1: target; tracked 2.440573002814571 -> 2.4405730028146135, true 2.5088751001196696 -> 2.508875100119673
+  x y35-e50-gap-1mm.png pair 2: only with r05
+  x y35-e50-gap-2mm.png pair 1: target; tracked 2.4753434767360756 -> 2.4753434767360933, true 2.509478932482842 -> 2.5094789324828137
+  x y35-e50-gap-2mm.png pair 2: only with r05
+  x y35-e50-gap-m1mm.png pair 2: errorMm,pxPerMm,refit,tracked; tracked 2.7882708814295687 -> 2.7882708814295687, true 2.878640272995586 -> 2.8786402729955505
+  x y35-e50-gap-m2mm.png pair 2: errorMm,pxPerMm,refit,tracked; tracked 4.2840190370886715 -> 4.2840190370886715, true 4.09934967057295 -> 4.09934967057295
+  x y35-e50-gap-m4mm.png pair 2: errorMm,pxPerMm,tracked; tracked 6.7612565140386565 -> 6.761256514038649, true 6.533932591190938 -> 6.533932591190931
+  x y60-e50-gap-0mm.png pair 2: errorMm,pxPerMm,refit,tracked; tracked 2.46531175260145 -> 2.465311752601425, true 2.6521704896430682 -> 2.6521704896430434
+  x y60-e50-gap-1mm.png pair 2: errorMm,pxPerMm,refit,tracked; tracked 1.3406725113762639 -> 1.3406725113762923, true 1.5147703787237068 -> 1.5147703787237068
+  x y60-e50-gap-2mm.png pair 1: target; tracked 1.3969563986410236 -> 1.3969563986410094, true 1.3673348365713995 -> 1.3673348365714209
+  x y60-e50-gap-2mm.png pair 2: only with r05
+  x y60-e50-gap-m1mm.png pair 2: errorMm,pxPerMm,refit,tracked; tracked 3.708392405332873 -> 3.7083924053329014, true 3.7877755632919428 -> 3.7877755632919428
+  x y60-e50-gap-m2mm.png pair 2: errorMm,pxPerMm,refit,tracked; tracked 4.897121480163799 -> 4.897121480163799, true 4.918012210719991 -> 4.918012210719991
+  x y60-e50-gap-m4mm.png pair 2: errorMm,pxPerMm,tracked; tracked 7.280212461374432 -> 7.280212461374432, true 7.169374855006956 -> 7.169374855006956
+x: 39 of 54 rows the same
+y: 48 of 48 rows the same
+  z y35-e50-gap-0mm.png pair 1: errorMm,pxPerMm,refit,tracked; tracked 2.4798109525255896 -> 2.4798109525255825, true 2.505997836299976 -> 2.505997836299969
+  z y35-e50-gap-1mm.png pair 1: errorMm,pxPerMm,refit,tracked; tracked 1.3099626213763524 -> 1.3099626213763738, true 1.3539867655119597 -> 1.3539867655119633
+  z y35-e50-gap-2mm.png pair 1: only with r05
+  z y35-e50-gap-2mm.png pair 2: target; tracked 1.5668252036739037 -> 1.5668252036739037, true 1.653591508910832 -> 1.653591508910832
+  z y35-e50-gap-m1mm.png pair 1: errorMm,pxPerMm,refit,tracked; tracked 3.67043175060333 -> 3.6704317506033513, true 3.6570035071913285 -> 3.65700350719135
+  z y35-e50-gap-m2mm.png pair 1: errorMm,pxPerMm,refit,tracked; tracked 4.834938618923981 -> 4.834938618924002, true 4.806878739360676 -> 4.806878739360683
+  z y35-e50-gap-m4mm.png pair 1: errorMm,pxPerMm,tracked; tracked 7.136675341518634 -> 7.136675341518673, true 7.089079147696523 -> 7.089079147696516
+  z y60-e20-gap-0mm.png pair 1: errorMm,pxPerMm,refit,tracked; tracked 3.7716986230906535 -> 3.771698623090648, true 3.789536140061447 -> 3.789536140061486
+  z y60-e20-gap-1mm.png pair 1: errorMm,pxPerMm,refit,tracked; tracked 2.8998614119909374 -> 2.89986141199095, true 2.9073621205884623 -> 2.907362120588457
+  z y60-e20-gap-2mm.png pair 1: errorMm,pxPerMm,refit; tracked 1.9975786690093014 -> 1.9975786690092783, true 1.997680784643769 -> 1.997680784643792
+  z y60-e20-gap-4mm.png pair 1: only with r05
+  z y60-e20-gap-4mm.png pair 2: spansBoth,target; tracked 4.800623791469052 -> 4.800623791469029, true 4.876638465202907 -> 4.876638465202882
+  z y60-e20-gap-m1mm.png pair 1: errorMm,pxPerMm,refit,tracked; tracked 4.6581797935210245 -> 4.658179793521051, true 4.688893145260814 -> 4.688893145260839
+  z y60-e20-gap-m2mm.png pair 1: errorMm,pxPerMm,refit,tracked; tracked 5.6101232875259 -> 5.610123287525912, true 5.587353200103066 -> 5.587353200103077
+  z y60-e20-gap-m4mm.png pair 1: errorMm,pxPerMm,tracked; tracked 7.373025942963595 -> 7.373025942963576, true 7.342326156609285 -> 7.342326156609309
+z: 38 of 53 rows the same
+turn: 40 of 40 rows the same
+  test y35-e50-pose-5.png pair 1: target; tracked 0.6321843413287325 -> 0.632184341328736, true 0.6415164282362058 -> 0.6415164282361987
+  test y35-e50-pose-5.png pair 2: only with r05
+  test y60-e50-pose-2.png pair 1: only with r05
+  test y60-e50-pose-2.png pair 2: target; tracked 4.269885111930276 -> 4.269885111930251, true 4.249461148416444 -> 4.249461148416444
+  test y60-e50-pose-5.png pair 1: believedGapPx,causes,endsTruePx,overlapPx,pairAngle,reason,target,tracked,trueGapPx,truthPair; tracked None -> None, true -0.14118521814449178 -> None
+  test y60-e50-pose-5.png pair 2: believedGapPx,causes,endsTruePx,overlapPx,pairAngle,reason,target,tracked,trueGapPx,truthPair; tracked -1.4415889936658606 -> -1.4416355877558273, true -1.193362352972491 -> None
+test: 74 of 80 rows the same
+{'same': 239, 'differ': 36}
