@@ -3635,6 +3635,22 @@ TypeScript host against the committed declarations. That check found the
 first thing rr would have hit: under TypeScript 6 a `Uint8Array` is not a
 `BufferSource`, so `loadWasm` could not have been given bytes without a cast.
 
+**In rr** (port step 1, 2026-10-08) the package is a dependency from source,
+`"@cv-lab/vision": "../cv-lab-2/packages/vision"`, as paneless is; Vite
+serves the module through the package's `./cvlab.wasm` export (`?url`), and
+rr's type check runs against the committed declarations. What says rr
+computes what cv-lab does is a **conformance case**, `test/conformance/`: a
+208 x 128 crop of a float bench frame around the gap -- the y sweep's
+y60-e50 frame at -2 mm, the one float frame where `findPairs` reads a pair --
+the fifteen statements a frame goes through (pairs.lab less what scores, and
+the frame's two carried `trackPair` commands, moved by the crop), and each
+one's hash. Every feature statement finds something, so no hash is a hash of
+nothing. cv-lab holds the addon and the module to it on all three runners
+(`test/conformance.js`); rr's `tests/vision-conformance.spec.ts` runs it in
+Chrome through rr's dev build and gets all fifteen. The bench frames
+themselves (3 MB each, local renders) were the plan's check and are not in
+any repository; a 312 KB crop that exercises every operation is.
+
 ---
 
 ## 9. Decide now vs. defer

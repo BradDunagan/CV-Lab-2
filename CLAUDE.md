@@ -97,6 +97,7 @@ scripts/response.js  a camera's response curve, measured from an exposure
 scripts/believed-truth.js  a run's ground truth again, the part where it is
                      believed to be, for gap-sweep --identify: rendered (needs
                      a GPU), or predicted from geometry.json (--predict)
+scripts/conformance.js  writes test/conformance/ from a bench frame, cropped
 scripts/bench.js     what a frame costs, per statement: the addon, the module,
                      and the module in browsers' Web Workers (bench-core.mjs
                      runs in all of them; bench-worker.mjs is the Worker)
@@ -112,8 +113,11 @@ src/menu.js          the application menu — global commands live here, not in 
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
-test/                twenty-one suites; twenty run under plain node, and
-                     seventeen of those again on WebAssembly (test:wasm)
+test/                twenty-seven suites; twenty-six run under plain node, and
+                     nineteen of those again on WebAssembly (test:wasm)
+  conformance/       the package's case for hosts: a real frame, the
+                     statements, each one's hash; rr's Playwright suite runs
+                     it in Chrome (scripts/conformance.js writes it)
 pipelines/           .lab scripts for the batch runner
 ```
 
@@ -124,7 +128,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — twenty-one suites, the node ones twice
+npm test                # everything — twenty-seven suites, most twice
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless
@@ -170,6 +174,12 @@ npm run smoke:package   # launch it and check it actually works
 ## Constraints that are not negotiable without a reason
 
 - **Node-API, never NAN.** One binary works under both Node and Electron. Verified, not assumed.
+- **rr computes what cv-lab computes.** rr takes the package from source
+  (`"@cv-lab/vision": "../cv-lab-2/packages/vision"`) and its
+  `tests/vision-conformance.spec.ts` runs `test/conformance/` in Chrome through
+  rr's build. A change that moves a hash there means `node
+  scripts/conformance.js ...` (its `case.json` says from what) and a commit,
+  and rr's test then holds rr to it.
 - **The WebAssembly module gives the addon's hashes.** It is what rr runs in a
   browser, so `test:wasm` runs `test/determinism.js` on it, on all three
   runners. It imports nothing -- its libm is compiled in -- and the committed

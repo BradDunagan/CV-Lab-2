@@ -1,3 +1,5 @@
 # The WebAssembly module is committed and checked by SHA-256: never let
 # git convert it.
 *.wasm binary
+# Float frames are binary after a text header: never convert them either.
+*.pfm binary

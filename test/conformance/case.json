@@ -1,0 +1,87 @@
+{
+  "about": "The package run as cv-lab runs it: each statement and the hash it must give. scripts/conformance.js wrote it.",
+  "frame": {
+    "file": "frame.pfm",
+    "sha256": "4a0d6c2539176308d4f29835d0f4f87d2b7be2c5376aa979c8d7cb5c179f9bf7",
+    "width": 208,
+    "height": 128,
+    "from": {
+      "file": "generated/stack-2g-y-f/y60-e50-gap-m2mm.pfm",
+      "sha256": "8ecdc39a476e8aaa5d16d948022645d443a835ff0d70b0f299819af62049cd8a",
+      "crop": [
+        152,
+        216,
+        208,
+        128
+      ]
+    }
+  },
+  "carry": {
+    "file": "results/stack-2g-y-f/pairs/float/carry-commands.json",
+    "shot": "y60-e50-gap-m2mm"
+  },
+  "script": "pipelines/pairs.lab",
+  "module": "8f54b9f9b695c22c6bd75efe465cfc41202c7ac1b69efd805801f26c625094b3",
+  "statements": [
+    {
+      "statement": "A = frame(\"frame.pfm\")",
+      "hash": "74475dc8ed52922a8bc4562bb55663cff9608fe4913d9bd4c3505ff050a09f83"
+    },
+    {
+      "statement": "G  = gray(A)",
+      "hash": "71b0f8108b75778a43ee095ce5a044a6dec0f3dff1ef3485331ecfdcba0a0c13"
+    },
+    {
+      "statement": "B  = gaussian(G, sigma=1.4)",
+      "hash": "9950163823f969560fcde468c4d7ffcab767a173c2ade3763a86c57467779bed"
+    },
+    {
+      "statement": "Gx = sobel(B, axis=x)",
+      "hash": "299cefb1b3d2579fc7b2ba9196ae07a1b20f55245a2ba2c77e222558cff66d78"
+    },
+    {
+      "statement": "Gy = sobel(B, axis=y)",
+      "hash": "2ab16f531082759d6c8c1b9ee9d92874a9e96642d6a3df9bdd45bbbf6c17b9de"
+    },
+    {
+      "statement": "M  = sobel(B, axis=mag)",
+      "hash": "42f286361163a6ec2a0ede30df23940c04c683d0ecb3c01857f4df64bedafc44"
+    },
+    {
+      "statement": "N  = nms(M, Gx, Gy)",
+      "hash": "6d9e49fd956da6b3eb039a6cc975cd85951ecb75ed25722b976f14fbe0a54f51"
+    },
+    {
+      "statement": "S  = segments(N, Gx, Gy)",
+      "hash": "7acb85b8023eb6ab336d1b5dba706217c26c86e3069cea6cc46d37d2b1feedcb"
+    },
+    {
+      "statement": "R  = merge(S)",
+      "hash": "7c24222cef1f76472cf333c6643f57831618bfbd7768a0af69cd40d7d18e75fe"
+    },
+    {
+      "statement": "F  = fit(R)",
+      "hash": "64b22ed3da0028d2f0fac4b863edd096bb5c749df0afeaeeb0c503604d9dd903"
+    },
+    {
+      "statement": "C  = corners(F)",
+      "hash": "e1b7649cfc4e9fc1284d3bb0d1e6341fb0bb9f8f12d6849a7e5795e220d918c5"
+    },
+    {
+      "statement": "P  = fitPairs(F, G)",
+      "hash": "a3f8e70a9d56f390b276e43c1458b21cd802bf81cbaa71571b2fd9ad67947d2d"
+    },
+    {
+      "statement": "H  = findPairs(F, G)",
+      "hash": "89842fe07b4aa44c599430db92cbfd9c9b278576eaeabb5657f74a084758850d"
+    },
+    {
+      "statement": "K1 = trackPair(G, x0=24.169203, y0=25.625750, x1=75.214961, y1=104.708639, towardX=52.972357, towardY=63.049442, stripLevel=0.082995, aperture=1.401833, guess=0.571321, strip=held)",
+      "hash": "84505b291fbf295f994ac05a6116efe0a73670e4e81df55eb085c13a53586e05"
+    },
+    {
+      "statement": "K2 = trackPair(G, x0=83.516814, y0=107.704567, x1=185.520558, y1=58.537642, towardX=132.856070, towardY=79.657633, stripLevel=0.070775, aperture=1.336517, guess=1.236206, strip=held)",
+      "hash": "ff25104f083c5540a41d845add172bdabe72dc67eff8da3347e819dc271dc558"
+    }
+  ]
+}

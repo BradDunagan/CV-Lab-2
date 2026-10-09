@@ -130,3 +130,10 @@ guaranteed to re-render bit-identically.
   them. `--check` also compiles a TypeScript host against them.
 - `test/package.js`: bundles the package for a browser, and runs it in a bare
   context from the module's bytes against the addon's hashes.
+- `test/conformance/`: the case a host checks itself against -- a real
+  frame, the statements a frame goes through, each one's hash. cv-lab holds
+  the addon and the module to it on every runner (`test/conformance.js`); rr
+  runs it in Chrome through its own build (`tests/vision-conformance.spec.ts`).
+  When an operation's output changes on purpose, write it again with
+  `scripts/conformance.js` (its `case.json` records the frame, crop and
+  carried commands it came from) and commit it with the change.
