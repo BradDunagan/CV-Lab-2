@@ -73,6 +73,32 @@ step each was commanded at. cv-lab's `scripts/solve-position.js` and
 `scripts/servo.js` are worked examples, and `design-lab-model.md` §5 says
 what each choice cost or bought.
 
+## Which edge is which part
+
+Reading a gap needs to know which detected edge is the moving part's, which
+the still one's, and where along the pair to read. `predictEdges` says, from
+where the parts are believed to be: each part's triangles (in its own frame,
+nine numbers each) and pose, and the camera, in; the silhouettes, creases and
+boundaries that view shows, with what is hidden taken out, out -- as the
+document `groundTruth` reads, so it is a slot like any other truth:
+
+```js
+import { predictEdges } from '@cv-lab/vision';
+
+const doc = predictEdges({
+  objects: [{ name: 'base', triangles: baseTris, pose: { position: [0, 0.8, 0] } },
+            { name: 'part', triangles: partTris, pose: believedPose }],   // rotation in degrees, x then y then z
+  camera: { position, target, fov: 50 },                                    // vertical fov; up is +y
+  size: 512,
+});
+```
+
+About 3 ms a view for two cubes on a table in a room, against about 20 s for
+a renderer's depth-pass extraction, and the same edges to within 10⁻¹² px.
+Visibility is exact; for identifying from a belief, pass `margin: 1.5`, so an
+edge the belief hides by less than a pixel and a half, which may be in plain
+view, still counts (cv-lab's `design-lab-model.md` §5, "A forty-first").
+
 ## Reproducibility
 
 Every result has a content hash, and a session's log replays to the same

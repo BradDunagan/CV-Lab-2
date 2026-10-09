@@ -547,6 +547,37 @@ export interface GroundTruthView {
 	skipped: string[];
 }
 
+/**
+ * One top-level thing in the scene, as triangles: what `groundTruthGeometry`
+ * reads, handed out so the edges can be predicted without a renderer.
+ */
+export interface SceneGeometryObject {
+	/** The name ground truth attributes its edges to. */
+	name: string;
+	/** The library key, for an editor object; what a shot's `transforms` names. */
+	key: string | null;
+	/** Its transform, for an editor object; null for the room and the floor. */
+	transform: LabTransform | null;
+	/** Its world matrix now: 16 numbers, column-major, as three.js keeps them. */
+	matrix: number[];
+	/** Every triangle of every visible mesh under it, 9 numbers each, in ITS frame. */
+	triangles: number[];
+}
+
+/** The scene's geometry and camera, plain data: `sceneGeometry`. */
+export interface SceneGeometry {
+	camera: {
+		position: [number, number, number];
+		target: [number, number, number];
+		up: [number, number, number];
+		fov: number;
+		near: number;
+	};
+	objects: SceneGeometryObject[];
+	/** Meshes whose geometry could not be read, by name. Empty is the good case. */
+	skipped: string[];
+}
+
 export type RoomKind = 'room' | 'room-emissive' | 'room-arealight';
 const ROOM_KINDS = ['room', 'room-emissive', 'room-arealight'];
 
@@ -3195,6 +3226,72 @@ export class PathTracerLab {
 			this.camera.aspect = prevAspect;
 			this.camera.updateProjectionMatrix();
 		}
+	}
+
+	/**
+	 * The scene as triangles: every visible mesh, grouped under the top-level
+	 * object it belongs to, in that object's own frame, with its transform.
+	 *
+	 * The same walk and the same names as `groundTruthGeometry`, so the edges
+	 * a host predicts from this -- @cv-lab/vision's `predictEdges`, moving an
+	 * object by a new transform -- are the ones this class would have
+	 * extracted, without a depth pass or a GPU. Returns data, never three.js
+	 * objects.
+	 */
+	sceneGeometry(): SceneGeometry | null {
+		if (!this.ready) return null;
+		const editorOf = new Map<Object3D, { name: string; key: string; id: string }>();
+		for (const [id, entry] of this.objects) editorOf.set(entry.object3d, { name: entry.name, key: entry.key, id });
+		const objects: SceneGeometryObject[] = [];
+		const skipped: string[] = [];
+		for (const root of this.scene.children) {
+			if (!root.visible) continue;
+			root.updateWorldMatrix(true, true);
+			const editor = editorOf.get(root);
+			const name = editor?.name ?? (root === this.roomShell ? 'Room' : root.name || 'Scene');
+			const toRoot = root.matrixWorld.clone().invert();
+			const triangles: number[] = [];
+			const p = new Vector3();
+			// The recursive walk groundTruthGeometry makes: a hidden subtree is skipped.
+			const walk = (obj: Object3D) => {
+				if (!obj.visible) return;
+				const mesh = obj as Mesh;
+				if (mesh.isMesh) {
+					const position = mesh.geometry?.getAttribute?.('position');
+					const index = mesh.geometry?.getIndex?.();
+					const count = index ? index.count : (position?.count ?? 0);
+					if (!position || count % 3 !== 0) skipped.push(name);
+					else {
+						const local = toRoot.clone().multiply(mesh.matrixWorld);
+						for (let k = 0; k < count; k++) {
+							p.fromBufferAttribute(position, index ? index.getX(k) : k).applyMatrix4(local);
+							triangles.push(p.x, p.y, p.z);
+						}
+					}
+				}
+				for (const child of obj.children) walk(child);
+			};
+			walk(root);
+			if (triangles.length === 0) continue;
+			objects.push({
+				name,
+				key: editor?.key ?? null,
+				transform: editor ? this.getObjectTransform(editor.id) : null,
+				matrix: root.matrixWorld.toArray(),
+				triangles,
+			});
+		}
+		return {
+			camera: {
+				position: this.camera.position.toArray() as [number, number, number],
+				target: this.controls.target.toArray() as [number, number, number],
+				up: this.camera.up.toArray() as [number, number, number],
+				fov: this.camera.fov,
+				near: this.camera.near,
+			},
+			objects,
+			skipped: [...new Set(skipped)],
+		};
 	}
 
 	/**

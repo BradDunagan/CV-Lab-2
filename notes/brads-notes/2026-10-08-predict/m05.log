@@ -1,0 +1,17 @@
+generated/predicted/stack-2g-x-m05: 28 shots predicted from generated/geometry/stack-2/geometry.json, 1211 edges, 5.7 ms a shot; 7 believed poses (sd 0.5 mm, 0.3 deg)
+generated/believed/stack-2g-x-b05: 1211 pt-lab edges, 0 unmatched, 0 predicted only; endpoints within 1.14e-12 px, vertices within 3.99e-11 px
+  |visible difference|: median 0.000, 90% 0.010, max 0.266; 179 differ; 0 change side of 0.5
+generated/predicted/stack-2g-y-m05: 24 shots predicted from generated/geometry/stack-2/geometry.json, 1038 edges, 5.8 ms a shot; 6 believed poses (sd 0.5 mm, 0.3 deg)
+generated/believed/stack-2g-y-b05: 1038 pt-lab edges, 0 unmatched, 0 predicted only; endpoints within 1.14e-12 px, vertices within 3.99e-11 px
+  |visible difference|: median 0.000, 90% 0.009, max 0.211; 150 differ; 0 change side of 0.5
+generated/predicted/stack-2g-z-m05: 28 shots predicted from generated/geometry/stack-2/geometry.json, 1211 edges, 5.7 ms a shot; 7 believed poses (sd 0.5 mm, 0.3 deg)
+generated/believed/stack-2g-z-b05: 1211 pt-lab edges, 0 unmatched, 0 predicted only; endpoints within 1.14e-12 px, vertices within 3.99e-11 px
+  |visible difference|: median 0.000, 90% 0.010, max 0.182; 186 differ; 0 change side of 0.5
+generated/predicted/stack-2g-turn-m05: 20 shots predicted from generated/geometry/stack-2/geometry.json, 865 edges, 6.3 ms a shot; 5 believed poses (sd 0.5 mm, 0.3 deg)
+generated/believed/stack-2g-turn-b05: 865 pt-lab edges, 0 unmatched, 0 predicted only; endpoints within 1.14e-12 px, vertices within 3.99e-11 px
+  |visible difference|: median 0.000, 90% 0.009, max 0.211; 128 differ; 0 change side of 0.5
+generated/predicted/stack-2g-test-m05: 40 shots predicted from generated/geometry/stack-2/geometry.json, 1730 edges, 5.4 ms a shot; 10 believed poses (sd 0.5 mm, 0.3 deg)
+generated/believed/stack-2g-test-b05: 1730 pt-lab edges, 0 unmatched, 0 predicted only; endpoints within 1.14e-12 px, vertices within 3.99e-11 px
+  |visible difference|: median 0.000, 90% 0.010, max 0.158; 267 differ; 0 change side of 0.5
+stack-2g-m05-joint.json                  10 sets 0.070 / 0.032 / 0.043 / 0.026   4 views 0.064 / 0.028 / 0.034 / 0.016  (10/10)
+stack-2g-m05-hinged.json                 10 sets 0.046 / 0.033 / 0.054 / 0.025   4 views 0.027 / 0.021 / 0.029 / 0.014  (10/10)

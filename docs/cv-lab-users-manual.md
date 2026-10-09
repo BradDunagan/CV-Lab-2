@@ -1283,6 +1283,7 @@ you are editing pt-lab and cv-lab-2 together.
 | `--no-lights` | off | render without the scene's own lights |
 | `--aovs` | off | also write depth, normal and albedo passes |
 | `--truth` | off | also write `<name>.gt.json` |
+| `--geometry` | off | write the scene's triangles and camera as `geometry.json` and render nothing: what `predictEdges` and `believed-truth --predict` project edges from |
 | `--crease-angle <d>` | 20° | how sharp a fold counts as an edge |
 | `--denoise` | off | run OIDN over each export |
 | `--tone-mapping <k>` | `aces` | `aces` or `linear`. Use `linear` for measurement; see below |
@@ -1873,7 +1874,18 @@ belief chose, and the row carries `believedGapPx` beside `trueGapPx`. The
 record names the directory and hashes its truth files. On the stack a belief
 0.5 mm off costs nothing; 1.5 mm costs the calibration sweeps up to twice
 their error, and test poses nothing once identified again from a first solve
-(`design-lab-model.md` §5, "A thirty-eighth"). It takes about 20 s a shot.
+(`design-lab-model.md` §5, "A thirty-eighth"). Rendered, it takes about 20 s
+a shot. **Predicted, it takes about 3 ms**: `npm run generate -- --scene <s>
+--geometry --out <dir>` writes the scene's triangles and camera once, as
+`geometry.json`, and `npm run believed-truth -- ... --predict
+<dir>/geometry.json` projects each shot's edges from them, with the package's
+`predictEdges`, and no GPU. The edges are pt-lab's to within 10⁻¹² px;
+visibility is exact rather than read off a depth image, so an edge hidden
+just behind a silhouette reads hidden, where pt-lab's raster can call it
+visible. A belief is a fraction of a pixel off, so `--margin` (1.5 px by
+default) counts an edge hidden by less than that as seen; at that margin every
+reading on the stack is the one pt-lab's truth gives (`design-lab-model.md`
+§5, "A forty-first").
 
 **`--float` reads float frames instead of PNGs.** Each shot is rendered as
 both, from the same samples (`npm run generate -- --float`), and the lab

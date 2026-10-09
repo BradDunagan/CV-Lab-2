@@ -56,6 +56,9 @@ CV-Lab image generator — renders from pt-lab
   --no-lights        render without the scene's own lights
   --aovs             also write the depth, normal and albedo passes
   --truth            also write <name>.gt.json: where the edges really are
+  --geometry         write the scene's meshes and camera as geometry.json, and
+                     render nothing: the edges are then predicted without a GPU
+                     (npm run believed-truth -- --predict <geometry.json>)
   --crease-angle <d> how sharp a fold counts as an edge  (default 20)
   --denoise          run OIDN over each export (off in pt-lab by default)
   --tone-mapping <k> aces | linear                       (default aces)
@@ -204,6 +207,7 @@ function parseArgs(argv) {
       case '--exposure': opts.exposure = num(); break;
       case '--float': opts.float = true; break;
       case '--truth': opts.truth = true; break;
+      case '--geometry': opts.geometry = true; break;
       case '--show': opts.show = true; break;
       case '--shots': {
         const file = argv[++i];
@@ -339,7 +343,7 @@ app.whenReady().then(async () => {
 
   if (errors.length > 0) console.error(`\npage errors:\n  ${errors.slice(0, 5).join('\n  ')}`);
   writeThenExit(process.stdout,
-    `\n${files.length} image(s)` +
+    opts.geometry ? `\nscene geometry -> ${files[0]}` : `\n${files.length} image(s)` +
       (truth.length > 0 ? `, ${truth.length} ground truth` : '') +
       ` -> ${opts.out}`,
     errors.length > 0 ? 1 : 0);

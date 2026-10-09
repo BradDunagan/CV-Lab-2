@@ -1,0 +1,21 @@
+generated/believed/stack-2g-x-b05: 1211 pt-lab edges, 0 unmatched, 0 predicted only; endpoints within 1.14e-12 px, vertices within 3.99e-11 px
+  |visible difference|: median 0.000, 90% 0.011, max 0.984; 278 differ; 3 change side of 0.5
+  flip y35-e50-gap-1mm.gt.json crease Cube pt-lab 1.000 predicted 0.018 len 107.0
+  flip y35-e50-gap-2mm.gt.json crease Cube pt-lab 0.679 predicted 0.028 len 107.0
+  flip y60-e50-gap-2mm.gt.json crease Cube pt-lab 1.000 predicted 0.016 len 122.5
+generated/believed/stack-2g-y-b05: 1038 pt-lab edges, 0 unmatched, 0 predicted only; endpoints within 1.14e-12 px, vertices within 3.99e-11 px
+  |visible difference|: median 0.000, 90% 0.011, max 0.264; 227 differ; 0 change side of 0.5
+generated/believed/stack-2g-z-b05: 1211 pt-lab edges, 0 unmatched, 0 predicted only; endpoints within 1.14e-12 px, vertices within 3.99e-11 px
+  |visible difference|: median 0.000, 90% 0.011, max 0.983; 274 differ; 2 change side of 0.5
+  flip y60-e20-gap-4mm.gt.json crease Cube pt-lab 1.000 predicted 0.203 len 67.7
+  flip y35-e50-gap-2mm.gt.json crease Cube pt-lab 1.000 predicted 0.017 len 119.6
+generated/believed/stack-2g-turn-b05: 865 pt-lab edges, 0 unmatched, 0 predicted only; endpoints within 1.14e-12 px, vertices within 3.99e-11 px
+  |visible difference|: median 0.000, 90% 0.012, max 0.229; 204 differ; 0 change side of 0.5
+generated/believed/stack-2g-test-b05: 1730 pt-lab edges, 0 unmatched, 0 predicted only; endpoints within 1.14e-12 px, vertices within 3.99e-11 px
+  |visible difference|: median 0.000, 90% 0.012, max 1.000; 403 differ; 4 change side of 0.5
+  flip y35-e50-pose-5.gt.json crease Cube pt-lab 0.872 predicted 0.009 len 107.0
+  flip y60-e50-pose-2.gt.json crease Cube pt-lab 0.962 predicted 0.038 len 104.1
+  flip y60-e50-pose-5.gt.json crease Cube pt-lab 1.000 predicted 0.000 len 122.5
+  flip y60-e50-pose-5.gt.json crease Cube pt-lab 1.000 predicted 0.151 len 104.1
+stack-2g-p05-joint.json                  10 sets 0.075 / 0.032 / 0.044 / 0.030   4 views 0.069 / 0.027 / 0.032 / 0.022  (10/10)
+stack-2g-p05-hinged.json                 10 sets 0.056 / 0.035 / 0.054 / 0.028   4 views 0.040 / 0.023 / 0.028 / 0.020  (10/10)

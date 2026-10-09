@@ -21,6 +21,10 @@
  *   const { solution } = estimatePose({ calibrated: [...calibrated.values()], medianSigma },
  *     frameReadings(rows, angles), carryForward(last, move, motionVariance));
  *
+ * Which detected edge is which part comes from where the parts are believed
+ * to be: `predictEdges` projects their triangles from that pose, with what is
+ * hidden taken out, into the document `groundTruth` reads.
+ *
  * Every module is also importable on its own, `@cv-lab/vision/<name>`.
  */
 
@@ -43,6 +47,9 @@ export { carryPlan } from './carry.js';
 export { ledgeTable, flushLines, movingBelow } from './ledge.js';
 // A frame's gap readings, from its features (gap-sweep's rows).
 export { gapRows } from './gapsweep.js';
+// Which edge is which part: the edges a scene shows from a believed pose,
+// predicted from its triangles, as the document groundTruth reads.
+export { predictEdges, poseMatrix } from './predict.js';
 
 /** @typedef {import('./types.js').Backend} Backend */
 /** @typedef {import('./types.js').BufferHandle} BufferHandle */

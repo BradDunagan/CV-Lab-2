@@ -219,6 +219,15 @@ const api = {
   },
 
   /**
+   * The scene as triangles, each top-level object in its own frame with its
+   * transform: what `groundTruth` reads, for predicting the edges from a pose
+   * without rendering (@cv-lab/vision's predictEdges, `--geometry`).
+   */
+  geometry() {
+    return lab.sceneGeometry();
+  },
+
+  /**
    * The two lighting settings the shot plan varies.
    *
    * `intensity` multiplies the editor lights as well as the room's lamp or
