@@ -46,6 +46,18 @@ import { carriable, fittedEdges } from './cell.js';
 /** trackPair's starting width from a frame's own reading, which may be an overhang's negative one. */
 export const guessFrom = (read) => (read > 0 ? read : 0.5);
 
+/**
+ * @param {object[]} rows the run's numbered rows
+ * @param {object[]} shots the run's shots: name, gapMm, and pose and view where it has them
+ * @param {(shot: object) => {fitted: object[] | null}} featuresOf
+ * @param {object} opts carryMin, ledgeMax, offset, axis, poses, ledgeLift, ledgeFit, ledge
+ * @param {object[] | null} [pooled] other runs' candidates (cell.js poolCandidates)
+ * @param {boolean} [ownToo] whether this run's own frames are candidates too, given pooled ones
+ * @param {string} [ownRun] what sources call this run
+ * @param {{entries: object[]} | null} [ledgeTable]
+ * @returns {{minPx: number, ledgeMax: number, sources: object[], missing: object[],
+ *   commands: Record<string, string[]>, ledges?: object[]}}
+ */
 export function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo = true, ownRun = '', ledgeTable = null) {
   // Whose top face a ledge is: the still part's, unless the moving part is below it.
   const below = movingBelow({ offsetMm: opts.offset, axis: opts.axis, poses: opts.poses });
