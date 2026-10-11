@@ -87,6 +87,12 @@ const calibration = calibrateCell({ sweeps: { x: { rows, axis: [1, 0, 0] }, y: .
 const { d, refused } = solveCell(calibration, frameRows);   // [x, y, z mm, turn deg] from the reference
 ```
 
+The still part may be a fixture built from several objects. A pocket is a
+plate and four walls, and `gapRows`' `target` may be all their names. The
+pairs are then chosen among every wall's edges at once: each edge takes its
+nearest, and no pair may be far wider than the closest. Taken wall by wall, a
+wall with no close pair keeps a far one.
+
 ## Which edge is which part
 
 Reading a gap needs to know which detected edge is the moving part's, which
