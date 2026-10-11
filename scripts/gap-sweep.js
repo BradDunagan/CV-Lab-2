@@ -42,7 +42,8 @@ const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { resolveScene } = require('../src/generate/driver');
 const { readGroundTruth } = require('../packages/vision/src/groundtruth.js');
-const { gapRows, numberPairs, pxPerMm, pxPerMmSlope, changedInputs, orbitViews } = require('../packages/vision/src/gapsweep.js');
+const { gapRows, pxPerMm, pxPerMmSlope, changedInputs, orbitViews } = require('../packages/vision/src/gapsweep.js');
+const { numberByView, poolCandidates } = require('../packages/vision/src/cell.js');
 
 const ROOT = path.join(__dirname, '..');
 const DEFAULT_SCRIPT = 'pipelines/explained.lab';
@@ -453,23 +454,16 @@ function gridMaps(rows, opts) {
  */
 function pooledCandidates(dir, opts) {
   const record = JSON.parse(fs.readFileSync(path.resolve(ROOT, dir, 'gap-sweep.json'), 'utf8'));
-  const out = [];
-  for (const row of record.rows) {
-    if (!(row.refit?.from === 'pair' && row.refit.gapPx >= opts.carryMin) || row.refit.ledge?.gain >= opts.ledgeMax) continue;
+  // The frame a row came from: its shot, and that shot's fitPairs records.
+  const frameOf = (row) => {
     const view = row.yaw === undefined ? null : { yaw: row.yaw, elevation: row.elevation };
     const name = row.shot ?? (row.pose !== undefined
       ? `${view ? `y${angleName(view.yaw)}-e${angleName(view.elevation)}-` : ''}pose-${row.pose}.png`
       : shotName(row.gapMm, view));
     const file = path.resolve(ROOT, dir, name.replace(/\.png$/, '.features.json'));
-    if (!fs.existsSync(file)) continue;
-    const fitted = (slots(file).fitted ?? []).find((p) => p.id === row.refit.pair);
-    if (!fitted) continue;
-    const [moving, still] = fitted.a.segment === row.detectedPair[1] ? [fitted.b, fitted.a] : [fitted.a, fitted.b];
-    out.push({ view: `${row.yaw ?? ''},${row.elevation ?? ''}`, pairAngle: row.pairAngle,
-      s: { name, gapMm: row.gapMm, run: path.relative(ROOT, path.resolve(ROOT, dir)), ...(view ? { view } : {}) },
-      row, record: fitted, moving, still });
-  }
-  return out;
+    return fs.existsSync(file) ? { name, fitted: slots(file).fitted } : null;
+  };
+  return poolCandidates(record.rows, frameOf, opts, path.relative(ROOT, path.resolve(ROOT, dir)));
 }
 
 function main() {
@@ -580,15 +574,7 @@ function main() {
     })));
     // Renumbered a view at a time, so that pair 1 is one pair down the sweep
     // even through the shots that lost the other.
-    const viewOf = (r) => `${r.yaw ?? ''},${r.elevation ?? ''}`;
-    const numbered = new Map([...new Set(perShot.map(viewOf))]
-      .map((v) => [v, numberPairs(perShot.filter((r) => viewOf(r) === v))]));
-    const taken = new Map();
-    return perShot.map((r) => {
-      const k = taken.get(viewOf(r)) ?? 0;
-      taken.set(viewOf(r), k + 1);
-      return numbered.get(viewOf(r))[k];
-    });
+    return numberByView(perShot);
   };
   let rows = analyse();
 

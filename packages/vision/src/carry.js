@@ -10,6 +10,7 @@
 
 import { movingBelow, median, angleApart } from './ledge.js';
 import { len2 } from './math.js';
+import { carriable, fittedEdges } from './cell.js';
 
 /**
  * What --carry writes into each frame.
@@ -66,16 +67,12 @@ export function carryPlan(rows, shots, featuresOf, opts, pooled = null, ownToo =
     for (const pair of pairs) {
       const rowIn = (s) => rows.find((r) => viewOf(r) === view && r.pair === pair && shotOf(s)(r));
       const candidates = (ownToo ? frames : []).map((s) => ({ s, row: rowIn(s) }))
-        .filter(({ row }) => row?.refit?.from === 'pair' && row.refit.gapPx >= opts.carryMin)
-        .filter(({ row }) => !(row.refit.ledge?.gain >= opts.ledgeMax))
+        .filter(({ row }) => carriable(row, opts))
         .sort((a, b) => b.row.refit.gapPx - a.row.refit.gapPx);
-      // Each candidate's still edge, from its fitPairs record. detectedPair is
-      // [moving, target]; the record's edges name segments.
+      // Each candidate's still edge, from its fitPairs record (cell.js fittedEdges).
       const placed = candidates.map((c) => {
-        const record = (featuresOf(c.s).fitted ?? []).find((p) => p.id === c.row.refit.pair);
-        if (!record) return null;
-        const [moving, still] = record.a.segment === c.row.detectedPair[1] ? [record.b, record.a] : [record.a, record.b];
-        return { ...c, record, moving, still };
+        const edges = fittedEdges(c.row, featuresOf(c.s).fitted);
+        return edges && { ...c, ...edges };
       }).filter(Boolean);
       const angle = median(rows.filter((r) => viewOf(r) === view && r.pair === pair && r.pairAngle != null).map((r) => r.pairAngle));
       placed.push(...(pooled ?? []).filter((c) => c.view === view && angle !== null && angleApart(c.pairAngle, angle) <= 10));

@@ -14,5 +14,6 @@ export { parseStatement, parseScript, quoteString, ParseError } from "./parser.j
 export { decodePfm, encodePfm } from "./pfm.js";
 export { calibrateReadings, solvePose, estimatePose, frameReadings, pairAngles, carryForward, readingsOf, keyOf, modelAt, hingeFor, POINTS, ANGLES } from "./calibrate.js";
 export { solvePosition, solveLifted } from "./position.js";
+export { calibrateCell, solveCell, sweepFrames, sweepStep, posesFrom, numberByView, poolCandidates, carriable, fittedEdges, carriedPick, refitPick, pickSigma, medianGapSigma } from "./cell.js";
 export { ledgeTable, flushLines, movingBelow } from "./ledge.js";
 export { predictEdges, poseMatrix } from "./predict.js";

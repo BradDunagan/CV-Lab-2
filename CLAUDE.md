@@ -59,6 +59,9 @@ packages/vision/     @cv-lab/vision: the library, ESM, host-free -- what rr
   src/calibrate.js   from readings to a pose: calibrating each reading against
                      commanded sweeps, solving a frame, a closed loop's step
   src/carry.js       what a wide frame measured, carried into the narrow ones
+  src/cell.js        a robot cell's own calibration: its sweeps' frames to a
+                     calibration, a frame to a pose, the carry pooled across
+                     sweeps -- the glue gap-sweep and solve-position held
   src/ledge.js       where a ledge ends and how soft its shadow is
   src/pairs.js       two close edges placed again, jointly, against the
                      unblurred image -- and found, where the detector
@@ -118,8 +121,8 @@ src/menu.js          the application menu — global commands live here, not in 
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
-test/                twenty-seven suites; twenty-six run under plain node, and
-                     nineteen of those again on WebAssembly (test:wasm)
+test/                twenty-eight suites; twenty-seven run under plain node, and
+                     twenty of those again on WebAssembly (test:wasm)
   conformance/       the package's case for hosts: a real frame, the
                      statements, each one's hash; rr's Playwright suite runs
                      it in Chrome (scripts/conformance.js writes it)
@@ -133,7 +136,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — twenty-seven suites, most twice
+npm test                # everything — twenty-eight suites, most twice
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless

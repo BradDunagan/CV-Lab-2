@@ -31,10 +31,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { solvePosition, solveLifted } = require('../packages/vision/src/position.js');
-const { ANGLES, POINTS, viewOf, keyOf, readingsOf, hingeFor, calibrateReadings, solvePose } =
+const { ANGLES, POINTS, hingeFor, calibrateReadings, solvePose } =
   require('../packages/vision/src/calibrate.js');
 const { movingBelow } = require('../packages/vision/src/ledge.js');
-const AXES = ['x', 'y', 'z'];
+const { AXES, angleOf, sweepStep, pairRows, sweepFrames: framesOf, posesFrom: groupPoses, refitPick, carriedPick,
+  pickSigma, medianGapSigma } = require('../packages/vision/src/cell.js');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -189,7 +190,6 @@ function main() {
   const unknowns = ['x', 'y', 'z', ...ANGLES.filter((u) => opts.dirs[u])];
   const units = (u) => (ANGLES.includes(u) ? 'deg' : 'mm');
   // A row's angles, for the angular unknowns this solve has.
-  const angleOf = (u, r) => (u === 'turn' ? r.turnDeg ?? 0 : r.tipDeg?.[u === 'tipx' ? 0 : 1] ?? 0);
   const anglesOf = (r) => unknowns.filter((u) => ANGLES.includes(u)).map((u) => angleOf(u, r));
   /*
    * A sweep may be several runs of the same poses, comma-separated: their
@@ -215,9 +215,8 @@ function main() {
    * Each row of each sweep is a pose: its displacement from the reference,
    * and the step that the sweep moved along.
    */
-  // A step along the sweep's own axis, which may run either way: a part below
-  // the still one is swept down, and slid along -x and -z to mirror one above.
-  const stepOf = (u, r) => (ANGLES.includes(u) ? angleOf(u, r) : r.gapMm * (sweeps[u].axis?.[AXES.indexOf(u)] ?? 1));
+  // A step along the sweep's own axis, which may run either way (cell.js sweepStep).
+  const stepOf = (u, r) => sweepStep(u, r, sweeps[u].axis);
   /*
    * Which side a hinge is on: where the ledge is in sight. Slid back (x or z
    * below zero) with the moving part above; slid out the other way with it
@@ -227,7 +226,7 @@ function main() {
   const below = movingBelow(sweeps[unknowns.find((u) => !ANGLES.includes(u))]);
   const hingeOf = hingeFor(below);
   const displacementOf = (u, r) => unknowns.map((v) => (v === u ? stepOf(u, r) : 0));
-  const rowsOf = (u) => sweeps[u].rows.filter((r) => r.pair !== null && r.pair !== undefined);
+  const rowsOf = (u) => pairRows(sweeps[u].rows);
   /*
    * The --lift sweeps' frames: each row with its whole displacement from the
    * reference, an axis sweep's from its offset and step, a --poses run's from
@@ -253,15 +252,13 @@ function main() {
     : null;
   // Against a prior the readings' weights must be absolute: --reading-sigma
   // px for a reading of the calibration sweeps' median gapSigma, as --sequence.
-  const calSigmas = unknowns.flatMap((u) => rowsOf(u)).flatMap((r) => [r.tracked?.gapSigma, r.refit?.gapSigma])
-    .filter((v) => v > 0).sort((a, b) => a - b);
-  const calMedian = calSigmas.length ? calSigmas[(calSigmas.length - 1) >> 1] : 1;
+  const calMedian = medianGapSigma(unknowns.flatMap((u) => rowsOf(u))) ?? 1;
   const points = POINTS[opts.readings];
 
   /* ---- 1. the Jacobian ---------------------------------------------- */
 
   // Every frame of every sweep, with the step it was made at.
-  const sweepFrames = unknowns.flatMap((u) => rowsOf(u).map((row) => ({ sweep: u, step: stepOf(u, row), row })));
+  const sweepFrames = framesOf(sweeps, unknowns);
   const calibration = { sweepFrames, liftFrames: liftRows, unknowns, points, hingeOf, liftAxis: LIFT };
   // The truth's own slopes and intercepts: what every other mode is checked against.
   const readings = calibrateReadings({ ...calibration, liftFrames: [], mode: 'full', pick: (r) => r.truth });
@@ -293,15 +290,7 @@ function main() {
 
   /* ---- the poses ----------------------------------------------------- */
 
-  const posesFrom = (rows, displacementFor) => {
-    const groups = new Map();
-    for (const r of rows) {
-      const id = r.pose ?? `${r.gapMm}/${r.turnDeg ?? 0}/${r.tipDeg ?? ''}`;
-      if (!groups.has(id)) groups.set(id, { d: displacementFor(r), label: null, readings: new Map() });
-      for (const p of points) groups.get(id).readings.set(keyOf(r, p), readingsOf(r)[p]);
-    }
-    return [...groups.values()];
-  };
+  const posesFrom = (rows, displacementFor) => groupPoses(rows, displacementFor, points);
   const sweepPoses = unknowns.flatMap((u) => posesFrom(rowsOf(u), (r) => displacementOf(u, r))
     .map((pose) => ({ ...pose, label: `${u} ${fmt(pose.d[unknowns.indexOf(u)], 1)}` })));
   const testPoses = opts.test
@@ -317,18 +306,15 @@ function main() {
   const sets = [];
   for (let n = 1; n <= Math.min(opts.maxViews, views.length); n++) sets.push(...choose(views, n));
 
-  const refitPick = (r) => r.refit ?? r.detected;
-  // A --carry run's tracked reading first: the still edge held where a frame
-  // without a ledge read it (design-lab-model.md §5, the fifteenth).
-  const carriedPick = (r) => r.tracked ?? r.refit ?? r.detected;
+  // refitPick and carriedPick (cell.js): a --carry run's tracked reading
+  // first, the still edge held where a frame without a ledge read it.
   const MODES = [
     ['truth', (r) => r.truth],
     ['detected', (r) => r.detected],
     ['refit', refitPick],
     ['carried', carriedPick],
   ];
-  const sigmaOf = (pick, r) => (pick === carriedPick && r?.tracked != null ? r.trackedSigma
-    : (pick === refitPick || pick === carriedPick) && r?.refit != null ? r.sigma : null);
+  const sigmaOf = pickSigma;
   const report = { unknowns, reference, readings: [...readings.values()], sets: [],
     // What each reading was calibrated to, for the carried readings, beside the truth's.
     calibrated: opts.calibrate === 'truth' ? null : [...calibratedFor(carriedPick).values()] };
@@ -579,14 +565,12 @@ function main() {
      * of the calibration frames, so that a frame's readings can be weighed
      * absolutely against a carried pose as --sequence does.
      */
-    const sigmas = unknowns.flatMap((u) => rowsOf(u)).flatMap((r) => [r.tracked?.gapSigma, r.refit?.gapSigma])
-      .filter((v) => v > 0).sort((a, b) => a - b);
     const saved = {
       unknowns, reference, calibrate: opts.calibrate, readings: opts.readings,
       // Which side of flush the hinge is on; estimatePose reads it.
       ...(below ? { movingBelow: true } : {}),
       sweeps: Object.fromEntries(unknowns.map((u) => [u, opts.dirs[u]])),
-      medianSigma: sigmas.length ? sigmas[(sigmas.length - 1) >> 1] : null,
+      medianSigma: medianGapSigma(unknowns.flatMap((u) => rowsOf(u))),
       ...(lifted ? { lift: opts.lift } : {}),
       calibrated: [...calibratedFor(carriedPick).values()].map(({ key, view, jacobian, hinge, lift, liftHinge, reference: at }) => ({
         key, view, jacobian, ...(hinge ? { hinge } : {}), ...(lift ? { lift } : {}), ...(liftHinge ? { liftHinge } : {}), reference: at })),
