@@ -73,6 +73,20 @@ step each was commanded at. cv-lab's `scripts/solve-position.js` and
 `scripts/servo.js` are worked examples, and `design-lab-model.md` §5 says
 what each choice cost or bought.
 
+A cell that commands its own sweeps can leave the glue to the package. Each
+frame's rows, numbered a view at a time (`numberByView`), go to `carryPlan`
+with the still edge pooled across the sweeps (`poolCandidates`); the sweeps'
+carried rows then calibrate, and each later frame solves, as solve-position
+does it -- the carried readings, weighed by 1/gapSigma²:
+
+```js
+import { calibrateCell, solveCell } from '@cv-lab/vision';
+
+const calibration = calibrateCell({ sweeps: { x: { rows, axis: [1, 0, 0] }, y: ..., z: ..., turn: { rows } },
+  mode: 'hinged' });
+const { d, refused } = solveCell(calibration, frameRows);   // [x, y, z mm, turn deg] from the reference
+```
+
 ## Which edge is which part
 
 Reading a gap needs to know which detected edge is the moving part's, which

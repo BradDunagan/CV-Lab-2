@@ -42,6 +42,13 @@ export {
   readingsOf, keyOf, modelAt, hingeFor, POINTS, ANGLES,
 } from './calibrate.js';
 export { solvePosition, solveLifted } from './position.js';
+// A robot cell's own calibration: its sweeps' frames calibrated, each later
+// frame solved, and the carry pooled across sweeps (what gap-sweep and
+// solve-position did around calibrate.js and carry.js).
+export {
+  calibrateCell, solveCell, sweepFrames, sweepStep, posesFrom, numberByView, poolCandidates, carriable, fittedEdges,
+  carriedPick, refitPick, pickSigma, medianGapSigma,
+} from './cell.js';
 // Carrying what a wide frame measured into the narrow ones, and the ledge.
 export { carryPlan } from './carry.js';
 export { ledgeTable, flushLines, movingBelow } from './ledge.js';
