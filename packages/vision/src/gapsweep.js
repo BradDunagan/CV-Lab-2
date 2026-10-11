@@ -137,7 +137,15 @@ function depthAt(edge, l, p) {
 
 /* ---- the row ------------------------------------------------------- */
 
-const only = (edge, name, other) => edge.objects.includes(name) && !edge.objects.includes(other);
+/*
+ * An edge of `name` and not of `other`. Either may be several parts' names: a
+ * fixture built from several boxes -- a pocket's walls -- is one still part,
+ * so every wall's edges are the target's, and the pairs are chosen among all
+ * of them at once (truthPairs: each edge's nearest, and none far wider than
+ * the closest), not wall by wall.
+ */
+const anyOf = (edge, names) => (Array.isArray(names) ? names.some((n) => edge.objects.includes(n)) : edge.objects.includes(names));
+const only = (edge, name, other) => anyOf(edge, name) && !anyOf(edge, other);
 
 /**
  * The truth edges facing each other across the gap.
@@ -351,7 +359,8 @@ function causesInGap(explained, pair, opts) {
  * @param {object[]} [input.pairs]    edge-pair records for F, if the pipeline
  *                                    ran fitPairs or findPairs
  * @param {object} shot  { gapMm }
- * @param {object} parts { moving, target } -- object names, as the truth has them
+ * @param {object} parts { moving, target } -- object names, as the truth has them;
+ *   `target` may be several, a fixture's parts
  */
 function gapRow(input, shot, parts, options = {}) {
   const opts = { ...DEFAULTS, ...options };

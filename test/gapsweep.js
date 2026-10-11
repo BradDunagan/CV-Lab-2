@@ -527,6 +527,27 @@ test('an edge pairs only with its nearest facing edge, both ways round', () => {
   assert.deepEqual(far.map((p) => [p.a.id, p.b.id]), [[5, 3]]);
 });
 
+test('a fixture of several parts is one target: pairs are chosen across all of them', () => {
+  // The same stack with the base split into walls, one a side, and a third
+  // wall seen past the part, whose only edge facing the top cube's is 120 px
+  // from it -- what a pocket's far wall did. Taken alone, that wall has
+  // nothing closer, so it is a pair; taken with the others, the closest pair
+  // (6 px) rules it out.
+  const walls = [
+    gt(1, ['Top'], 50, 74, 150, 94), gt(2, ['Top'], 150, 94, 230, 70),
+    gt(3, ['Left'], 50, 80, 150, 100), gt(4, ['Right'], 150, 100, 230, 76),
+    gt(7, ['Top'], 300, 10, 400, 10), gt(8, ['Back'], 300, 130, 400, 130),
+  ];
+  assert.equal(truthPairs(walls, 'Top', 'Back', 0.005, DEFAULTS).length, 1, 'the far wall alone is a pair');
+  const fixture = ['Left', 'Right', 'Back'];
+  const pairs = truthPairs(walls, 'Top', fixture, 0.005, DEFAULTS);
+  assert.deepEqual(pairs.map((p) => [p.a.id, p.b.id]), [[1, 3], [2, 4]]);
+  // And the rows say so: two, each read off its own wall's edge, the target's edges every wall's.
+  const rows = gapRows({ truth: walls, segments: [], matches: [], explained: [] }, { gapMm: 5 }, { moving: 'Top', target: fixture });
+  assert.deepEqual(rows.map((r) => r.truthPair), [[1, 3], [2, 4]]);
+  assert.equal(rows[0].target.findable, 3);
+});
+
 test('two edges with nothing nearer are not a pair of this gap if they are far further apart', () => {
   // The top cube's far top edge and the base's far bottom edge, off to the
   // right where nothing else is: each is the other's nearest, 200 px apart.

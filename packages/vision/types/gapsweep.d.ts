@@ -9,7 +9,8 @@
  * @param {object[]} [input.pairs]    edge-pair records for F, if the pipeline
  *                                    ran fitPairs or findPairs
  * @param {object} shot  { gapMm }
- * @param {object} parts { moving, target } -- object names, as the truth has them
+ * @param {object} parts { moving, target } -- object names, as the truth has them;
+ *   `target` may be several, a fixture's parts
  */
 export function gapRow(input: {
     truth: object[];
