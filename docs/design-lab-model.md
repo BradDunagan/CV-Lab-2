@@ -3717,6 +3717,41 @@ now read as the solve reads it, the refit where there is one and the
 detections' own reading where there is not -- good that wide (-0.02 px),
 wrong narrow (+1.48 at 2.06 px), so a narrow pair with no refit still fails.
 
+**rr's meshes, rendered** (2026-10-14). A part rr imports is a mesh -- a
+`meshrec://` OBJ, STL or DAE in its database, or a glTF, OBJ or DAE by URL
+-- and the analysis camera skipped it. A pt-lab shape may now be a
+**mesh**: `positions`, `indices` and, where the file has them, `normals`,
+plain data the scene carries like the primitives, with one material. rr
+loads the file as its viewport does, takes the triangles in the part's own
+frame with the def's scale (normals by the inverse transpose; a mirrored
+transform's triangles wound back), and `worldScene` takes each vertex and
+normal to pt-lab's axes. The other way, importing a .glb through
+`registerImport`, was not taken: pt-lab re-centres an import, and the scene
+would stop carrying its own geometry.
+
+**Normals are the file's, not creased.** Made by pt-lab at ground truth's
+20 degrees, rr's forearm (321 triangles, an open tube) rendered as stripes:
+107 of its 441 interior edges meet at more than 20 degrees, so each facet
+shaded apart, and the detector found the stripes -- edges a real tube does
+not have. With the file's own normals, as the viewport shades it, the tube
+is smooth; the truth still calls those facet joins creases, which is
+geometry, and the image correctly shows nothing there. Without normals in
+the file, pt-lab creases at `creaseAngle`.
+
+The checks. Converted, every vertex pt-lab builds is within 4.8 nm of the
+file's (scaled 1.5 x 1 x 0.8, turned on every axis); mirrored by a sign
+error, 5.1 mm, and the test fails. Rendered on the stack fixture's table,
+the tube's two long silhouettes (163, 164 px) are found in every render,
+their nearest detection 0.07-0.39 px from the predicted edge over seven --
+as an rr cylinder of the same size and pose reads (0.36). Its open end reads
+~1.4 px: the wall is a pixel thick there, outer silhouette, rim and inside
+within a pixel or two, the close-edge push of "A fifth"; a capped cylinder
+has none. Reversing every normal leaves the silhouettes where they were
+(0.07, 0.10 px): it is the outline against the table that is found. And
+cv-lab's generator renders the converted scene as rr does: 0.0079-0.0086
+mean absolute difference between them, 0.0080 and 0.0082 between two of
+either; 0.0099-0.0109 over the part alone, against 0.0097 and 0.0110.
+
 ---
 
 ## 9. Decide now vs. defer

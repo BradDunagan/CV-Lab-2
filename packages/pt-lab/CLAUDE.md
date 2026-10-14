@@ -26,7 +26,8 @@ its controls are a paneless column in the app window). Nothing in
 
 rr takes the package from source (`"../cv-lab-2/packages/pt-lab"`), and its
 analysis camera renders with `renderFrame`. rr's world reaches it as shape
-objects (`SceneObjectState.shape`: primitives as plain data, built by
+objects (`SceneObjectState.shape`: primitives, and its imported parts as
+meshes -- triangles and the file's normals -- as plain data, built by
 `applyScene` from the scene itself, not from the library). rr's `tests/analysis-camera.spec.ts`
 renders the conformance case's shot and must read cv-lab's gaps to within
 render noise, so a change here that moves a render is seen there too.
