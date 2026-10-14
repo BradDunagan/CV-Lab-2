@@ -3818,6 +3818,33 @@ cannot be read; and the two-view cell is too weak to say what more views
 would do. The next experiment is cv-lab's own protocol on rounded cubes --
 four views, five steps a sweep, the ten test poses -- not run.
 
+**The pair finder on rr's parts** (2026-10-14). `findPairs` asks each 24 px
+window of a lone segment whether it is one step or two, and calls it two at a
+gain of 1.3 -- a threshold set on two renders of the cube stack. Twenty
+frames rendered in rr, every screening window logged (1,595 of them) and
+labelled from the predicted edges, a pair hidden where two visible edges of
+different parts lie 0.05 to 2.4 px apart along it:
+
+  scene                 windows  hidden  found  nothing hidden: median / 95%  false pairs
+  stack, 1 and 0.5 mm     471      47     25        1.01 / 1.38                  0
+  pocket, 1 and 0.5 mm    319       0      -        1.01 / 1.12                  0
+  rounded cubes           684      16      9        1.03 / 1.85                 21
+  forearm                  67       0      -        1.08 / 1.76                  0
+
+The stack's hidden gaps are 0.16-0.68 px, the half not found the narrowest,
+as before. The pocket has none: its pair is the block's bottom edge against
+a wall's inner top edge, across the 2 mm side clearance, and from above that
+stays 2.0-2.7 px even 0.5 mm over the walls -- fitPairs's, never the
+finder's. Every false pair is on the rounded cubes, and every one on the
+base's lower outline where it rests on the table: levels like 0.35 | 0.10 |
+0.24, a groove 0.6-1.2 px wide where the fillet curves away from the
+surface. It is a real dark strip, at gains of 1.47-1.85 against the true
+pairs' median 1.55, so no threshold separates them. Nothing reads it there
+(a pair is read only where two parts' edges face each other), but two
+rounded parts in contact make the same groove between them, and it would
+read as a gap of about a pixel. So 1.3 stays, and that phantom gap is part
+of rounded parts' open item above.
+
 ---
 
 ## 9. Decide now vs. defer

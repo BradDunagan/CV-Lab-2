@@ -335,6 +335,11 @@ per pair, it gives confident wrong answers. Still open from it:
   the remaining −0.05 to −0.11 px is untested;
 - **`findPairs`'s gain threshold rests on two renders of one scene.**
   It is a calibration, and the place a real camera is most likely to move.
+  Measured on rr's parts since (2026-10-14, `design-lab-model.md` §5, "The
+  pair finder on rr's parts"): no false pair where a gap is read, and rr's
+  pocket never needs the finder (its gaps stay 2 px and wider); the one
+  false strip is real, a rounded part's contact groove, and no threshold
+  tells it from a gap. Kept at 1.3. A real camera is still untried;
 
 **Where the camera is decides how many pixels a millimetre is**, and that
 decides everything else. Over 28 views of the gap sweep the refit's error is
