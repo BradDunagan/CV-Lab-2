@@ -3752,6 +3752,37 @@ cv-lab's generator renders the converted scene as rr does: 0.0079-0.0086
 mean absolute difference between them, 0.0080 and 0.0082 between two of
 either; 0.0099-0.0109 over the part alone, against 0.0097 and 0.0110.
 
+**A gap between mesh parts** (2026-10-14). The stack fixture with its two
+cubes as meshes, in three forms, through the stack test's three shots:
+
+- *Plain* (12 triangles): the primitive's true gaps to 10⁻⁴ px, its readings
+  within render noise.
+- *Split* (each face a 5 x 5 grid, every edge in five collinear pieces, as a
+  CAD exporter writes them): sixty edges a cube, `gapRows` found eight to ten
+  "pairs" a shot, one piece each, and `match` gave each detected segment to
+  one piece only -- one reading a shot. `predictEdges({ join: true })` joins
+  kept edges continuing one another (same cause, same parts, the only two at a
+  vertex, opposite within 0.003 degrees): twelve edges again, the plain box's
+  exactly, and every pair read as cv-lab reads the primitive.
+- *Rounded* (2 mm fillets, folds of 3-7 degrees): no fold reaches 20 degrees,
+  so the edges a gap is read across -- the base's top edges, between two faces
+  in view -- did not exist, and no pair was found. With `join`, a band of soft
+  folds, parallel and within a pixel of one another in the image, that turns
+  more than `creaseAngle` and projects no wider than 6 px, is a crease along
+  its middle, unless an outline of the part runs alongside (a cylinder's
+  facets crowd toward its limb; the outline is the edge there). 3 px was
+  tried first: the base's near fillets project 3.1-3.6 px. Now the pairs are
+  found, but read -0.65 to -0.75 px. Sampling the blurred image across each
+  edge says why: a fillet's image edge falls near one side of its band, not
+  the middle -- +0.85 to +1.45 px on some, -0.75 to -1.70 on others -- where
+  the shading changes fastest, which is the view's and the light's. The cell
+  (two views, the small sweeps) absorbs most of it: loop frames 0.34 and 0.16
+  mm against 0.12 and 0.06 on primitives. Not all: one reading at a pair's end,
+  0.88 px off, put the test pose 1.1 mm out in y. Open.
+
+`join` is off by default, so the edges stay a renderer's extraction's
+exactly; rr's `measure` and cell turn it on.
+
 ---
 
 ## 9. Decide now vs. defer

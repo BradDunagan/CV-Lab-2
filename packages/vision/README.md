@@ -119,6 +119,17 @@ Visibility is exact; for identifying from a belief, pass `margin: 1.5`, so an
 edge the belief hides by less than a pixel and a half, which may be in plain
 view, still counts (cv-lab's `design-lab-model.md` §5, "A forty-first").
 
+For parts that are CAD exports, pass `join: true`. An exporter splits a box's
+edge into collinear pieces, and each piece would be its own edge, too short to
+pair; joined, a split box gives the plain box's edges exactly. And a filleted
+edge, its fold spread over facets each softer than `creaseAngle`, has no edge
+at all unless the band of facets is read as one: with `join`, a band that
+turns more than `creaseAngle` and projects no wider than 6 px is a crease
+along its middle (`rounded`: its width in pixels). It is found and paired;
+where the image's edge falls inside the band is shading's, and can be a
+pixel or more from the middle, so read such a gap through a calibration.
+Off by default, so the edges are exactly a renderer's extraction's.
+
 ## Reproducibility
 
 Every result has a content hash, and a session's log replays to the same

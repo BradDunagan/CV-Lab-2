@@ -138,6 +138,136 @@ test('refuses what it cannot predict from', () => {
   assert.throws(() => predictEdges({ objects: [], camera: { position: [0, 3, 0], target: [0, 0, 0], fov: 40 }, size: 64 }), /up vector/);
 });
 
+/** The same box with each face an n x n grid: every edge in n collinear pieces, as a CAD export splits it. */
+function gridBox([x0, y0, z0], [x1, y1, z1], n) {
+  const lo = [x0, y0, z0], hi = [x1, y1, z1];
+  const out = [];
+  // Each face: the fixed axis and its side, and two axes across it, ordered so the quad is wound outward.
+  for (const [axis, side, u, v] of [[0, 0, 2, 1], [0, 1, 1, 2], [1, 0, 0, 2], [1, 1, 2, 0], [2, 0, 1, 0], [2, 1, 0, 1]]) {
+    const at = (i, j) => {
+      const p = [0, 0, 0];
+      p[axis] = side ? hi[axis] : lo[axis];
+      p[u] = lo[u] + ((hi[u] - lo[u]) * i) / n;
+      p[v] = lo[v] + ((hi[v] - lo[v]) * j) / n;
+      return p;
+    };
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const a = at(i, j), b = at(i + 1, j), c = at(i + 1, j + 1), d = at(i, j + 1);
+        out.push(...a, ...b, ...c, ...a, ...c, ...d);
+      }
+    }
+  }
+  return out;
+}
+
+/** An edge as a comparable record: its ends in either order, its cause and what it belongs to. */
+const signature = (e) => {
+  const [p, q] = [[e.x0, e.y0], [e.x1, e.y1]].sort((s, t) => s[0] - t[0] || s[1] - t[1]);
+  return { p, q, cause: e.cause, objects: e.objects.join(','), visible: e.visible };
+};
+const sameEdges = (got, want, what) => {
+  assert.equal(got.length, want.length, `${what}: ${got.length} edges against ${want.length}`);
+  for (const w of want.map(signature)) {
+    const g = got.map(signature).find((s) => s.cause === w.cause && s.objects === w.objects &&
+      Math.abs(s.p[0] - w.p[0]) + Math.abs(s.p[1] - w.p[1]) + Math.abs(s.q[0] - w.q[0]) + Math.abs(s.q[1] - w.q[1]) < 1e-9);
+    assert.ok(g, `${what}: no ${w.cause} from ${w.p} to ${w.q}`);
+    assert.equal(g.visible, w.visible, `${what}: the ${w.cause} from ${w.p} sees ${g.visible} against ${w.visible}`);
+  }
+};
+
+test('join: a box split into a grid is one edge per side again, the plain box\'s edges exactly', () => {
+  const cube = [[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]];
+  const plain = predictEdges({ objects: [{ name: 'cube', triangles: box(...cube) }], camera: general, size: 256 });
+  const grid = { name: 'cube', triangles: gridBox(...cube, 5) };
+  // Apart, every side is its five pieces ...
+  assert.equal(predictEdges({ objects: [grid], camera: general, size: 256 }).edges.length, 60);
+  // ... joined, the same twelve lines as the plain box, with the same visibility.
+  const joined = predictEdges({ objects: [grid], camera: general, size: 256, join: true });
+  sameEdges(joined.edges, plain.edges, 'the grid box joined');
+  // Joining the plain box changes nothing: its sides are already whole.
+  sameEdges(predictEdges({ objects: [{ name: 'cube', triangles: box(...cube) }], camera: general, size: 256, join: true }).edges, plain.edges, 'the plain box joined');
+  parseGroundTruth(joined, 'a joined cube');
+});
+
+test('join: a curve\'s chords stay chords, and two parts\' collinear sides stay two', () => {
+  // A twelve-sided prism: its rims bend 30 degrees at every vertex.
+  const n = 12, r = 0.5, h = 0.4, tri = [];
+  const at = (k, y) => [r * Math.cos((2 * Math.PI * k) / n), y, -r * Math.sin((2 * Math.PI * k) / n)];
+  for (let k = 0; k < n; k++) {
+    const a0 = at(k, -h), a1 = at(k + 1, -h), b0 = at(k, h), b1 = at(k + 1, h);
+    tri.push(...a0, ...a1, ...b1, ...a0, ...b1, ...b0, ...b0, ...b1, 0, h, 0, ...a1, ...a0, 0, -h, 0);
+  }
+  const prism = [{ name: 'prism', triangles: tri }];
+  const apart = predictEdges({ objects: prism, camera: general, size: 256 });
+  sameEdges(predictEdges({ objects: prism, camera: general, size: 256, join: true }).edges, apart.edges, 'the prism joined');
+  // Two boxes end to end along x, a gap between: one line in space, two parts.
+  const two = [{ name: 'a', triangles: box([-1, -0.2, -0.2], [-0.01, 0.2, 0.2]) }, { name: 'b', triangles: box([0.01, -0.2, -0.2], [1, 0.2, 0.2]) }];
+  const both = predictEdges({ objects: two, camera: general, size: 256, join: true });
+  for (const name of ['a', 'b']) assert.equal(both.edges.filter((e) => e.objects.join() === name).length, 12, `${name} keeps its twelve`);
+});
+
+/** A cross-section (x, y, anticlockwise) extruded along z from -half to half, capped, outward-wound. */
+function extrude(section, half) {
+  const out = [];
+  const n = section.length;
+  for (let k = 0; k < n; k++) {
+    const [x0, y0] = section[k], [x1, y1] = section[(k + 1) % n];
+    out.push(x0, y0, -half, x1, y1, -half, x1, y1, half, x0, y0, -half, x1, y1, half, x0, y0, half);
+    out.push(0, 0, half, x0, y0, half, x1, y1, half, 0, 0, -half, x1, y1, -half, x0, y0, -half);
+  }
+  return out;
+}
+
+test('join: a filleted edge between two faces in view is one crease; one on the outline is not', () => {
+  // A square bar 1 m across, its four long edges filleted at 2 cm in six 15-degree facets: each fold is soft.
+  const h = 0.5, r = 0.02, section = [];
+  for (const [cx, cy, start] of [[h - r, h - r, 0], [-(h - r), h - r, 90], [-(h - r), -(h - r), 180], [h - r, -(h - r), 270]]) {
+    for (let s = 0; s <= 6; s++) {
+      const t = ((start + 15 * s) * Math.PI) / 180;
+      section.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]);
+    }
+  }
+  const bar = [{ name: 'bar', triangles: extrude(section, 0.6) }];
+  // From +x, +y, +z: the fillet between the +x and +y faces is between two faces in view.
+  const longCreases = (doc) => doc.edges.filter((e) => e.cause === 'crease' && e.length > 50);
+  const apart = predictEdges({ objects: bar, camera: general, size: 256 });
+  const joined = predictEdges({ objects: bar, camera: general, size: 256, join: true });
+  // The caps' rims are creases either way. Joined, two fillets are creases as a box's edges would be: the one
+  // between the +x and +y faces, in view, and the one opposite, between faces turned away, hidden behind.
+  assert.equal(longCreases(joined).length, longCreases(apart).length + 2, 'two more long creases joined');
+  const rounded = joined.edges.filter((e) => e.rounded !== undefined && e.length > 50);
+  assert.equal(rounded.length, 2, `rounded creases along the bar: ${rounded.length}`);
+  assert.equal(rounded.filter((e) => e.visible > 0.95).length, 1, 'one in view');
+  assert.equal(rounded.filter((e) => e.visible < 0.05).length, 1, 'one hidden');
+  const crease = rounded.find((e) => e.visible > 0.95);
+  assert.equal(crease.cause, 'crease');
+  assert.ok(Math.abs(crease.dihedral - 90) < 1e-6, `its turn: ${crease.dihedral}`);
+  assert.ok(crease.rounded > 0 && crease.rounded <= 6, `its width: ${crease.rounded} px`);
+  assert.ok(crease.visible > 0.95, `seen: ${crease.visible}`);
+  parseGroundTruth(joined, 'a filleted bar');
+});
+
+test('join: a smooth cylinder has no rounded crease, though its facets crowd toward its outline', () => {
+  // 48 sides, 7.5-degree folds: soft, and near the limb several fall within a few pixels.
+  const section = [];
+  for (let k = 0; k < 48; k++) section.push([0.4 * Math.cos((2 * Math.PI * k) / 48), 0.4 * Math.sin((2 * Math.PI * k) / 48)]);
+  const doc = predictEdges({ objects: [{ name: 'cylinder', triangles: extrude(section, 0.6) }], camera: general, size: 256, join: true });
+  assert.equal(doc.edges.filter((e) => e.rounded !== undefined).length, 0);
+});
+
+test('join: the same document whatever order the triangles come in', () => {
+  const tri = gridBox([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5], 4);
+  const triangles = [];
+  for (let i = 0; i < tri.length; i += 9) triangles.push(tri.slice(i, i + 9));
+  const reversed = triangles.reverse().flat();
+  const a = predictEdges({ objects: [{ name: 'cube', triangles: tri }], camera: general, size: 256, join: true });
+  const b = predictEdges({ objects: [{ name: 'cube', triangles: reversed }], camera: general, size: 256, join: true });
+  sameEdges(b.edges, a.edges, 'reversed');
+  // And the same bits, run twice.
+  assert.equal(JSON.stringify(predictEdges({ objects: [{ name: 'cube', triangles: tri }], camera: general, size: 256, join: true })), JSON.stringify(a));
+});
+
 test('from pt-lab\'s triangles, a real shot\'s edges are pt-lab\'s own', () => {
   const fixtures = path.join(__dirname, 'fixtures');
   const geometry = JSON.parse(fs.readFileSync(path.join(fixtures, 'stack-2.geometry.json'), 'utf8'));
