@@ -3888,6 +3888,31 @@ does not: a camera that moves moves an edge with it, where a gap's two
 edges move together. In simulation the camera never moves; a real cell
 needs a rigid mount, or a fixture edge in sight to read against.
 
+**A robot arm in the analysis camera** (2026-10-14). Listed as open since
+port step 3 -- "the analysis camera draws objects, not machines" -- it was
+not so: rr keeps each drawable link geom of a machine as a virtual object,
+posed from MuJoCo by the run loop, and worldScene converts it like any part.
+rr's seeded UR5e (primitives, 7 links) and the MuJoCo Menagerie UR5e (20
+meshes, 121,783 triangles) both rendered, their predicted outlines on their
+rendered ones. What an arm cost was the prediction: 49,000 edges for the
+Menagerie arm, 67 s a view in Chrome, 128 s in Node -- and 100 of the 128 in
+roundedCreases comparing its 131,491 soft lines pair by pair.
+
+`predictEdges({ only })` predicts the named objects' edges and lets every
+triangle hide: the stack's 24 edges, the same 16 seen, in 0.1 s. Measure and
+the cell name the moving and still parts. With the arm's edges gone from the
+truth, a robot finger beside a measured edge is no longer in it either, so
+edgeRows takes a DETECTION beside an edge as crowding it too.
+
+And roundedCreases had a fault the arm brought out: lines shared a band if
+they overlapped in space, so two parallel fillets on opposite sides of a part
+that projected onto one image line, far apart along it, were taken as one
+band, and on one view of the rounded stack that hid two creases. Overlap is
+taken in the image now. A grid over the image (lines in 16 px cells) gave
+the same answer as the full scan -- checked document for document -- and no
+speed: an arm puts hundreds of soft lines in every cell. Not kept. A dense
+part that IS measured is still slow to predict.
+
 ---
 
 ## 9. Decide now vs. defer

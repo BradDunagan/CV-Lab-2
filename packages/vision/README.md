@@ -130,6 +130,11 @@ where the image's edge falls inside the band is shading's, and can be a
 pixel or more from the middle, so read such a gap through a calibration.
 Off by default, so the edges are exactly a renderer's extraction's.
 
+Name the parts you measure with `only: [names]`: their edges are worked out
+and every other triangle -- a robot arm's, the table's -- still hides what is
+behind it. A CAD arm of 120,000 triangles took a minute a view in full and
+takes a tenth of a second this way.
+
 ## Where no gap can be seen
 
 A gap is read between two parts. Down inside a pocket the walls hide every

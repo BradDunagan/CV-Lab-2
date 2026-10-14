@@ -5,6 +5,8 @@
  * @param {object[]} input.truth `groundTruth` records (gt-edge)
  * @param {object[]} input.matches `match` records of the frame's segments against that truth
  * @param {object[]} input.edges `fitEdges` records
+ * @param {object[]} [input.segments] the frame's detected segments (`fit`): one
+ *   beside an edge, not matched to it, makes it crowded as a truth edge does
  * @param {string | string[]} moving the moving part's name in the truth
  * @param {{x: number, y: number, ux: number, uy: number, nx: number, ny: number, half: number, angle: number}[]} anchors
  *   this view's anchors so far, in the order they were made; not changed
@@ -15,6 +17,7 @@ export function edgeRows(input: {
     truth: object[];
     matches: object[];
     edges: object[];
+    segments?: object[] | undefined;
 }, moving: string | string[], anchors?: {
     x: number;
     y: number;

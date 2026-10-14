@@ -37,10 +37,16 @@ export function poseMatrix(t: {
  *   And a fillet -- a fold spread over facets each softer than `creaseAngle` --
  *   is one crease where it projects no wider than ROUNDED_PX
  *   (`roundedCreases`): the edge a rounded box shows between two faces
+ * @param {string[]} [o.only]  the objects whose edges are wanted; every object
+ *   still hides what is behind it. A robot arm's CAD meshes, 120,000
+ *   triangles, gave 49,000 edges no gap reading uses, and took a minute a
+ *   view; named, only the parts measured are worked out. An edge a named
+ *   object shares with an unnamed one is classified from the named one's
+ *   faces alone
  * @returns {{size: number, camera: object, creaseAngle: number, edges: object[], vertices: object[], skipped: string[], predicted: object}}
  *   the document `parseGroundTruth` reads, in pt-lab's pixel convention
  */
-export function predictEdges({ objects, camera: cam, size, creaseAngle, margin, join }: {
+export function predictEdges({ objects, camera: cam, size, creaseAngle, margin, join, only }: {
     objects: {
         name: string;
         triangles: ArrayLike<number>;
@@ -58,6 +64,7 @@ export function predictEdges({ objects, camera: cam, size, creaseAngle, margin, 
     creaseAngle?: number | undefined;
     margin?: number | undefined;
     join?: boolean | undefined;
+    only?: string[] | undefined;
 }): {
     size: number;
     camera: object;
