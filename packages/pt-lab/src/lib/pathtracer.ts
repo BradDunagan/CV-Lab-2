@@ -3,6 +3,7 @@ import {
 	AmbientLight,
 	Box3,
 	BoxGeometry,
+	BufferGeometry,
 	CanvasTexture,
 	CapsuleGeometry,
 	CircleGeometry,
@@ -10,6 +11,7 @@ import {
 	CylinderGeometry,
 	DataTexture,
 	EquirectangularReflectionMapping,
+	Float32BufferAttribute,
 	FloatType,
 	Group,
 	LinearFilter,
@@ -46,6 +48,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { WebGLPathTracer } from 'three-gpu-pathtracer';
 import type { UNet } from 'oidn-web';
 import { listImports, saveImport, deleteImport } from './library-store';
@@ -162,13 +165,21 @@ export interface LabMaterial {
  * the object's local y, as three.js builds them. Curved surfaces are
  * tessellated finely enough to read as smooth (a sphere 48 x 24, a cylinder 64
  * round), and their ground truth is that polygon's edges, as for the Ball.
+ *
+ * A mesh is a host's own triangles: `positions` x, y, z in the object's frame,
+ * three to a vertex, and `indices` three to a triangle (absent: each three
+ * vertices are one). `normals`, one to a vertex, are how it shades: a CAD
+ * export's own, which make a tessellated tube read as the smooth tube it is.
+ * Without them pt-lab makes its own, creased at `creaseAngle` degrees
+ * (default 20, ground truth's own): faces that meet more sharply shade apart.
  */
 export type LabShape =
 	| { kind: 'box'; size: [number, number, number] }
 	| { kind: 'sphere'; radius: number }
 	| { kind: 'ellipsoid'; radii: [number, number, number] }
 	| { kind: 'cylinder'; radius: number; length: number }
-	| { kind: 'capsule'; radius: number; length: number };
+	| { kind: 'capsule'; radius: number; length: number }
+	| { kind: 'mesh'; positions: number[]; indices?: number[]; normals?: number[]; creaseAngle?: number };
 
 /** One object's persisted state within a scene. */
 export interface SceneObjectState {
@@ -691,6 +702,42 @@ const AMBIENT_FILL = 0.35;
 const PATCH_AREA = PATCH_HALF_X * 2 * PATCH_HALF_Z * 2;
 const AREA_LIGHT_AREA = AREA_LIGHT_SIZE * AREA_LIGHT_SIZE;
 
+/**
+ * A mesh shape's geometry: its own normals, or pt-lab's creased at its
+ * creaseAngle. Throws on anything that is not triangles: a coordinate that is
+ * not a finite number, a count not in threes, an index that is not a vertex's,
+ * no triangle at all, or normals not one finite, non-zero vector a vertex.
+ */
+function meshGeometry(shape: Extract<LabShape, { kind: 'mesh' }>, key: string) {
+	const no = (why: string) => new Error(`applyScene: mesh shape "${key}" ${why}`);
+	const { positions, indices, normals, creaseAngle = 20 } = shape;
+	if (!Array.isArray(positions) || positions.length % 3 !== 0) throw no('needs positions, three numbers to a vertex');
+	if (!positions.every((x) => typeof x === 'number' && Number.isFinite(x))) throw no('has a position that is not a finite number');
+	const vertices = positions.length / 3;
+	if (indices !== undefined) {
+		if (!Array.isArray(indices) || indices.length % 3 !== 0) throw no('needs indices three to a triangle');
+		if (!indices.every((i) => Number.isInteger(i) && i >= 0 && i < vertices)) throw no(`has an index that is not one of its ${vertices} vertices`);
+	} else if (vertices % 3 !== 0) throw no('without indices needs vertices three to a triangle');
+	if ((indices ?? positions).length < (indices ? 3 : 9)) throw no('has no triangle');
+	if (!(typeof creaseAngle === 'number' && creaseAngle >= 0 && creaseAngle <= 180)) throw no(`needs a creaseAngle in degrees, 0 to 180, not ${creaseAngle}`);
+	const geometry = new BufferGeometry();
+	geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+	if (indices) geometry.setIndex(indices);
+	if (normals !== undefined) {
+		if (!Array.isArray(normals) || normals.length !== positions.length) throw no('needs normals one to a vertex, as many numbers as positions');
+		for (let i = 0; i < normals.length; i += 3) {
+			const [x, y, z] = [normals[i], normals[i + 1], normals[i + 2]];
+			if (![x, y, z].every(Number.isFinite) || x * x + y * y + z * z === 0) throw no(`has a normal that is not a finite, non-zero vector (vertex ${i / 3})`);
+		}
+		geometry.setAttribute('normal', new Float32BufferAttribute(normals, 3));
+		geometry.normalizeNormals();
+		return geometry;
+	}
+	const creased = toCreasedNormals(geometry, (creaseAngle * Math.PI) / 180);
+	if (creased !== geometry) geometry.dispose();
+	return creased;
+}
+
 /** A shape's geometry; throws on a size that is not a positive, finite number. */
 function shapeGeometry(shape: LabShape, key: string) {
 	const ok = (...v: number[]) => {
@@ -714,6 +761,8 @@ function shapeGeometry(shape: LabShape, key: string) {
 		case 'capsule':
 			ok(shape.radius, shape.length);
 			return new CapsuleGeometry(shape.radius, shape.length, 16, 64);
+		case 'mesh':
+			return meshGeometry(shape, key);
 		default:
 			throw new Error(`applyScene: shape "${key}" has unknown kind ${JSON.stringify((shape as { kind: unknown }).kind)}`);
 	}

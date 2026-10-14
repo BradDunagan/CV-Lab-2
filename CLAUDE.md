@@ -82,8 +82,8 @@ packages/pt-lab/     @cv-lab/pt-lab: the path tracer + scene editor, TypeScript
                      README.md. The generator bundles it here; rr takes it
                      from source, and renderFrame() hands rr's analysis camera
                      linear float frames in memory; a scene object may be a
-                     shape (a primitive, plain data), which is how rr's world
-                     arrives
+                     shape (a primitive or a mesh's triangles, plain data),
+                     which is how rr's world arrives
 scripts/lab-cli.js   headless batch runner: a pipeline over many images
 scripts/generate-cli.js  drives pt-lab to render varied images (needs a GPU)
 scripts/score.js     tallies match records: precision, recall, and which
