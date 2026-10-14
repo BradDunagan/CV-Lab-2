@@ -63,6 +63,44 @@ export function fitPairs(segments: any, raster: any, options?: {}): {
     levelSlopes: any[] | null;
 }[];
 /**
+ * Every LONE segment -- one in no pair -- placed again as one step against the
+ * unblurred image, as fitPairs places a pair's two.
+ *
+ * A gap is read between two parts, and where a part has gone where no gap can
+ * be seen -- down inside a pocket, its bottom edges behind the walls -- what
+ * is left is its own outline. A lone edge read this way is as steady as a gap
+ * (design-lab-model.md §5, "A part inside a pocket"): over nine renders of the
+ * cube stack at poses 1 mm apart, every edge of the top cube with nothing near
+ * it stayed within 0.06 px of where its geometry puts it, the spread 0.010 to
+ * 0.035 px. Not a gap's other strength: a camera that moves moves a lone edge
+ * with it, where a gap's two edges move together.
+ *
+ * Same aperture as fitPairs's, measured on the same lone segments, and the
+ * same pairing, so the two agree on which segments are a pair's. Each record
+ * is the fitted line over the segment's stretch less `inset` at either end,
+ * with `sigma`, how well the pixels pin its position across.
+ */
+export function fitEdges(segments: any, raster: any, options?: {}): {
+    rms: number;
+    samples: any;
+    iterations: number;
+    converged: boolean;
+    profile?: string | undefined;
+    type: string;
+    id: number;
+    segment: any;
+    x0: any;
+    y0: any;
+    x1: any;
+    y1: any;
+    shift: any;
+    sigma: number | null;
+    levels: any[];
+    aperture: any;
+    apertureFrom: string;
+    apertureSegments: any;
+}[];
+/**
  * Find the pairs the detector reported as one segment.
  *
  * Below about a pixel and a half apart, two edges are detected as one: the

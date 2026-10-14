@@ -861,6 +861,66 @@ function fitPairs(segments, raster, options = {}) {
 }
 
 /**
+ * Every LONE segment -- one in no pair -- placed again as one step against the
+ * unblurred image, as fitPairs places a pair's two.
+ *
+ * A gap is read between two parts, and where a part has gone where no gap can
+ * be seen -- down inside a pocket, its bottom edges behind the walls -- what
+ * is left is its own outline. A lone edge read this way is as steady as a gap
+ * (design-lab-model.md §5, "A part inside a pocket"): over nine renders of the
+ * cube stack at poses 1 mm apart, every edge of the top cube with nothing near
+ * it stayed within 0.06 px of where its geometry puts it, the spread 0.010 to
+ * 0.035 px. Not a gap's other strength: a camera that moves moves a lone edge
+ * with it, where a gap's two edges move together.
+ *
+ * Same aperture as fitPairs's, measured on the same lone segments, and the
+ * same pairing, so the two agree on which segments are a pair's. Each record
+ * is the fitted line over the segment's stretch less `inset` at either end,
+ * with `sigma`, how well the pixels pin its position across.
+ */
+function fitEdges(segments, raster, options = {}) {
+  const opts = { ...DEFAULTS, minLength: 20, ...options };
+  const { segs, paired } = candidates(segments, opts);
+  if (segs.length === 0) return [];
+  const aperture = apertureOf(segs, raster, paired, opts);
+  const out = [];
+  for (const seg of segs) {
+    if (paired.has(seg.id)) continue;
+    const frame = loneFrame(seg, opts);
+    if (!frame || 2 * frame.half < opts.minLength) continue;
+    const fit = fitBand(bandSamples(raster, frame, opts), frame, {
+      aperture: aperture.width, slopedLevels: opts.levelSlope === 'fit', profile: opts.profile,
+    });
+    if (!fit || !(fit.gapSigma > 0)) continue;
+    const { c, m } = fit.edges[0];
+    const at = (t) => {
+      const hh = c + m * t;
+      return [frame.ox + frame.ux * t + frame.nx * hh, frame.oy + frame.uy * t + frame.ny * hh];
+    };
+    const [x0, y0] = at(-frame.half);
+    const [x1, y1] = at(frame.half);
+    out.push({
+      type: 'edge-line',
+      id: out.length + 1,
+      segment: seg.id,
+      x0, y0, x1, y1,
+      shift: c,
+      sigma: fit.gapSigma,
+      levels: fit.levels,
+      aperture: aperture.width,
+      apertureFrom: aperture.from,
+      apertureSegments: aperture.segments,
+      ...(opts.profile !== 'box' ? { profile: opts.profile } : {}),
+      rms: fit.rms,
+      samples: fit.samples,
+      iterations: fit.iterations,
+      converged: fit.converged,
+    });
+  }
+  return out;
+}
+
+/**
  * Whether the strip holds a ledge in soft shadow (design-lab-model.md §5, the
  * fifteenth): the same pixels fitted again with a ramp that starts at one of
  * the two edges and runs into the strip, a penumbra across a ledge that edge
@@ -1412,7 +1472,7 @@ function trackPair(raster, carried, options = {}) {
 }
 
 export {
-  fitPairs, findPairs, trackPair, hiddenIn, candidates, pairFrame, loneFrame, bandSamples, fitBand,
+  fitPairs, fitEdges, findPairs, trackPair, hiddenIn, candidates, pairFrame, loneFrame, bandSamples, fitBand,
   measureAperture, loneApertures, medianAperture,
   coverage, density, solve, DEFAULTS
 };

@@ -15,7 +15,7 @@
 
 const assert = require('node:assert/strict');
 const {
-  fitPairs, findPairs, trackPair, pairFrame, loneFrame, bandSamples, fitBand, measureAperture, loneApertures,
+  fitPairs, fitEdges, findPairs, trackPair, pairFrame, loneFrame, bandSamples, fitBand, measureAperture, loneApertures,
   coverage, density, solve, DEFAULTS,
 } = require('../packages/vision/src/pairs.js');
 
@@ -110,6 +110,29 @@ function scene(gap, { noise = 0, deg = 8, levels = LEVELS, aperture = 1 } = {}) 
 }
 
 /* ---- coverage ------------------------------------------------------- */
+
+/* ---- fitEdges: a lone edge, placed again ----------------------------- */
+
+test('fitEdges places a lone step where it was drawn, from a detection 0.4 px off', () => {
+  for (const [deg, aperture] of [[8, 1], [33, 1.3], [61, 1]]) {
+    const edge = lineAt(80, 60, deg);
+    // The second line far off the image: one step, below | above.
+    const far = lineAt(80 + edge.nx * 400, 60 + edge.ny * 400, deg);
+    const raster = strip(160, 120, edge, far, [0.6, 0.12, 0.12], 0, aperture);
+    const [rec] = fitEdges([segOn(1, edge, -40, 40, 0.4)], raster);
+    assert.equal(rec.type, 'edge-line');
+    assert.equal(rec.segment, 1);
+    near(offsetFrom(edge, rec), 0, 0.01, `${deg} deg, aperture ${aperture}: across the drawn line`);
+    assert.ok(rec.sigma > 0 && rec.sigma < 0.01, `sigma ${rec.sigma}`);
+  }
+});
+
+test('fitEdges leaves a pair to fitPairs: two segments 3 px apart are not lone', () => {
+  const { lo, hi, raster } = scene(3);
+  assert.deepEqual(fitEdges([segOn(1, lo, -40, 40), segOn(2, hi, -40, 40)], raster), []);
+  // Either one alone is lone, and placed.
+  assert.deepEqual(fitEdges([segOn(1, lo, -40, 40)], raster).map((r) => r.segment), [1]);
+});
 
 test('coverage is the area of the pixel beyond the step, at every angle', () => {
   for (const deg of [0, 3, 8, 30, 45, 60, 87, 90]) {

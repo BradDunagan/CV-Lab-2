@@ -40,7 +40,7 @@ packages/vision/     @cv-lab/vision: the library, ESM, host-free -- what rr
                      and rr-desktop consume (its README says how). cv-lab
                      require()s it; src/lab-host.js supplies the addon, the
                      file reader and the decoder
-  src/ops.js         the twenty-five operations themselves: inputs, params,
+  src/ops.js         the twenty-six operations themselves: inputs, params,
                      defaults, and the kernel each one binds to
   src/registry.js    the schema they are declared against — validation,
                      error messages, provenance records
@@ -65,8 +65,12 @@ packages/vision/     @cv-lab/vision: the library, ESM, host-free -- what rr
   src/ledge.js       where a ledge ends and how soft its shadow is
   src/pairs.js       two close edges placed again, jointly, against the
                      unblurred image -- and found, where the detector
-                     reported the two as one segment; and one tracked beside
-                     the other's line, carried from a wider frame (pure JS)
+                     reported the two as one segment; one tracked beside
+                     the other's line, carried from a wider frame; and a lone
+                     edge placed as one step, fitEdges (pure JS)
+  src/edges.js       where no gap can be seen -- a part down inside a pocket:
+                     its own lone edges, each read against an anchor fixed in
+                     the image, as rows the calibration takes beside gaps
   src/wasm.js        the C as a backend, from the module's bytes
   src/sha256.js      feature lists' and scalars' hashes, without node:crypto
   src/math.js        the package's own atan2, sin, log, hypot...: engines'
@@ -121,7 +125,7 @@ src/menu.js          the application menu — global commands live here, not in 
 src/preload.js       owns the session and every buffer handle
 src/renderer/        Svelte 5 + paneless; no require, no fs, no pixels
 dist-renderer/       what Vite builds from it — this is what Electron loads
-test/                twenty-eight suites; twenty-seven run under plain node, and
+test/                twenty-nine suites; twenty-eight run under plain node, and
                      twenty of those again on WebAssembly (test:wasm)
   conformance/       the package's case for hosts: a real frame, the
                      statements, each one's hash; rr's Playwright suite runs
@@ -136,7 +140,7 @@ build and test, because the requirement used to surface as a `styleText`
 export error from inside Vite's plugin chain.
 
 ```bash
-npm test                # everything — twenty-eight suites, most twice
+npm test                # everything — twenty-nine suites, most twice
 npm run lint:native     # strict -Wall -Wextra -pedantic on the pure-C sources
 npm start               # build the renderer, then launch the app
 npm run lab -- --help   # run a pipeline over images, headless

@@ -3845,6 +3845,49 @@ rounded parts in contact make the same groove between them, and it would
 read as a gap of about a pixel. So 1.3 stays, and that phantom gap is part
 of rounded parts' open item above.
 
+**A part inside a pocket** (2026-10-14). The fixture of port step 8 -- a
+100 mm block into a pocket of four walls 30 mm high, 2 mm of clearance a
+side -- was aligned at the hover and lowered blind: inside, the walls hide
+the block's bottom edges, and no pair is left to read. Predicted over 42
+views (yaw 0-90, elevation 10-85) and five depths: hovering 4 mm above, 35
+views see a pair of 2.2-4.8 px; 5 mm in, 16 views, at 0.2-1.6 px (looking
+steeply down past a wall's top into the clearance); 10 mm in, 7; 20 mm in,
+2, at 0.4 px; seated, none. No choice of views sees it.
+
+What is in sight inside is the block's own outline above the walls. Placed
+as one step against the unblurred image (`fitEdges`), a lone edge is as
+steady as a gap: over the stack at nine poses 1 mm apart, from two views,
+every edge of the top cube with nothing near it read within 0.06 px of its
+geometry, spread 0.010-0.035 px, 0.002-0.049 over repeat renders of one
+pose. Its three edges at the gap, another edge 1-2 px off, read +0.34,
+-0.63 and -0.09 as one step -- those are a pair's, and stay the pair fit's.
+
+A lone edge's place means something only against a reference that does not
+move, so `edgeRows` reads each against an anchor -- a point and a direction
+fixed the first time its view sees the edge -- at its middle and a sixth in
+from either end, and gives rows the calibration takes beside gaps
+(`pair` EDGE_BASE + n, `edge: true`, an identity no angle can steal). Tried
+first, more cheaply: the wide pairs inside -- the block's vertical outline
+against the walls' outer vertical edges, 18-30 px apart. The walls'
+detections stop 4-11 px short of the measuring point (gapRows' reach is
+2); allowed 12, the cell read them, but from 7 readings and blind in
+depth (49 mm a px), 0.05-0.4 mm laterally. Not pursued.
+
+rr's cell with `edges: true`, calibrated inside the pocket (two views, steps
+of 1.5 mm and 0.5 degrees), located two test poses:
+
+  depth      readings  calibration median/worst   errors x / y / z mm, turn
+  15 mm in      18        0.034 / 0.065 px        -0.04 / 0.02 / -0.03, 0.04
+                                                   0.07 / -0.02 / 0.04, -0.02
+  28 mm in      15        0.028 / 0.047 px        -0.05 / 0.13 / -0.08, -0.03
+  (30 seated)                                       0.10 / -0.15 / 0.09, 0.00
+
+-- against 2 mm of clearance; at the hover, gaps gave 0.07 mm. Depth
+included, which the wide pairs could not see. What a gap gives and an edge
+does not: a camera that moves moves an edge with it, where a gap's two
+edges move together. In simulation the camera never moves; a real cell
+needs a rigid mount, or a fixture edge in sight to read against.
+
 ---
 
 ## 9. Decide now vs. defer
