@@ -13,7 +13,7 @@ import { findCorners } from './corners.js';
 import { readGroundTruth } from './groundtruth.js';
 import { matchFeatures } from './match.js';
 import { explainFeatures } from './explain.js';
-import { fitPairs, findPairs, trackPair } from './pairs.js';
+import { fitPairs, fitEdges, findPairs, trackPair } from './pairs.js';
 import { len2 } from './math.js';
 
 /**
@@ -747,6 +747,41 @@ function buildOps({ backend: given, decodeFile, readTextFile, readFrame } = {}) 
       ],
       output: { kind: 'features' },
       kernel: ({ inputs, params }) => pairKernel(backend, 'fitPairs', fitPairs, inputs, params),
+    }),
+
+    defineOp({
+      name: 'fitEdges',
+      version: 1,
+      summary: 'Place every lone segment again as one step against the unblurred image.',
+      /*
+       * fitPairs's single-edge sibling, for where a gap cannot be seen: a part
+       * inside a pocket shows its own outline and nothing to measure it
+       * against. Each segment fitPairs would not pair is fitted as one step
+       * through the aperture fitPairs measures, on the same image, under the
+       * same pairing, so the two agree on which segments are a pair's. A lone
+       * edge read so is as steady as a gap; unlike a gap it moves with the
+       * camera (pairs.js, design-lab-model.md §5).
+       */
+      inputs: [
+        { name: 'src', kind: 'features' },
+        { name: 'image', channels: [1], space: 'linear' },
+      ],
+      params: [
+        // fitPairs's pairing, so a segment it would pair is left to it.
+        { name: 'maxGap', type: 'number', default: 6, min: 0 },
+        { name: 'maxAngle', type: 'number', default: 5, min: 0, max: 45 },
+        { name: 'minOverlap', type: 'number', default: 10, min: 1 },
+        { name: 'pad', type: 'number', default: 4, min: 1, max: 32 },
+        { name: 'inset', type: 'number', default: 2, min: 0 },
+        // A segment shorter than this, less inset, says too little about where its line is.
+        { name: 'minLength', type: 'number', default: 20, min: 4 },
+        { name: 'aperture', type: 'enum', values: ['fit', 'held'], default: 'fit' },
+        { name: 'apertureWidth', type: 'number', default: 1, min: 0.25, max: 8 },
+        { name: 'profile', type: 'enum', values: ['box', 'smooth'], default: 'box' },
+        { name: 'levelSlope', type: 'enum', values: ['fit', 'none'], default: 'fit' },
+      ],
+      output: { kind: 'features' },
+      kernel: ({ inputs, params }) => pairKernel(backend, 'fitEdges', fitEdges, inputs, params),
     }),
 
     defineOp({

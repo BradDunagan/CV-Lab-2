@@ -16,4 +16,5 @@ export { calibrateReadings, solvePose, estimatePose, frameReadings, pairAngles, 
 export { solvePosition, solveLifted } from "./position.js";
 export { calibrateCell, solveCell, sweepFrames, sweepStep, posesFrom, numberByView, poolCandidates, carriable, fittedEdges, carriedPick, refitPick, pickSigma, medianGapSigma } from "./cell.js";
 export { ledgeTable, flushLines, movingBelow } from "./ledge.js";
+export { edgeRows, EDGE_BASE } from "./edges.js";
 export { predictEdges, poseMatrix } from "./predict.js";

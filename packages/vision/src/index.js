@@ -54,6 +54,9 @@ export { carryPlan } from './carry.js';
 export { ledgeTable, flushLines, movingBelow } from './ledge.js';
 // A frame's gap readings, from its features (gap-sweep's rows).
 export { gapRows } from './gapsweep.js';
+// Where no gap can be seen: the moving part's own lone edges, each against an
+// anchor fixed in the image, as rows the calibration takes beside gaps.
+export { edgeRows, EDGE_BASE } from './edges.js';
 // Which edge is which part: the edges a scene shows from a believed pose,
 // predicted from its triangles, as the document groundTruth reads.
 export { predictEdges, poseMatrix } from './predict.js';

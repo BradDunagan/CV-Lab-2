@@ -300,7 +300,8 @@ const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length 
 export function pairAngles(rows) {
   const angles = new Map();
   for (const r of rows) {
-    if (r.pair == null || r.pairAngle == null) continue;
+    // An edge's row is its anchor's (edges.js), not found again by angle.
+    if (r.pair == null || r.pairAngle == null || r.edge) continue;
     const k = `${viewOf(r)} / pair ${r.pair}`;
     if (!angles.has(k)) angles.set(k, []);
     angles.get(k).push(r.pairAngle);
@@ -331,7 +332,7 @@ export function frameReadings(rows, angles) {
   const out = new Map();
   for (const r of rows) {
     if (r.pairAngle == null) continue;
-    const pair = pairOf(r, angles);
+    const pair = r.edge ? r.pair : pairOf(r, angles);
     if (pair === null) continue;
     const pick = (truth, tracked, refit, detected, sigmaT, sigmaR) => (tracked != null ? [tracked, sigmaT]
       : refit != null ? [refit, sigmaR] : [detected, null]);

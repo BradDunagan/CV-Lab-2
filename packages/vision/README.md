@@ -130,6 +130,25 @@ where the image's edge falls inside the band is shading's, and can be a
 pixel or more from the middle, so read such a gap through a calibration.
 Off by default, so the edges are exactly a renderer's extraction's.
 
+## Where no gap can be seen
+
+A gap is read between two parts. Down inside a pocket the walls hide every
+pair, and what is left in sight is the moving part's own outline. `fitEdges`
+places each lone segment as one step against the unblurred image (as steady
+as a gap: within 0.06 px, spread 0.01-0.035, on the stack), and `edgeRows`
+reads the moving part's lone edges, each against an anchor fixed the first
+time its view sees it, as rows `calibrateCell` and `solveCell` take beside
+gaps:
+
+```js
+// statements: ... 'E = fitEdges(F, G)'
+const { rows, anchors } = edgeRows({ truth, matches, edges }, 'block', anchorsSoFar);
+```
+
+Keep each view's anchors for the cell's life: a reading is the edge's
+distance from its anchor, so the anchor must not move. Nor must the camera:
+unlike a gap's two edges, a lone edge moves with it.
+
 ## Reproducibility
 
 Every result has a content hash, and a session's log replays to the same
