@@ -3674,8 +3674,16 @@ pt-lab's animation loop draws samples beside an export's own until
 `setMaxSamples` pauses it, and with no cap -- rr's first try -- a frame came
 out ~1% brighter and its pair fit read 1.02-1.22 px against cv-lab's
 1.27-1.35; under the generator's 96 it reads 1.27-1.29. Why extra samples
-from the loop should bias rather than only add is not understood. **The
-browser**: carried gaps read ~0.02-0.03 px narrower in Chrome than in
+from the loop should bias rather than only add is not understood.
+*Not reproduced* (2026-10-14): twelve renders of the shot with the cap and
+twelve without read the same -- the pair fit 1.261 and 1.274 px mean, sd
+0.091 and 0.083, ranges 1.015-1.378 and 1.099-1.377; brightness 1.001 both;
+K1 and K2 within 0.003. The few renders behind the claim were the pair
+fit's noise, which has a low tail to 0.33 px under cv-lab's, read as a
+cause: nothing biased, which is why nothing explained it. The cap is kept,
+to match the generator. rr's test held the pair fit to 0.2 px on the
+strength of the claim and failed 2 renders in 17; it holds 0.4 now (rr
+#27). **The browser**: carried gaps read ~0.02-0.03 px narrower in Chrome than in
 Electron (K2 1.136-1.161 over seven Chrome renders, rr's page and cv-lab's
 generator page alike; 1.166-1.177 over three Electron ones). Few renders,
 so a finding to watch rather than a number to correct for; a calibration
