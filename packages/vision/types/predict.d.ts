@@ -28,10 +28,19 @@ export function poseMatrix(t: {
  *   any of eight directions -- counts as visible. For identifying edges from a
  *   belief, which is itself a fraction of a pixel off: an edge the belief
  *   tucks just behind a silhouette may be in plain view
+ * @param {boolean} [o.join=false]  one edge for each straight feature line, not
+ *   one for each triangle edge along it: a CAD export splits a box's edge into
+ *   collinear pieces, and a rounded edge's silhouette runs the length of its
+ *   fillet in pieces too. Two kept edges are joined where they are the only two
+ *   of one cause and one set of objects at a vertex and leave it in exactly
+ *   opposite directions (`JOIN_COS`); a curve's chords, which bend, are not.
+ *   And a fillet -- a fold spread over facets each softer than `creaseAngle` --
+ *   is one crease where it projects no wider than ROUNDED_PX
+ *   (`roundedCreases`): the edge a rounded box shows between two faces
  * @returns {{size: number, camera: object, creaseAngle: number, edges: object[], vertices: object[], skipped: string[], predicted: object}}
  *   the document `parseGroundTruth` reads, in pt-lab's pixel convention
  */
-export function predictEdges({ objects, camera: cam, size, creaseAngle, margin }: {
+export function predictEdges({ objects, camera: cam, size, creaseAngle, margin, join }: {
     objects: {
         name: string;
         triangles: ArrayLike<number>;
@@ -48,6 +57,7 @@ export function predictEdges({ objects, camera: cam, size, creaseAngle, margin }
     size: number;
     creaseAngle?: number | undefined;
     margin?: number | undefined;
+    join?: boolean | undefined;
 }): {
     size: number;
     camera: object;

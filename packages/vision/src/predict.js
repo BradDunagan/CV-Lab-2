@@ -185,6 +185,160 @@ function hides(tri, p) {
 }
 
 /**
+ * How nearly opposite two edges must leave a shared vertex to be one straight
+ * line: 1 - cos, 1e-9, is about 0.003 degrees. A box's edge split into
+ * pieces is straight to its coordinates' rounding (float32: ~1e-6 radians);
+ * a curve's chords bend by whole degrees.
+ */
+const JOIN_COS = 1 - 1e-9;
+
+/**
+ * Kept edges joined into straight feature lines: each chain of edges of one
+ * cause and one set of objects, continuing one another through vertices where
+ * they are the only two such, in opposite directions. In the input's order, so
+ * the document is the same every time; a joined line's dihedral is its pieces'
+ * largest.
+ */
+function joinCollinear(lines) {
+  const group = (l) => `${l.cause}|${[...l.objects].sort().join('|')}`;
+  const at = new Map();
+  lines.forEach((l, i) => {
+    for (const p of [l.a, l.b]) {
+      const k = `${key(p)}#${group(l)}`;
+      let list = at.get(k);
+      if (!list) at.set(k, (list = []));
+      list.push(i);
+    }
+  });
+  const far = (l, p) => (key(l.a) === key(p) ? l.b : l.a);
+  /** The line going on straight from line i through its end p, or -1. */
+  const onward = (i, p) => {
+    const list = at.get(`${key(p)}#${group(lines[i])}`);
+    if (!list || list.length !== 2) return -1;
+    const j = list[0] === i ? list[1] : list[0];
+    if (j === i) return -1;
+    const u = norm(sub(far(lines[i], p), p)), v = norm(sub(far(lines[j], p), p));
+    return dot(u, v) <= -JOIN_COS ? j : -1;
+  };
+  const used = new Uint8Array(lines.length);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (used[i]) continue;
+    used[i] = 1;
+    let dihedral = lines[i].dihedral;
+    const faces = lines[i].faces ? [...lines[i].faces] : undefined;
+    const walk = (start) => {
+      let p = start, cur = i;
+      for (;;) {
+        const j = onward(cur, p);
+        if (j < 0 || used[j]) return p;
+        used[j] = 1;
+        if (lines[j].dihedral > dihedral) dihedral = lines[j].dihedral;
+        if (faces) faces.push(...lines[j].faces);
+        p = far(lines[j], p);
+        cur = j;
+      }
+    };
+    const a = walk(lines[i].a), b = walk(lines[i].b);
+    out.push({ ...lines[i], a, b, dihedral, ...(faces ? { faces } : {}) });
+  }
+  return out;
+}
+
+/** Below this, in degrees, two faces are one plane: a quad's diagonal, not a fold. */
+const SOFT_MIN = 0.01;
+/**
+ * How wide, in pixels, a band of soft folds may project and still be one edge.
+ * A shading ramp this wide, blurred at the detector's sigma (1.4), still has
+ * one gradient peak, at its middle; past about 4 sigma it is a plateau, the
+ * turn read as shading, not as a step. 3 px was tried first: a 2 mm fillet on
+ * the stack fixture's base cube projects 3.1-3.6 px on its near side.
+ */
+const ROUNDED_PX = 6;
+/** Neighbouring lines of one band are this close in the image: a fillet's facets are a fraction of a pixel. */
+const BAND_LINK_PX = 1;
+
+/**
+ * Rounded creases: a fillet, whose fold is spread over facets each softer
+ * than `creaseAngle`, read as the one crease it shows in the image.
+ *
+ * `soft` are the soft folds, joined into straight lines with their faces;
+ * `hard` the kept edges, joined. A band is soft lines of one object, parallel
+ * and overlapping in space, each within BAND_LINK_PX of the next in the image.
+ * It is a crease when its folds together exceed `creaseAngle`, it projects no
+ * wider than ROUNDED_PX, and no silhouette of the object runs along it within
+ * that width -- near an outline, as a cylinder's facets crowd toward its limb,
+ * the outline is the edge. The crease is the band's middle line, which lies on
+ * the surface; its dihedral is the band's whole turn, and `rounded` its width
+ * in pixels.
+ */
+function roundedCreases(soft, hard, camera, creaseAngle) {
+  /** A line in the image, or null if an end is behind the near plane. */
+  const project = (l) => {
+    const ca = camera.toCamera(l.a), cb = camera.toCamera(l.b);
+    if (-ca[2] < camera.near || -cb[2] < camera.near) return null;
+    const ia = camera.toImage(ca), ib = camera.toImage(cb);
+    const dx = ib.x - ia.x, dy = ib.y - ia.y, len = len2(dx, dy);
+    if (len < 1e-9) return null;
+    return { ia, ib, mid: [(ia.x + ib.x) / 2, (ia.y + ib.y) / 2], n: [-dy / len, dx / len] };
+  };
+  const objectsOf = (l) => [...l.objects].sort().join('|');
+  const along = (l) => norm(sub(l.b, l.a));
+  const parallel = (l, m) => {
+    const d = dot(along(l), along(m));
+    return d >= JOIN_COS || d <= -JOIN_COS;
+  };
+  /** How much of the shorter of two parallel lines the other spans, along their direction. */
+  const overlap = (l, m) => {
+    const u = along(l);
+    const s = (p) => dot(sub(p, l.a), u);
+    const [m0, m1] = [s(m.a), s(m.b)].sort((x, y) => x - y);
+    const lenL = s(l.b);
+    const shared = Math.min(lenL, m1) - Math.max(0, m0);
+    return shared / Math.min(lenL, m1 - m0);
+  };
+  const lines = soft.map((l) => ({ l, at: project(l), objects: objectsOf(l) }));
+  const outlines = hard.filter((l) => l.cause === 'silhouette').map((l) => ({ l, at: project(l), objects: objectsOf(l) }));
+  const used = new Uint8Array(lines.length);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (used[i] || !lines[i].at) continue;
+    const ref = lines[i];
+    // Offsets across the reference line in the image, of every soft line that could share its band.
+    const offset = (p) => (p[0] - ref.at.mid[0]) * ref.at.n[0] + (p[1] - ref.at.mid[1]) * ref.at.n[1];
+    const near = [];
+    for (let j = 0; j < lines.length; j++) {
+      const c = lines[j];
+      if (used[j] || !c.at || c.objects !== ref.objects || !parallel(ref.l, c.l) || overlap(ref.l, c.l) < 0.5) continue;
+      const o = offset(c.at.mid);
+      if (Math.abs(o) <= 2 * ROUNDED_PX) near.push({ j, o });
+    }
+    near.sort((x, y) => x.o - y.o || x.j - y.j);
+    // The run of lines, each within BAND_LINK_PX of the next, that holds the reference.
+    const k = near.findIndex((c) => c.j === i);
+    let lo = k, hi = k;
+    while (lo > 0 && near[lo].o - near[lo - 1].o <= BAND_LINK_PX) lo--;
+    while (hi < near.length - 1 && near[hi + 1].o - near[hi].o <= BAND_LINK_PX) hi++;
+    const band = near.slice(lo, hi + 1);
+    for (const c of band) used[c.j] = 1;
+    const width = band[band.length - 1].o - band[0].o;
+    let turn = 0;
+    for (const c of band) turn += lines[c.j].l.dihedral;
+    if (turn <= creaseAngle || width > ROUNDED_PX) continue;
+    // An outline along the band is the edge there.
+    const beside = outlines.some((s) => s.at && s.objects === ref.objects && parallel(ref.l, s.l) && overlap(ref.l, s.l) >= 0.5 &&
+      offset(s.at.mid) >= band[0].o - ROUNDED_PX && offset(s.at.mid) <= band[band.length - 1].o + ROUNDED_PX);
+    if (beside) continue;
+    const middle = (band[0].o + band[band.length - 1].o) / 2;
+    let best = band[0];
+    for (const c of band) if (Math.abs(c.o - middle) < Math.abs(best.o - middle)) best = c;
+    const { a, b, objects } = lines[best.j].l;
+    out.push({ a, b, cause: 'crease', dihedral: turn, objects, rounded: width });
+  }
+  return out;
+}
+
+/**
  * Predict the edges a scene shows from a camera.
  *
  * @param {object} o
@@ -201,10 +355,19 @@ function hides(tri, p) {
  *   any of eight directions -- counts as visible. For identifying edges from a
  *   belief, which is itself a fraction of a pixel off: an edge the belief
  *   tucks just behind a silhouette may be in plain view
+ * @param {boolean} [o.join=false]  one edge for each straight feature line, not
+ *   one for each triangle edge along it: a CAD export splits a box's edge into
+ *   collinear pieces, and a rounded edge's silhouette runs the length of its
+ *   fillet in pieces too. Two kept edges are joined where they are the only two
+ *   of one cause and one set of objects at a vertex and leave it in exactly
+ *   opposite directions (`JOIN_COS`); a curve's chords, which bend, are not.
+ *   And a fillet -- a fold spread over facets each softer than `creaseAngle` --
+ *   is one crease where it projects no wider than ROUNDED_PX
+ *   (`roundedCreases`): the edge a rounded box shows between two faces
  * @returns {{size: number, camera: object, creaseAngle: number, edges: object[], vertices: object[], skipped: string[], predicted: object}}
  *   the document `parseGroundTruth` reads, in pt-lab's pixel convention
  */
-export function predictEdges({ objects, camera: cam, size, creaseAngle = 20, margin = 0 }) {
+export function predictEdges({ objects, camera: cam, size, creaseAngle = 20, margin = 0, join = false }) {
   if (!Number.isInteger(size) || size < 1) throw new Error(`predictEdges: size must be a positive integer, not ${size}`);
   if (!(cam?.fov > 0 && cam.fov < 180)) throw new Error('predictEdges: the camera needs a vertical fov in degrees');
   if (!(margin >= 0 && margin <= 16)) throw new Error(`predictEdges: margin must be 0 to 16 pixels, not ${margin}`);
@@ -214,6 +377,7 @@ export function predictEdges({ objects, camera: cam, size, creaseAngle = 20, mar
 
   const edgeMap = new Map();
   const world = [];
+  let faceId = 0;
   for (const object of objects) {
     const m = object.matrix ? fromColumnMajor(object.matrix) : object.pose ? poseMatrix(object.pose) : null;
     const tri = object.triangles;
@@ -224,14 +388,15 @@ export function predictEdges({ objects, camera: cam, size, creaseAngle = 20, mar
       const n = cross(sub(p[1], p[0]), sub(p[2], p[0]));
       if (dot(n, n) < 1e-24) continue;   // degenerate: no normal, no edges worth reporting
       const normal = norm(n);
+      const id = ++faceId;
       const centroid = [(p[0][0] + p[1][0] + p[2][0]) / 3, (p[0][1] + p[1][1] + p[2][1]) / 3, (p[0][2] + p[1][2] + p[2][2]) / 3];
       for (let k = 0; k < 3; k++) {
         const a = p[k], b = p[(k + 1) % 3];
         const ka = key(a), kb = key(b);
-        const id = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
-        let edge = edgeMap.get(id);
-        if (!edge) edgeMap.set(id, (edge = { a, b, faces: [], objects: new Set() }));
-        edge.faces.push({ normal, centroid });
+        const edgeKey = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+        let edge = edgeMap.get(edgeKey);
+        if (!edge) edgeMap.set(edgeKey, (edge = { a, b, faces: [], objects: new Set() }));
+        edge.faces.push({ normal, centroid, id });
         edge.objects.add(object.name);
       }
     }
@@ -258,8 +423,8 @@ export function predictEdges({ objects, camera: cam, size, creaseAngle = 20, mar
 
   /* ---- 2. the silhouettes, creases and boundaries ---- */
 
-  const kept = [];
-  const edges = [];
+  const lines = [];
+  const soft = [];
   for (const raw of edgeMap.values()) {
     let cause, dihedral;
     if (raw.faces.length < 2) {
@@ -271,10 +436,27 @@ export function predictEdges({ objects, camera: cam, size, creaseAngle = 20, mar
       const front0 = dot(f0.normal, sub(f0.centroid, camera.eye)) < 0;
       const front1 = dot(f1.normal, sub(f1.centroid, camera.eye)) < 0;
       const silhouette = front0 !== front1;
-      if (!silhouette && dihedral <= creaseAngle) continue;
+      if (!silhouette && dihedral <= creaseAngle) {
+        // A fold too soft to be an edge alone may be one of a fillet's: kept to be read as a band.
+        if (join && raw.faces.length === 2 && dihedral > SOFT_MIN) {
+          soft.push({ a: raw.a, b: raw.b, cause: 'soft', dihedral, objects: raw.objects, faces: raw.faces });
+        }
+        continue;
+      }
       cause = silhouette ? 'silhouette' : 'crease';
     }
+    lines.push({ a: raw.a, b: raw.b, cause, dihedral, objects: raw.objects });
+  }
+  let features = lines;
+  if (join) {
+    const hard = joinCollinear(lines);
+    features = [...hard, ...roundedCreases(joinCollinear(soft), hard, camera, creaseAngle)];
+  }
 
+  const kept = [];
+  const edges = [];
+  for (const raw of features) {
+    const { cause, dihedral } = raw;
     let ca = camera.toCamera(raw.a), cb = camera.toCamera(raw.b);
     let za = -ca[2], zb = -cb[2];
     const near = camera.near;
@@ -320,6 +502,7 @@ export function predictEdges({ objects, camera: cam, size, creaseAngle = 20, mar
       id: edges.length + 1, cause, objects: [...raw.objects].sort(),
       x0, y0, x1, y1, z0: zAt(t0), z1: zAt(t1), length, angle, dihedral,
       visible: seen / samples, clipped, v0: 0, v1: 0,
+      ...(raw.rounded !== undefined ? { rounded: raw.rounded } : {}),
     };
     edges.push(edge);
     kept.push({ edge, a: raw.a, b: raw.b });
