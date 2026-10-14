@@ -3783,6 +3783,41 @@ cubes as meshes, in three forms, through the stack test's three shots:
 `join` is off by default, so the edges stay a renderer's extraction's
 exactly; rr's `measure` and cell turn it on.
 
+**Rounded parts, located: open** (2026-10-14). What was tried after `join`,
+on the rounded stack, in rr's small cell (two views, two steps of 2 mm a
+sweep), and what it showed:
+
+- *Where a fillet's edge is.* Across a fillet the image is not one shape.
+  The raw brightness, outside the band to inside: a step (0.31 to 0.07)
+  where one face is much the brighter, and otherwise a line the band's
+  width, bright (0.33, 0.47, 0.34) or dark (0.21, 0.06, 0.33) -- the fillet
+  turns through every angle between its faces, so some of it faces the
+  light better than either face, or worse.
+- *Carrying.* No rounded frame was a carry source: the pair fit read the
+  fillet's band as a ledge, gain 1.42-1.79 against plain cubes' 1.01-1.10,
+  and `ledgeMax` is 1.2. Every reading stood alone; the test pose came out
+  1.1 mm off in y with the solve's own sigma 0.87 mm. With ledgeMax 2.0 the
+  frames carried (16 sources) and the solve became confident and wrong:
+  0.15-0.36 mm and 0.19 degrees off, under sigmas of about 0.01.
+- *Fitting the fillet's shape* in fitPairs, with the band's width from the
+  prediction, three ways: a held-width ramp (worse, up to -1.49 px), a strip
+  of the band's width with its own level (worse, +-2.6 px: where the
+  fillet's band is as dark as the gap beside it, the two strips trade
+  places), and the step as before. None is right in general; reverted.
+- *Which reading.* Carried, every reading fitted its calibration within
+  0.004-0.075 px but one pair -- yaw 60, elevation 50, pair 1, 0.44-0.46 at
+  all three places along it -- whose gap at the reference is narrower than
+  the base's fillet band (~3.5 px): there the gap and the fillet are one
+  dark region. Leaving that pair out, the other nine calibrated within 0.06
+  px and the pose came out up to 1.2 mm off under a sigma of 0.03: what is
+  left does not pin every direction in a cell this small.
+
+So: rounded parts are found and paired; a single reading is biased by where
+shading puts the fillet's edge; a pair whose fillet is wider than its gap
+cannot be read; and the two-view cell is too weak to say what more views
+would do. The next experiment is cv-lab's own protocol on rounded cubes --
+four views, five steps a sweep, the ten test poses -- not run.
+
 ---
 
 ## 9. Decide now vs. defer
