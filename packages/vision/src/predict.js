@@ -288,14 +288,19 @@ function roundedCreases(soft, hard, camera, creaseAngle) {
     const d = dot(along(l), along(m));
     return d >= JOIN_COS || d <= -JOIN_COS;
   };
-  /** How much of the shorter of two parallel lines the other spans, along their direction. */
+  /**
+   * How much of the shorter of two lines the other spans IN THE IMAGE, along
+   * the first. Not in space: two parallel fillets on opposite sides of a part
+   * can project onto one line in the picture, far apart along it, and taken as
+   * one band they hid both creases.
+   */
   const overlap = (l, m) => {
-    const u = along(l);
-    const s = (p) => dot(sub(p, l.a), u);
-    const [m0, m1] = [s(m.a), s(m.b)].sort((x, y) => x - y);
-    const lenL = s(l.b);
-    const shared = Math.min(lenL, m1) - Math.max(0, m0);
-    return shared / Math.min(lenL, m1 - m0);
+    const ux = l.ib.x - l.ia.x, uy = l.ib.y - l.ia.y, len = len2(ux, uy);
+    const s = (p) => ((p.x - l.ia.x) * ux + (p.y - l.ia.y) * uy) / len;
+    const [m0, m1] = [s(m.ia), s(m.ib)].sort((x, y) => x - y);
+    const shared = Math.min(len, m1) - Math.max(0, m0);
+    const shorter = Math.min(len, m1 - m0);
+    return shorter > 0 ? shared / shorter : 0;
   };
   const lines = soft.map((l) => ({ l, at: project(l), objects: objectsOf(l) }));
   const outlines = hard.filter((l) => l.cause === 'silhouette').map((l) => ({ l, at: project(l), objects: objectsOf(l) }));
@@ -309,7 +314,7 @@ function roundedCreases(soft, hard, camera, creaseAngle) {
     const near = [];
     for (let j = 0; j < lines.length; j++) {
       const c = lines[j];
-      if (used[j] || !c.at || c.objects !== ref.objects || !parallel(ref.l, c.l) || overlap(ref.l, c.l) < 0.5) continue;
+      if (used[j] || !c.at || c.objects !== ref.objects || !parallel(ref.l, c.l) || overlap(ref.at, c.at) < 0.5) continue;
       const o = offset(c.at.mid);
       if (Math.abs(o) <= 2 * ROUNDED_PX) near.push({ j, o });
     }
@@ -326,7 +331,7 @@ function roundedCreases(soft, hard, camera, creaseAngle) {
     for (const c of band) turn += lines[c.j].l.dihedral;
     if (turn <= creaseAngle || width > ROUNDED_PX) continue;
     // An outline along the band is the edge there.
-    const beside = outlines.some((s) => s.at && s.objects === ref.objects && parallel(ref.l, s.l) && overlap(ref.l, s.l) >= 0.5 &&
+    const beside = outlines.some((s) => s.at && s.objects === ref.objects && parallel(ref.l, s.l) && overlap(ref.at, s.at) >= 0.5 &&
       offset(s.at.mid) >= band[0].o - ROUNDED_PX && offset(s.at.mid) <= band[band.length - 1].o + ROUNDED_PX);
     if (beside) continue;
     const middle = (band[0].o + band[band.length - 1].o) / 2;
@@ -364,13 +369,23 @@ function roundedCreases(soft, hard, camera, creaseAngle) {
  *   And a fillet -- a fold spread over facets each softer than `creaseAngle` --
  *   is one crease where it projects no wider than ROUNDED_PX
  *   (`roundedCreases`): the edge a rounded box shows between two faces
+ * @param {string[]} [o.only]  the objects whose edges are wanted; every object
+ *   still hides what is behind it. A robot arm's CAD meshes, 120,000
+ *   triangles, gave 49,000 edges no gap reading uses, and took a minute a
+ *   view; named, only the parts measured are worked out. An edge a named
+ *   object shares with an unnamed one is classified from the named one's
+ *   faces alone
  * @returns {{size: number, camera: object, creaseAngle: number, edges: object[], vertices: object[], skipped: string[], predicted: object}}
  *   the document `parseGroundTruth` reads, in pt-lab's pixel convention
  */
-export function predictEdges({ objects, camera: cam, size, creaseAngle = 20, margin = 0, join = false }) {
+export function predictEdges({ objects, camera: cam, size, creaseAngle = 20, margin = 0, join = false, only }) {
   if (!Number.isInteger(size) || size < 1) throw new Error(`predictEdges: size must be a positive integer, not ${size}`);
   if (!(cam?.fov > 0 && cam.fov < 180)) throw new Error('predictEdges: the camera needs a vertical fov in degrees');
   if (!(margin >= 0 && margin <= 16)) throw new Error(`predictEdges: margin must be 0 to 16 pixels, not ${margin}`);
+  if (only !== undefined && !(Array.isArray(only) && only.every((n) => typeof n === 'string'))) {
+    throw new Error('predictEdges: only is a list of object names');
+  }
+  const wanted = only ? new Set(only) : null;
   const camera = makeCamera(cam, size);
 
   /* ---- 1. every edge of every object, in world space ---- */
@@ -387,6 +402,8 @@ export function predictEdges({ objects, camera: cam, size, creaseAngle = 20, mar
       world.push(p);
       const n = cross(sub(p[1], p[0]), sub(p[2], p[0]));
       if (dot(n, n) < 1e-24) continue;   // degenerate: no normal, no edges worth reporting
+      // An object not wanted still hides what is behind it, above; it has no edges of its own.
+      if (wanted && !wanted.has(object.name)) continue;
       const normal = norm(n);
       const id = ++faceId;
       const centroid = [(p[0][0] + p[1][0] + p[2][0]) / 3, (p[0][1] + p[1][1] + p[2][1]) / 3, (p[0][2] + p[1][2] + p[2][2]) / 3];

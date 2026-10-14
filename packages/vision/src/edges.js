@@ -28,11 +28,13 @@
  *
  * Only an edge with nothing beside it: an edge with another within `clear`
  * px is one of a pair, and a lone step fitted across two edges is pulled
- * between them (+0.34 and -0.63 px at the stack's gap). Pure JavaScript, no
- * pixels.
+ * between them (+0.34 and -0.63 px at the stack's gap). Beside it in the
+ * truth, or among the detections: a truth predicted for the measured parts
+ * alone (predictEdges `only`) has no robot finger in it, and the detector
+ * sees one. Pure JavaScript, no pixels.
  */
 
-import { len2 } from './math.js';
+import { len2, atan2, PI } from './math.js';
 
 /** Edge rows' numbers start here, clear of any gap pair's. */
 export const EDGE_BASE = 100;
@@ -67,9 +69,12 @@ function crossing(anchor, l, s) {
   return ((l.x - px) * l.uy - (l.y - py) * l.ux) / den;
 }
 
-/** Whether another visible truth edge runs beside `t`, parallel, within `clear` px, along its length. */
-function crowded(t, line, truth, opts) {
-  for (const u of truth) {
+/** The angle of a segment as a line, in [0, 180). */
+const angleOf = (e) => { const a = (atan2(e.y1 - e.y0, e.x1 - e.x0) * 180) / PI; return ((a % 180) + 180) % 180; };
+
+/** Whether another edge -- a visible truth edge, or a detection not of `t` -- runs beside `t`, parallel, within `clear` px, along its length. */
+function crowded(t, line, others, opts) {
+  for (const u of others) {
     if (u === t || !(u.visible >= 0.5) || apart(u.angle, t.angle) > opts.maxAngle) continue;
     const a = (u.x0 - line.x) * line.ux + (u.y0 - line.y) * line.uy;
     const b = (u.x1 - line.x) * line.ux + (u.y1 - line.y) * line.uy;
@@ -88,6 +93,8 @@ function crowded(t, line, truth, opts) {
  * @param {object[]} input.truth `groundTruth` records (gt-edge)
  * @param {object[]} input.matches `match` records of the frame's segments against that truth
  * @param {object[]} input.edges `fitEdges` records
+ * @param {object[]} [input.segments] the frame's detected segments (`fit`): one
+ *   beside an edge, not matched to it, makes it crowded as a truth edge does
  * @param {string | string[]} moving the moving part's name in the truth
  * @param {{x: number, y: number, ux: number, uy: number, nx: number, ny: number, half: number, angle: number}[]} anchors
  *   this view's anchors so far, in the order they were made; not changed
@@ -107,6 +114,11 @@ export function edgeRows(input, moving, anchors = [], options = {}) {
   for (const t of ours) {
     const tl = lineOf(t);
     if (!tl || crowded(t, tl, truth, opts)) continue;
+    // The detections matched to t are its own; any other beside it crowds it.
+    const own = new Set(input.matches.filter((m) => m.role === 'hit' && m.truth === t.id).map((m) => m.detected));
+    const detections = (input.segments ?? []).filter((d) => d.type === 'edge-segment' && !own.has(d.id))
+      .map((d) => ({ ...d, visible: 1, angle: angleOf(d) }));
+    if (crowded(t, tl, detections, opts)) continue;
     // The longest fitted edge among the segments matched to it.
     let fitted = null;
     for (const m of input.matches) {

@@ -80,6 +80,14 @@ const hit = (detected, truth) => ({ type: 'edge-match', role: 'hit', detected, t
     assert.equal(edgeRows({ ...input(110), truth: [{ ...top, visible: 0.5 }] }, 'top').rows.length, 0);
   });
 
+  await test('a detection beside an edge crowds it too: a finger the truth was not asked for', () => {
+    const input = (segments) => ({ truth: [gt(1, 'top', 100, 100, 200, 100)], matches: [hit(5, 1)], edges: [fitted(5, 100, 100, 200, 100)], segments });
+    const seg = (id, y) => ({ type: 'edge-segment', id, x0: 105, y0: y, x1: 195, y1: y });
+    assert.equal(edgeRows(input([seg(5, 100.1), seg(8, 102.5)]), 'top').rows.length, 0, 'a detection 2.5 px away, of nothing predicted');
+    assert.equal(edgeRows(input([seg(5, 100.1), seg(8, 110)]), 'top').rows.length, 1, 'one 10 px away');
+    assert.equal(edgeRows(input([seg(5, 100.1)]), 'top').rows.length, 1, 'its own detection does not crowd it');
+  });
+
   await test('through frameReadings an edge keeps its own key, beside a gap pair at the same angle', () => {
     const view = { yaw: 35, elevation: 20 };
     const gap = { ...view, pair: 1, pairAngle: 0, refit: { gapPx: 3, endsPx: [3, 3], gapSigma: 0.02 } };

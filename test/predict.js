@@ -256,6 +256,23 @@ test('join: a smooth cylinder has no rounded crease, though its facets crowd tow
   assert.equal(doc.edges.filter((e) => e.rounded !== undefined).length, 0);
 });
 
+test('only: the named part\'s edges exactly as without it, and what is unnamed still hides it', () => {
+  // A box behind another: the front one hides part of the back one, and is not wanted.
+  const objects = [
+    { name: 'front', triangles: box([-0.3, -0.3, 0.6], [0.3, 0.3, 1.2]) },
+    { name: 'back', triangles: box([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]) },
+  ];
+  for (const join of [false, true]) {
+    const all = predictEdges({ objects, camera: general, size: 256, join });
+    const back = all.edges.filter((e) => e.objects.join() === 'back');
+    assert.ok(back.some((e) => e.visible > 0 && e.visible < 1), 'the front box hides some of the back box');
+    const named = predictEdges({ objects, camera: general, size: 256, join, only: ['back'] });
+    assert.ok(named.edges.every((e) => e.objects.join() === 'back'), 'no edge of the box not named');
+    sameEdges(named.edges, back, `join ${join}`);
+  }
+  assert.throws(() => predictEdges({ objects, camera: general, size: 256, only: 'back' }), /only/);
+});
+
 test('join: the same document whatever order the triangles come in', () => {
   const tri = gridBox([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5], 4);
   const triangles = [];
