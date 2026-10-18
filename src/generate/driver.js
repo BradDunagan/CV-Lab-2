@@ -336,13 +336,21 @@ function defaultOutputDir() {
 }
 
 const DEFAULTS = {
-  out: null, size: 512, samples: 96, positions: 3, lighting: 2,
+  out: null, size: 512, samples: 300, positions: 3, lighting: 2,
   room: undefined, lights: undefined, scene: 'helmet', aovs: false, truth: false, geometry: false,
   creaseAngle: 20, denoise: false, show: false, dryRun: false,
   toneMapping: 'aces', exposure: 1, float: false,
 };
 
 const TONE_MAPPINGS = ['aces', 'linear'];
+
+/**
+ * Where the live view stops accumulating: not an export's count, which is
+ * --samples. Until 2026-10-18 --samples set only this, at 96, and every
+ * export took pt-lab's 300; rr's analysis camera sets the same 96 to match.
+ * Twelve renders with it and twelve without read the same (2026-10-14).
+ */
+const LIVE_SAMPLE_CAP = 96;
 
 /**
  * The tone mapping a run asks for, checked before anything starts.
@@ -1328,7 +1336,7 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
       total: shots.length, scene: opts.scene, room, objects, lights, lamp,
     });
 
-    await call(`quality(${JSON.stringify({ samples: opts.samples })})`);
+    const quality = await call(`quality(${JSON.stringify({ samples: opts.samples, cap: LIVE_SAMPLE_CAP })})`);
     // Read back, like the lights and the lamp: what pt-lab applied is what
     // each image's ground truth records.
     const tone = await call(`toneMapping(${JSON.stringify({ kind: opts.toneMapping, exposure: opts.exposure })})`);
@@ -1396,7 +1404,8 @@ async function generate(options = {}, onProgress = () => {}, createHost = window
           const gtFile = path.join(opts.out, `${base}.gt.json`);
           // The tone mapping travels with the truth: a render's edges sit where
           // they do partly because of it, and nothing in the PNG says which.
-          fs.writeFileSync(gtFile, JSON.stringify({ ...gt, image: shot.name, toneMapping: tone }, null, 2));
+          // So does the sample count, which sets the render's noise.
+          fs.writeFileSync(gtFile, JSON.stringify({ ...gt, image: shot.name, toneMapping: tone, samples: quality.samples }, null, 2));
           truthFiles.push(gtFile);
           extra.truth = {
             file: gtFile,

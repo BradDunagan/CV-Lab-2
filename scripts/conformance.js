@@ -19,12 +19,17 @@
  *
  * With --scene and --shots, case.json also says how the frame was rendered --
  * the scene file, the shot, the size, the tone mapping (from the frame's
- * .gt.json) and the live view's sample cap -- so a host can render the same
+ * .gt.json), the samples each export took and the live view's cap beside
+ * them -- so a host can render the same
  * shot through its own copy of pt-lab and compare what the statements read
  * (rr's tests/analysis-camera.spec.ts). A render is not bit-reproducible, so
  * that comparison is to within render noise, never by hash.
  *
- *   ... --scene scenes/stack-2.json --shots generated/<run>/shots.json [--samples 96]
+ *   ... --scene scenes/stack-2.json --shots generated/<run>/shots.json [--samples 300]
+ *
+ * --samples is what the frame was rendered with, its .gt.json's `samples`
+ * when it records one. Frames from before 2026-10-18 record none, and took
+ * 300 whatever their run said: --samples then set only the live cap.
  */
 'use strict';
 const fs = require('node:fs');
@@ -36,7 +41,7 @@ const OUT = path.join(ROOT, 'test', 'conformance');
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
 function args(argv) {
-  const o = { frame: null, carry: null, name: null, crop: null, script: 'pipelines/pairs.lab', scene: null, shots: null, samples: 96 };
+  const o = { frame: null, carry: null, name: null, crop: null, script: 'pipelines/pairs.lab', scene: null, shots: null, samples: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--carry') o.carry = argv[++i];
@@ -65,7 +70,10 @@ function renderOf(o, size) {
   const gt = JSON.parse(fs.readFileSync(o.frame.replace(/\.pfm$/, '.gt.json'), 'utf8'));
   if (!gt.toneMapping) throw new Error(`${o.name}.gt.json records no tone mapping`);
   const { camera, target, intensity, transforms } = shot;
-  return { scene: rel(o.scene), shots: rel(o.shots), size, toneMapping: gt.toneMapping, samples: o.samples,
+  const samples = o.samples ?? gt.samples ?? 300;
+  if (gt.samples !== undefined && samples !== gt.samples) throw new Error(`${o.name}.gt.json says ${gt.samples} samples, not ${samples}`);
+  // cap: the live view's (the generator's LIVE_SAMPLE_CAP), which rr's analysis camera matches.
+  return { scene: rel(o.scene), shots: rel(o.shots), size, toneMapping: gt.toneMapping, samples, cap: 96,
     shot: { name: shot.name, camera, target, intensity, transforms } };
 }
 

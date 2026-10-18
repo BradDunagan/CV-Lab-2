@@ -29,7 +29,8 @@
       "kind": "linear",
       "exposure": 0.5
     },
-    "samples": 96,
+    "samples": 300,
+    "cap": 96,
     "shot": {
       "name": "y60-e50-gap-m2mm.png",
       "camera": [

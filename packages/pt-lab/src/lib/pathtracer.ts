@@ -293,8 +293,9 @@ const DEFAULT_ENV_URL = `${ASSET_BASE}royal_esplanade_1k.hdr`;
 const DEFAULT_LDR_WEIGHTS = `${ASSET_BASE}rt_ldr.tza`;
 const DEFAULT_LDR_AUX_WEIGHTS = `${ASSET_BASE}rt_ldr_alb_nrm.tza`;
 
-// Samples a fixed-size PNG export converges to before it's written. Small
-// export sizes reach this quickly; 1024² takes a few seconds (progress shown).
+// Samples a fixed-size export converges to before it's written, unless the
+// caller asks for another count. Every export took exactly this many before
+// exportPNG and renderFrame took a count, whatever the live view's cap said.
 const EXPORT_SAMPLES = 300;
 // How long a frame of export samples may take before fewer are drawn to the
 // next, and the most to one frame however fast they go (see accumulate).
@@ -425,6 +426,13 @@ async function tagSRGB(png: Blob): Promise<Blob> {
 }
 
 /** ?scene=procedural | room | room-emissive | room-arealight forces an alternate scene instead of the helmet. */
+/** An export's sample count: a whole number of samples, at least one. */
+function checkSampleCount(caller: string, samples: number) {
+	if (!(Number.isInteger(samples) && samples > 0)) {
+		throw new Error(`${caller}: samples ${samples} is not a positive integer`);
+	}
+}
+
 function sceneParam(): string | null {
 	return new URLSearchParams(location.search).get('scene');
 }
@@ -2769,8 +2777,9 @@ export class PathTracerLab {
 	/**
 	 * Render the scene at a fixed square resolution and download it as a PNG.
 	 * Independent of viewport/display: the renderer is temporarily resized to
-	 * size×size at pixel-ratio 1 and a square camera, converged to
-	 * EXPORT_SAMPLES, captured, then the interactive view is restored.
+	 * size×size at pixel-ratio 1 and a square camera, converged to `samples`
+	 * (EXPORT_SAMPLES unless given), captured, then the interactive view is
+	 * restored. The live view's cap (setMaxSamples) plays no part.
 	 *
 	 * `linearFilename`, when given, also downloads the same samples as a float
 	 * frame (`encodePFM`): the accumulated radiance times the exposure, never
@@ -2784,8 +2793,10 @@ export class PathTracerLab {
 		filename = 'pt-lab.png',
 		onProgress?: (frac: number) => void,
 		linearFilename?: string,
+		samples = EXPORT_SAMPLES,
 	) {
 		if (!this.ready || this.exporting) return;
+		checkSampleCount('exportPNG', samples);
 		if (linearFilename && this.denoiseEnabled) {
 			throw new Error('exportPNG: a float frame is the renderer\'s own light; turn denoising off for one');
 		}
@@ -2805,7 +2816,7 @@ export class PathTracerLab {
 			const renderSize = unet ? Math.max(size, DENOISE_MIN_SIZE) : size;
 			const convergeSpan = unet ? 0.85 : 1; // leave headroom for the denoise phase
 
-			await this.convergeSquare(renderSize, (frac) => onProgress?.(convergeSpan * frac));
+			await this.convergeSquare(renderSize, samples, (frac) => onProgress?.(convergeSpan * frac));
 			if (this.disposed) return;
 
 			// Redraw and snapshot the color in the SAME tick: the WebGL drawing
@@ -2870,7 +2881,8 @@ export class PathTracerLab {
 	/**
 	 * Render the scene at size x size and hand back the float frame, in memory:
 	 * what `exportPNG`'s `linearFilename` writes to a .pfm, without the PNG or
-	 * the download. The same convergence (EXPORT_SAMPLES, then the one more
+	 * the download. The same convergence (`samples`, EXPORT_SAMPLES unless
+	 * given, then the one more
 	 * sample exportPNG draws to capture in the same tick) and the same readback
 	 * -- the accumulated radiance times the exposure, never tone-mapped,
 	 * clipped or rounded to 8 bits.
@@ -2885,15 +2897,16 @@ export class PathTracerLab {
 	 * Throws where it cannot render, unlike exportPNG, whose silent return
 	 * once read as a successful export.
 	 */
-	async renderFrame(size: number, onProgress?: (frac: number) => void): Promise<RenderedFrame> {
+	async renderFrame(size: number, onProgress?: (frac: number) => void, samples = EXPORT_SAMPLES): Promise<RenderedFrame> {
 		if (!this.ready) throw new Error('renderFrame: the scene is not ready to render');
 		if (this.exporting) throw new Error('renderFrame: another render is in progress');
 		if (!(Number.isInteger(size) && size > 0)) throw new Error(`renderFrame: size ${size} is not a positive integer`);
+		checkSampleCount('renderFrame', samples);
 		this.exporting = true;
 		this.hideDenoise();
 		const restore = this.saveViewForExport();
 		try {
-			await this.convergeSquare(size, onProgress);
+			await this.convergeSquare(size, samples, onProgress);
 			if (this.disposed) throw new Error('renderFrame: disposed while rendering');
 			this.pathTracer.renderSample();
 			const { width, height, rgb } = this.readLinearFrame();
@@ -2948,7 +2961,7 @@ export class PathTracerLab {
 	}
 
 	/**
-	 * Square, pixel ratio 1, full render scale, from sample 0 to EXPORT_SAMPLES.
+	 * Square, pixel ratio 1, full render scale, from sample 0 to `samples`.
 	 *
 	 * Whole samples, not tiles: the tiles keep the live view responsive, and an
 	 * export capturing with a tiled renderSample() added a 301st sample to one
@@ -2956,7 +2969,7 @@ export class PathTracerLab {
 	 * canvas, and a capture inside them would blend in the low-res preview.
 	 * saveViewForExport puts all three back.
 	 */
-	private async convergeSquare(size: number, onProgress?: (frac: number) => void) {
+	private async convergeSquare(size: number, samples: number, onProgress?: (frac: number) => void) {
 		this.renderer.setPixelRatio(1);
 		this.renderer.setSize(size, size, false);
 		this.camera.aspect = 1;
@@ -2969,7 +2982,7 @@ export class PathTracerLab {
 		this.pathTracer.fadeDuration = 0;
 		this.pathTracer.updateCamera();
 		this.pathTracer.reset();
-		await this.accumulate(EXPORT_SAMPLES, onProgress);
+		await this.accumulate(samples, onProgress);
 	}
 
 	/**

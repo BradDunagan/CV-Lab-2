@@ -79,7 +79,7 @@ CV-Lab gap sweep -- the gap between two parts, stepped down to contact
                      camera's distance. With neither, there is one view: the
                      saved camera, exactly
   --size <px>        render size                          (default 512)
-  --samples <n>      path-tracing samples per image       (default 96)
+  --samples <n>      path-tracing samples per image       (default 300)
   --tone-mapping <k> linear | aces                        (default linear)
   --exposure <x>     radiance multiplier before tone mapping (default 0.5)
   --script <file>    the pipeline to run         (default pipelines/explained.lab)
@@ -161,7 +161,7 @@ flush with the table's front edge, so the two edges close onto each other.
 function parseArgs(argv) {
   const opts = {
     name: null, scene: 'saved:gap-1', moving: 'Cube', target: 'Table', axis: [0, 1, 0],
-    gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], carryFrom: [], size: 512, samples: 96, skipRender: false, overwrite: false,
+    gaps: [50, 20, 10, 5, 2, 1, 0.5, 0], carryFrom: [], size: 512, samples: 300, skipRender: false, overwrite: false,
     script: DEFAULT_SCRIPT, toneMapping: 'linear', exposure: 0.5,
     yaw: null, elevation: null, offset: null, poses: null,
     carry: false, carryMin: 3, ledgeMax: 1.2, ledgeFit: false, ledge: null, ledgeLift: null, curve: null, identify: null, dryRun: false,

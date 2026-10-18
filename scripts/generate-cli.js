@@ -46,7 +46,7 @@ CV-Lab image generator — renders from pt-lab
   --out <dir>        where to write the PNGs (required)
   --scene <name>     helmet | cube | saved:<name>        (default helmet)
   --size <px>        square render size                  (default 512)
-  --samples <n>      path-tracing samples per image      (default 96)
+  --samples <n>      path-tracing samples per image      (default 300)
   --positions <n>    camera positions to step through    (default 3)
   --lighting <n>     light intensities                   (default 2)
   --room <kind>      room | room-emissive | room-arealight | none
