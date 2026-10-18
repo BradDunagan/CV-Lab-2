@@ -451,6 +451,15 @@ JavaScript because it uses `packages/vision/src/math.js` and never the
 engine's `Math.sin`, `atan2`, `log` or `hypot`, on which even Chrome's V8 and
 Node's disagree (`design-lab-model.md` §5, rule 7).
 
+What a render costs ("A forty-second"): **every render here took 300
+samples, whatever its record says** -- `--samples` set only the live view's
+cap until 2026-10-18; now it is the export's count, default 300, recorded in
+each `.gt.json`. At 512 px on an M2 the GPU is the limit, ~54 ms a sample. At
+96 samples a frame renders in 5.7 s instead of ~17, the readings scatter
+1.8× as much, and on the test poses y and the turn lose about a third (0.007
+mm, 0.007°); x, at its bias, does not move. 300 for sweeps and recorded
+numbers; 96 for looking.
+
 Which edge is which part is predicted, not rendered ("A forty-first"):
 `predictEdges` projects the parts' triangles from the believed pose, about 3
 ms a view, the same edges as pt-lab's to 10⁻¹² px. Visibility is exact, which

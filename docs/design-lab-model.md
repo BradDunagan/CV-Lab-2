@@ -3074,6 +3074,69 @@ any scene but this one.
 (`notes/brads-notes/2026-10-08-predict/`: `run.sh` (m05 at 1.5 px, p05 at 0),
 `baseline.sh` (r05), `compare.mjs`, `rows.py`, and the logs.)
 
+#### A forty-second: what fewer samples cost
+
+**Every render here took 300 samples, whatever its record says.** The
+generator passed `--samples` (96) to pt-lab's `setMaxSamples`, which only
+pauses the live view; `exportPNG` converged to its own constant, 300. Every
+gap sweep, test pose and the conformance frame recorded 96 and took 300. Now
+`--samples` is the export's count, default 300 so nothing changes, each
+`.gt.json` records it, and the live cap is a constant of its own, 96, which
+rr's analysis camera matches. The same change stopped an export waiting a
+display frame per tile: with 2 × 2 tiles, 300 samples waited out 1,200
+frames, 20 s at 60 Hz, against the 20.6 s a 512 px render took. Untiled, as
+many samples to a frame as keep it under 100 ms, the render is 16.3 s: at
+512 px on an Apple M2 the GPU is the limit, about 54 ms a sample, and the
+frame waits were a fifth. Renders before and after differ only by noise.
+
+With the count a real choice, the ten test poses were rendered three times at
+96 and three at 150, beside the three 300-sample renders (`stack-2g-test`,
+`-r2`, `-r3`), all nine analysed by today's code with the eighteenth's pooled
+carry, and solved from the same 300-sample sweeps:
+
+| samples | s a frame, rendered | tracked scatter, px | four views: x / y / z mm, turn deg |
+|---|---|---|---|
+| 96 | 5.7 | 0.025-0.037 | 0.078 / 0.029 / 0.033 / 0.028 |
+| 150 | 8.4 | 0.021-0.030 | 0.090 / 0.033 / 0.031 / 0.026 |
+| 300 | ~17 | 0.014-0.025 | 0.078 / 0.022 / 0.029 / 0.021 |
+
+(The solve is `--calibrate hinged`, carried, RMS over the poses and the three
+renders; `joint` is the same to 0.005.)
+
+- **The readings follow the samples.** A tracked reading scatters 1.6-1.8×
+  more at 96 than at 300, and √(300/96) is 1.8.
+- **x does not move; y and the turn lose about a third.** x is 0.074 mm of
+  bias at every count -- the scene's, the eighteenth's -- and y and the turn
+  were the axes at the noise. At 96 they are 0.007 mm and 0.007° worse.
+- **150 is no better than 96 here**, which says what three renders of ten
+  poses resolve: about ±20% of each figure. Finer differences need more
+  renders.
+- **The solve scatters less than its readings say it should**: 1.0-1.3× at
+  96 against the readings' 1.7×. Unexplained. Which readings the robust fit
+  takes is the first suspect, not checked.
+- **Frames do not beat samples.** Path-tracing noise depends on the samples
+  a pixel gathers, however they are split: three 96-sample renders cost one
+  300-sample render and scatter about as much. Frames are worth combining for
+  what one frame cannot give -- another view, another pose -- not for noise.
+- **A whole test set costs 2.2× less, not 3×.** The analysis is a fixed 3.9 s
+  a frame (the fortieth).
+
+What it does not say. The calibration sweeps stayed at 300, and a
+calibration's noise is every pose's bias afterwards (the thirty-first: two
+renders of the same sweeps moved x 0.03 mm); fewer samples there is
+untested. And the analysis is not the best there is. It is
+`2026-10-05-repeat/pool.sh`'s, against the sweeps' records as they now
+stand, and on the same three 300-sample renders it gives x 0.068-0.089 mm
+where the thirty-first's gave 0.026-0.059; y, z and the turn agree. The
+counts are compared fairly -- all nine sets share it -- but where x's bias
+is smaller, noise is a larger part of what is left, and 96 would cost x
+something it does not cost here. So 300 stays the default, for sweeps and
+for any number recorded; 96 is for looking -- a scene, a light, a pipeline
+change -- at about half the time a set.
+
+(`notes/brads-notes/2026-10-18-samples/run.sh`: renders, analyses and solves
+all nine, and prints the tables; `SKIP_RENDER=1` analyses again.)
+
 #### What twenty-four views measured
 
 `--scene cube --positions 12 --lighting 2`, 256 px, 160 samples, denoised;

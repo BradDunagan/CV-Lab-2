@@ -1,0 +1,196 @@
+== hinged: test-pose error, x / y / z mm and turn deg
+stack-2g-test-s96-r1-hinged.json         10 sets 0.094 / 0.042 / 0.049 / 0.037   4 views 0.075 / 0.030 / 0.018 / 0.027  (10/10)
+stack-2g-test-s96-r2-hinged.json         10 sets 0.115 / 0.048 / 0.059 / 0.032   4 views 0.077 / 0.027 / 0.035 / 0.028  (10/10)
+stack-2g-test-s96-r3-hinged.json         10 sets 0.089 / 0.039 / 0.054 / 0.036   4 views 0.081 / 0.031 / 0.042 / 0.028  (10/10)
+stack-2g-test-s150-r1-hinged.json        10 sets 0.125 / 0.056 / 0.054 / 0.031   4 views 0.097 / 0.043 / 0.037 / 0.025  (10/10)
+stack-2g-test-s150-r2-hinged.json        10 sets 0.123 / 0.046 / 0.054 / 0.029   4 views 0.097 / 0.023 / 0.027 / 0.019  (10/10)
+stack-2g-test-s150-r3-hinged.json        10 sets 0.084 / 0.044 / 0.059 / 0.039   4 views 0.074 / 0.029 / 0.029 / 0.032  (10/10)
+stack-2g-test-s300-r1-hinged.json        10 sets 0.079 / 0.034 / 0.057 / 0.031   4 views 0.068 / 0.020 / 0.032 / 0.023  (10/10)
+stack-2g-test-s300-r2-hinged.json        10 sets 0.087 / 0.030 / 0.042 / 0.030   4 views 0.076 / 0.021 / 0.029 / 0.019  (10/10)
+stack-2g-test-s300-r3-hinged.json        10 sets 0.115 / 0.044 / 0.058 / 0.029   4 views 0.089 / 0.024 / 0.025 / 0.020  (10/10)
+
+== joint: test-pose error, x / y / z mm and turn deg
+stack-2g-test-s96-r1-joint.json          10 sets 0.097 / 0.044 / 0.054 / 0.033   4 views 0.074 / 0.031 / 0.017 / 0.024  (10/10)
+stack-2g-test-s96-r2-joint.json          10 sets 0.114 / 0.050 / 0.068 / 0.028   4 views 0.075 / 0.026 / 0.043 / 0.025  (10/10)
+stack-2g-test-s96-r3-joint.json          10 sets 0.090 / 0.042 / 0.060 / 0.034   4 views 0.080 / 0.032 / 0.043 / 0.027  (10/10)
+stack-2g-test-s150-r1-joint.json         10 sets 0.127 / 0.058 / 0.059 / 0.027   4 views 0.098 / 0.044 / 0.040 / 0.022  (10/10)
+stack-2g-test-s150-r2-joint.json         10 sets 0.123 / 0.047 / 0.056 / 0.029   4 views 0.096 / 0.026 / 0.029 / 0.018  (10/10)
+stack-2g-test-s150-r3-joint.json         10 sets 0.084 / 0.047 / 0.071 / 0.036   4 views 0.073 / 0.031 / 0.039 / 0.029  (10/10)
+stack-2g-test-s300-r1-joint.json         10 sets 0.081 / 0.037 / 0.066 / 0.029   4 views 0.066 / 0.021 / 0.033 / 0.023  (10/10)
+stack-2g-test-s300-r2-joint.json         10 sets 0.089 / 0.033 / 0.051 / 0.027   4 views 0.075 / 0.020 / 0.030 / 0.018  (10/10)
+stack-2g-test-s300-r3-joint.json         10 sets 0.117 / 0.047 / 0.064 / 0.027   4 views 0.089 / 0.026 / 0.026 / 0.019  (10/10)
+
+== 96 samples: bias and scatter over three renders (hinged)
+3 renders of 78 pair-views (4 views)
+
+reading error, px      read   bias rms   scatter sd   total rms   worst scatter
+detected  pair 1 mid     33/39   1.092      0.029       1.092    60/50/10/1  1.969  2.108  1.992
+detected  pair 1 end 1   31/39   0.933      0.041       0.933    60/20/4/1 -0.188 -0.065 -0.199
+detected  pair 1 end 2   30/39   0.864      0.044       0.865    60/20/2/1  2.608  2.387  2.430
+detected  pair 2 mid     33/39   0.964      0.026       0.964    60/50/8/2  2.118  2.011  2.052
+detected  pair 2 end 1   31/39   0.810      0.047       0.811    35/20/8/2  1.833  1.811  1.995
+detected  pair 2 end 2   32/39   0.813      0.036       0.813    35/20/3/2  0.003  0.027 -0.105
+refit     pair 1 mid     29/39   0.039      0.038       0.050    60/20/5/1 -0.106  0.025  0.114
+refit     pair 1 end 1   26/39   0.048      0.047       0.061    60/20/5/1 -0.151  0.115  0.171
+refit     pair 1 end 2   25/39   0.043      0.043       0.056    60/20/2/1  0.032 -0.061  0.162
+refit     pair 2 mid     28/39   0.144      0.039       0.147    60/50/6/2  0.101  0.006 -0.079
+refit     pair 2 end 1   26/39   0.146      0.054       0.152    35/50/3/2  0.088 -0.146 -0.103
+refit     pair 2 end 2   27/39   0.159      0.042       0.163    35/20/2/2 -0.298 -0.171 -0.365
+tracked   pair 1 mid     34/39   0.031      0.029       0.039    60/20/4/1 -0.025  0.068  0.048
+tracked   pair 1 end 1   34/39   0.047      0.037       0.056    60/20/4/1  0.006  0.139  0.171
+tracked   pair 1 end 2   34/39   0.047      0.034       0.055    35/50/10/1 -0.129 -0.018 -0.041
+tracked   pair 2 mid     38/39   0.106      0.025       0.108    35/50/2/2  0.069  0.197  0.148
+tracked   pair 2 end 1   38/39   0.109      0.032       0.112    35/50/2/2  0.096  0.272  0.150
+tracked   pair 2 end 2   38/39   0.118      0.034       0.121    35/50/10/2 -0.042 -0.003 -0.218
+
+carried from (render by render)
+  35/20/1    gap-0mm (4.79 px, gain 1.00)gap-0mm (4.79 px, gain 1.00)gap-0mm (4.79 px, gain 1.00)
+  35/20/2    gap-0mm (4.01 px, gain 1.02)gap-0mm (4.01 px, gain 1.02)gap-0mm (4.01 px, gain 1.02)
+  60/20/1    pose-5 (4.13 px, gain 1.05) pose-5 (4.13 px, gain 1.05) pose-5 (4.13 px, gain 1.05) 
+  60/20/2    gap-0mm (4.78 px, gain 1.02)gap-0mm (4.78 px, gain 1.02)gap-0mm (4.78 px, gain 1.02)
+  35/50/1    gap-4mm (5.02 px, gain 1.02)gap-4mm (5.02 px, gain 1.02)gap-4mm (5.02 px, gain 1.02)
+  35/50/2    gap-4mm (3.27 px, gain 1.11)gap-4mm (3.27 px, gain 1.11)gap-4mm (3.27 px, gain 1.11)
+  60/50/1    gap-m2mm (3.91 px, gain 1.03)gap-m2mm (3.91 px, gain 1.03)gap-m2mm (3.91 px, gain 1.03)
+  60/50/2    gap-2mm (3.83 px, gain 1.08)gap-2mm (3.83 px, gain 1.08)gap-2mm (3.83 px, gain 1.08)
+
+solved test poses, mm and degrees: bias rms / scatter sd / total rms over the poses
+refit     9 poses   0.177 / 0.165 / 0.223    0.124 / 0.127 / 0.161    0.116 / 0.099 / 0.142    0.080 / 0.026 / 0.082   yaw 35, elev 20 + yaw 35, elev 50
+refit    10 poses   0.294 / 0.172 / 0.326    0.211 / 0.061 / 0.217    0.222 / 0.099 / 0.236    0.103 / 0.050 / 0.110   yaw 35, elev 20 + yaw 60, elev 20
+refit     9 poses   0.157 / 0.137 / 0.192    0.317 / 0.229 / 0.368    0.545 / 0.454 / 0.660    0.074 / 0.041 / 0.082   yaw 35, elev 20 + yaw 60, elev 50
+refit     9 poses   0.189 / 0.114 / 0.211    0.148 / 0.069 / 0.158    0.129 / 0.070 / 0.141    0.084 / 0.027 / 0.087   yaw 35, elev 50 + yaw 60, elev 20
+refit     8 poses   0.062 / 0.090 / 0.096    0.170 / 0.133 / 0.202    0.056 / 0.069 / 0.080    0.039 / 0.030 / 0.046   yaw 35, elev 50 + yaw 60, elev 50
+refit     9 poses   0.175 / 0.061 / 0.182    0.197 / 0.063 / 0.203    0.175 / 0.074 / 0.186    0.080 / 0.028 / 0.084   yaw 60, elev 20 + yaw 60, elev 50
+refit    10 poses   0.112 / 0.132 / 0.155    0.053 / 0.053 / 0.068    0.053 / 0.092 / 0.092    0.078 / 0.036 / 0.083   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20
+refit     9 poses   0.083 / 0.064 / 0.098    0.110 / 0.055 / 0.118    0.106 / 0.065 / 0.119    0.057 / 0.025 / 0.061   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 50
+refit    10 poses   0.099 / 0.133 / 0.147    0.096 / 0.047 / 0.104    0.079 / 0.087 / 0.106    0.070 / 0.040 / 0.077   yaw 35, elev 20 + yaw 60, elev 20 + yaw 60, elev 50
+refit     9 poses   0.118 / 0.052 / 0.125    0.068 / 0.061 / 0.084    0.052 / 0.062 / 0.073    0.063 / 0.021 / 0.065   yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+refit    10 poses   0.064 / 0.132 / 0.125    0.063 / 0.047 / 0.074    0.052 / 0.086 / 0.087    0.061 / 0.035 / 0.067   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+carried   9 poses   0.089 / 0.066 / 0.104    0.028 / 0.030 / 0.037    0.029 / 0.036 / 0.041    0.025 / 0.017 / 0.029   yaw 35, elev 20 + yaw 35, elev 50
+carried  10 poses   0.098 / 0.041 / 0.103    0.038 / 0.026 / 0.044    0.076 / 0.043 / 0.083    0.035 / 0.022 / 0.040   yaw 35, elev 20 + yaw 60, elev 20
+carried  10 poses   0.080 / 0.038 / 0.086    0.041 / 0.040 / 0.052    0.068 / 0.069 / 0.089    0.049 / 0.016 / 0.050   yaw 35, elev 20 + yaw 60, elev 50
+carried   9 poses   0.080 / 0.157 / 0.151    0.032 / 0.073 / 0.068    0.032 / 0.044 / 0.048    0.026 / 0.016 / 0.029   yaw 35, elev 50 + yaw 60, elev 20
+carried   9 poses   0.105 / 0.113 / 0.140    0.168 / 0.199 / 0.233    0.081 / 0.092 / 0.110    0.029 / 0.016 / 0.032   yaw 35, elev 50 + yaw 60, elev 50
+carried  10 poses   0.083 / 0.029 / 0.086    0.027 / 0.027 / 0.035    0.025 / 0.027 / 0.033    0.040 / 0.019 / 0.043   yaw 60, elev 20 + yaw 60, elev 50
+carried  10 poses   0.099 / 0.072 / 0.115    0.034 / 0.030 / 0.042    0.037 / 0.031 / 0.045    0.026 / 0.013 / 0.028   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20
+carried  10 poses   0.071 / 0.035 / 0.077    0.030 / 0.031 / 0.040    0.047 / 0.050 / 0.063    0.029 / 0.015 / 0.031   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 50
+carried  10 poses   0.075 / 0.025 / 0.078    0.020 / 0.021 / 0.026    0.027 / 0.026 / 0.035    0.036 / 0.013 / 0.037   yaw 35, elev 20 + yaw 60, elev 20 + yaw 60, elev 50
+carried  10 poses   0.076 / 0.038 / 0.082    0.031 / 0.035 / 0.042    0.026 / 0.026 / 0.034    0.026 / 0.015 / 0.029   yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+carried  10 poses   0.074 / 0.027 / 0.078    0.023 / 0.021 / 0.029    0.026 / 0.025 / 0.033    0.026 / 0.012 / 0.028   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+         columns: x mm, y mm, z mm, turn deg
+
+== 150 samples: bias and scatter over three renders (hinged)
+3 renders of 78 pair-views (4 views)
+
+reading error, px      read   bias rms   scatter sd   total rms   worst scatter
+detected  pair 1 mid     33/39   1.092      0.022       1.092    60/50/10/1  2.028  1.907  1.987
+detected  pair 1 end 1   32/39   1.040      0.032       1.040    60/20/2/1  2.769  2.663  2.806
+detected  pair 1 end 2   29/39   0.776      0.036       0.776    35/20/7/1  0.105  0.195  0.050
+detected  pair 2 mid     33/39   0.963      0.031       0.963    60/50/10/2  2.171  2.276  2.308
+detected  pair 2 end 1   31/39   0.808      0.037       0.809    35/20/6/2  0.960  0.853  0.973
+detected  pair 2 end 2   32/39   0.815      0.041       0.816    35/20/2/2 -0.099  0.040 -0.108
+refit     pair 1 mid     29/39   0.036      0.028       0.043    35/50/7/1  0.068 -0.069 -0.006
+refit     pair 1 end 1   28/39   0.046      0.039       0.056    60/20/2/1  0.039  0.119  0.238
+refit     pair 1 end 2   25/39   0.040      0.031       0.048    60/20/2/1  0.119  0.016  0.089
+refit     pair 2 mid     28/39   0.148      0.032       0.151    60/20/5/2 -0.045  0.052  0.085
+refit     pair 2 end 1   26/39   0.145      0.033       0.148    35/20/2/2 -0.286 -0.157 -0.301
+refit     pair 2 end 2   27/39   0.170      0.043       0.173    35/50/3/2 -0.059  0.141  0.015
+tracked   pair 1 mid     35/39   0.034      0.023       0.038    35/20/7/1 -0.043  0.056 -0.026
+tracked   pair 1 end 1   35/39   0.043      0.026       0.048    35/20/7/1 -0.104 -0.008 -0.050
+tracked   pair 1 end 2   35/39   0.049      0.030       0.055    35/20/7/1  0.018  0.120 -0.003
+tracked   pair 2 mid     37/39   0.109      0.021       0.111    60/20/10/2 -0.140 -0.121 -0.049
+tracked   pair 2 end 1   37/39   0.112      0.026       0.114    35/50/8/2  0.054 -0.078 -0.106
+tracked   pair 2 end 2   37/39   0.123      0.028       0.125    60/50/5/2 -0.298 -0.175 -0.276
+
+carried from (render by render)
+  35/20/1    gap-0mm (4.79 px, gain 1.00)gap-0mm (4.79 px, gain 1.00)gap-0mm (4.79 px, gain 1.00)
+  35/20/2    gap-0mm (4.01 px, gain 1.02)gap-0mm (4.01 px, gain 1.02)gap-0mm (4.01 px, gain 1.02)
+  60/20/1    pose-5 (4.13 px, gain 1.05) pose-5 (4.13 px, gain 1.05) pose-5 (4.13 px, gain 1.05) 
+  60/20/2    gap-0mm (4.78 px, gain 1.02)gap-0mm (4.78 px, gain 1.02)gap-0mm (4.78 px, gain 1.02)
+  35/50/1    gap-4mm (5.02 px, gain 1.02)gap-4mm (5.02 px, gain 1.02)gap-4mm (5.02 px, gain 1.02)
+  35/50/2    gap-4mm (3.27 px, gain 1.11)gap-4mm (3.27 px, gain 1.11)gap-4mm (3.27 px, gain 1.11)
+  60/50/1    gap-m2mm (3.91 px, gain 1.03)gap-m2mm (3.91 px, gain 1.03)gap-m2mm (3.91 px, gain 1.03)
+  60/50/2    gap-2mm (3.83 px, gain 1.08)gap-2mm (3.83 px, gain 1.08)gap-2mm (3.83 px, gain 1.08)
+
+solved test poses, mm and degrees: bias rms / scatter sd / total rms over the poses
+refit     9 poses   0.128 / 0.151 / 0.178    0.105 / 0.126 / 0.147    0.136 / 0.094 / 0.157    0.080 / 0.021 / 0.082   yaw 35, elev 20 + yaw 35, elev 50
+refit    10 poses   0.255 / 0.257 / 0.330    0.171 / 0.163 / 0.217    0.185 / 0.179 / 0.235    0.109 / 0.039 / 0.114   yaw 35, elev 20 + yaw 60, elev 20
+refit     9 poses   0.150 / 0.126 / 0.182    0.309 / 0.226 / 0.360    0.546 / 0.460 / 0.662    0.080 / 0.025 / 0.083   yaw 35, elev 20 + yaw 60, elev 50
+refit     9 poses   0.160 / 0.082 / 0.174    0.157 / 0.057 / 0.163    0.144 / 0.057 / 0.152    0.083 / 0.030 / 0.086   yaw 35, elev 50 + yaw 60, elev 20
+refit     8 poses   0.093 / 0.067 / 0.108    0.157 / 0.116 / 0.183    0.088 / 0.062 / 0.101    0.040 / 0.013 / 0.041   yaw 35, elev 50 + yaw 60, elev 50
+refit     9 poses   0.119 / 0.106 / 0.147    0.092 / 0.148 / 0.152    0.075 / 0.160 / 0.151    0.086 / 0.024 / 0.089   yaw 60, elev 20 + yaw 60, elev 50
+refit    10 poses   0.094 / 0.083 / 0.116    0.040 / 0.037 / 0.051    0.058 / 0.052 / 0.072    0.080 / 0.023 / 0.082   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20
+refit     9 poses   0.065 / 0.034 / 0.071    0.106 / 0.041 / 0.111    0.136 / 0.068 / 0.147    0.059 / 0.016 / 0.060   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 50
+refit    10 poses   0.073 / 0.087 / 0.102    0.083 / 0.032 / 0.087    0.074 / 0.043 / 0.082    0.081 / 0.024 / 0.083   yaw 35, elev 20 + yaw 60, elev 20 + yaw 60, elev 50
+refit     9 poses   0.120 / 0.040 / 0.124    0.084 / 0.058 / 0.097    0.086 / 0.051 / 0.096    0.062 / 0.017 / 0.064   yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+refit    10 poses   0.059 / 0.080 / 0.088    0.057 / 0.031 / 0.063    0.064 / 0.044 / 0.074    0.066 / 0.020 / 0.068   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+carried   9 poses   0.124 / 0.079 / 0.140    0.038 / 0.047 / 0.054    0.041 / 0.040 / 0.052    0.029 / 0.019 / 0.033   yaw 35, elev 20 + yaw 35, elev 50
+carried  10 poses   0.096 / 0.053 / 0.105    0.025 / 0.036 / 0.039    0.067 / 0.052 / 0.079    0.035 / 0.020 / 0.039   yaw 35, elev 20 + yaw 60, elev 20
+carried  10 poses   0.069 / 0.042 / 0.077    0.041 / 0.054 / 0.060    0.070 / 0.094 / 0.104    0.034 / 0.030 / 0.042   yaw 35, elev 20 + yaw 60, elev 50
+carried  10 poses   0.151 / 0.117 / 0.178    0.061 / 0.059 / 0.077    0.041 / 0.044 / 0.054    0.028 / 0.019 / 0.032   yaw 35, elev 50 + yaw 60, elev 20
+carried   9 poses   0.155 / 0.130 / 0.188    0.207 / 0.186 / 0.257    0.087 / 0.088 / 0.113    0.021 / 0.018 / 0.026   yaw 35, elev 50 + yaw 60, elev 50
+carried  10 poses   0.082 / 0.017 / 0.083    0.035 / 0.020 / 0.039    0.028 / 0.017 / 0.031    0.031 / 0.026 / 0.037   yaw 60, elev 20 + yaw 60, elev 50
+carried  10 poses   0.121 / 0.077 / 0.136    0.040 / 0.040 / 0.052    0.040 / 0.038 / 0.050    0.029 / 0.018 / 0.033   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20
+carried  10 poses   0.081 / 0.045 / 0.089    0.028 / 0.034 / 0.039    0.029 / 0.025 / 0.036    0.023 / 0.017 / 0.027   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 50
+carried  10 poses   0.072 / 0.021 / 0.074    0.022 / 0.021 / 0.028    0.032 / 0.024 / 0.037    0.029 / 0.023 / 0.035   yaw 35, elev 20 + yaw 60, elev 20 + yaw 60, elev 50
+carried  10 poses   0.094 / 0.058 / 0.105    0.040 / 0.037 / 0.050    0.025 / 0.024 / 0.032    0.021 / 0.016 / 0.025   yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+carried  10 poses   0.082 / 0.044 / 0.090    0.025 / 0.026 / 0.033    0.026 / 0.022 / 0.031    0.022 / 0.016 / 0.026   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+         columns: x mm, y mm, z mm, turn deg
+
+== 300 samples: bias and scatter over three renders (hinged)
+3 renders of 78 pair-views (4 views)
+
+reading error, px      read   bias rms   scatter sd   total rms   worst scatter
+detected  pair 1 mid     33/39   1.089      0.023       1.089    35/50/7/1  2.209  2.125  2.220
+detected  pair 1 end 1   32/39   1.037      0.048       1.038    60/20/2/1  2.325  2.649  2.704
+detected  pair 1 end 2   30/39   0.863      0.038       0.864    60/20/2/1  2.636  2.509  2.388
+detected  pair 2 mid     33/39   0.960      0.026       0.960    60/50/10/2  2.189  2.312  2.240
+detected  pair 2 end 1   31/39   0.808      0.038       0.809    35/20/6/2  0.922  1.071  0.924
+detected  pair 2 end 2   32/39   0.823      0.028       0.824    35/20/2/2  0.015 -0.029 -0.095
+refit     pair 1 mid     29/39   0.028      0.026       0.036    60/20/2/1  0.035 -0.086  0.105
+refit     pair 1 end 1   28/39   0.030      0.035       0.041    60/20/2/1  0.062 -0.140  0.074
+refit     pair 1 end 2   25/39   0.038      0.035       0.047    60/20/7/1 -0.043  0.131 -0.096
+refit     pair 2 mid     29/39   0.149      0.028       0.151    35/20/5/2  0.229  0.109  0.213
+refit     pair 2 end 1   27/39   0.141      0.033       0.144    35/50/4/2  0.141  0.039  0.053
+refit     pair 2 end 2   27/39   0.171      0.031       0.173    60/20/5/2  0.106  0.049 -0.066
+tracked   pair 1 mid     36/39   0.031      0.016       0.034    60/50/7/1  0.081  0.020  0.076
+tracked   pair 1 end 1   36/39   0.039      0.019       0.042    35/50/2/1 -0.072 -0.050  0.021
+tracked   pair 1 end 2   36/39   0.045      0.025       0.050    60/20/7/1  0.010  0.088 -0.048
+tracked   pair 2 mid     38/39   0.106      0.014       0.107    35/50/10/2 -0.088 -0.142 -0.064
+tracked   pair 2 end 1   38/39   0.109      0.017       0.110    35/20/8/2 -0.157 -0.098 -0.133
+tracked   pair 2 end 2   38/39   0.119      0.023       0.121    35/50/10/2 -0.137 -0.286 -0.098
+
+carried from (render by render)
+  35/20/1    gap-0mm (4.79 px, gain 1.00)gap-0mm (4.79 px, gain 1.00)gap-0mm (4.79 px, gain 1.00)
+  35/20/2    gap-0mm (4.01 px, gain 1.02)gap-0mm (4.01 px, gain 1.02)gap-0mm (4.01 px, gain 1.02)
+  60/20/1    pose-5 (4.13 px, gain 1.05) pose-5 (4.13 px, gain 1.05) pose-5 (4.13 px, gain 1.05) 
+  60/20/2    gap-0mm (4.78 px, gain 1.02)gap-0mm (4.78 px, gain 1.02)gap-0mm (4.78 px, gain 1.02)
+  35/50/1    gap-4mm (5.02 px, gain 1.02)gap-4mm (5.02 px, gain 1.02)gap-4mm (5.02 px, gain 1.02)
+  35/50/2    gap-4mm (3.27 px, gain 1.11)gap-4mm (3.27 px, gain 1.11)gap-4mm (3.27 px, gain 1.11)
+  60/50/1    gap-m2mm (3.91 px, gain 1.03)gap-m2mm (3.91 px, gain 1.03)gap-m2mm (3.91 px, gain 1.03)
+  60/50/2    gap-2mm (3.83 px, gain 1.08)gap-2mm (3.83 px, gain 1.08)gap-2mm (3.83 px, gain 1.08)
+
+solved test poses, mm and degrees: bias rms / scatter sd / total rms over the poses
+refit     9 poses   0.242 / 0.216 / 0.300    0.161 / 0.167 / 0.211    0.132 / 0.091 / 0.151    0.081 / 0.026 / 0.084   yaw 35, elev 20 + yaw 35, elev 50
+refit    10 poses   0.305 / 0.220 / 0.354    0.111 / 0.122 / 0.149    0.128 / 0.140 / 0.171    0.101 / 0.045 / 0.107   yaw 35, elev 20 + yaw 60, elev 20
+refit     9 poses   0.208 / 0.065 / 0.214    0.380 / 0.097 / 0.388    0.690 / 0.189 / 0.707    0.079 / 0.034 / 0.084   yaw 35, elev 20 + yaw 60, elev 50
+refit     9 poses   0.147 / 0.063 / 0.156    0.147 / 0.061 / 0.155    0.134 / 0.059 / 0.142    0.074 / 0.023 / 0.077   yaw 35, elev 50 + yaw 60, elev 20
+refit     8 poses   0.068 / 0.066 / 0.087    0.132 / 0.088 / 0.150    0.048 / 0.047 / 0.062    0.036 / 0.033 / 0.045   yaw 35, elev 50 + yaw 60, elev 50
+refit     9 poses   0.122 / 0.063 / 0.133    0.095 / 0.082 / 0.117    0.077 / 0.097 / 0.110    0.083 / 0.038 / 0.088   yaw 60, elev 20 + yaw 60, elev 50
+refit    10 poses   0.107 / 0.055 / 0.116    0.051 / 0.024 / 0.055    0.071 / 0.039 / 0.078    0.076 / 0.025 / 0.079   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20
+refit     9 poses   0.074 / 0.039 / 0.080    0.106 / 0.028 / 0.109    0.116 / 0.034 / 0.119    0.061 / 0.024 / 0.064   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 50
+refit    10 poses   0.073 / 0.051 / 0.084    0.086 / 0.026 / 0.089    0.072 / 0.042 / 0.080    0.077 / 0.036 / 0.083   yaw 35, elev 20 + yaw 60, elev 20 + yaw 60, elev 50
+refit     9 poses   0.125 / 0.037 / 0.129    0.092 / 0.039 / 0.097    0.083 / 0.046 / 0.091    0.064 / 0.023 / 0.067   yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+refit    10 poses   0.053 / 0.054 / 0.069    0.060 / 0.021 / 0.062    0.065 / 0.026 / 0.068    0.065 / 0.024 / 0.067   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+carried  10 poses   0.100 / 0.048 / 0.108    0.028 / 0.030 / 0.037    0.032 / 0.029 / 0.040    0.028 / 0.015 / 0.030   yaw 35, elev 20 + yaw 35, elev 50
+carried  10 poses   0.103 / 0.038 / 0.108    0.035 / 0.021 / 0.038    0.072 / 0.034 / 0.077    0.040 / 0.015 / 0.042   yaw 35, elev 20 + yaw 60, elev 20
+carried  10 poses   0.071 / 0.035 / 0.077    0.046 / 0.033 / 0.053    0.100 / 0.052 / 0.108    0.031 / 0.012 / 0.032   yaw 35, elev 20 + yaw 60, elev 50
+carried  10 poses   0.116 / 0.098 / 0.141    0.044 / 0.044 / 0.057    0.036 / 0.033 / 0.045    0.025 / 0.015 / 0.028   yaw 35, elev 50 + yaw 60, elev 20
+carried   9 poses   0.105 / 0.077 / 0.122    0.128 / 0.104 / 0.153    0.057 / 0.045 / 0.068    0.020 / 0.014 / 0.023   yaw 35, elev 50 + yaw 60, elev 50
+carried  10 poses   0.073 / 0.021 / 0.075    0.024 / 0.016 / 0.027    0.030 / 0.019 / 0.034    0.035 / 0.017 / 0.038   yaw 60, elev 20 + yaw 60, elev 50
+carried  10 poses   0.101 / 0.050 / 0.109    0.031 / 0.026 / 0.037    0.036 / 0.028 / 0.043    0.024 / 0.013 / 0.027   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20
+carried  10 poses   0.073 / 0.030 / 0.077    0.017 / 0.021 / 0.024    0.024 / 0.020 / 0.029    0.018 / 0.012 / 0.021   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 50
+carried  10 poses   0.068 / 0.023 / 0.071    0.015 / 0.015 / 0.019    0.031 / 0.019 / 0.035    0.029 / 0.013 / 0.030   yaw 35, elev 20 + yaw 60, elev 20 + yaw 60, elev 50
+carried  10 poses   0.079 / 0.039 / 0.085    0.027 / 0.021 / 0.032    0.025 / 0.020 / 0.029    0.020 / 0.014 / 0.023   yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+carried  10 poses   0.074 / 0.029 / 0.078    0.017 / 0.017 / 0.022    0.025 / 0.018 / 0.029    0.018 / 0.012 / 0.021   yaw 35, elev 20 + yaw 35, elev 50 + yaw 60, elev 20 + yaw 60, elev 50
+         columns: x mm, y mm, z mm, turn deg
+
