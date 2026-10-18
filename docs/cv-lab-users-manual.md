@@ -1275,7 +1275,7 @@ you are editing pt-lab and cv-lab-2 together.
 | `--out <dir>` | — | required |
 | `--scene <name>` | `helmet` | `helmet` \| `cube` \| `saved:<name>` |
 | `--size <px>` | 512 | square |
-| `--samples <n>` | 96 | path-tracing samples per image |
+| `--samples <n>` | 300 | path-tracing samples per image, recorded in each `.gt.json`. Until 2026-10-18 this option set only the hidden live view's cap and every image took 300, whatever a run's record says |
 | `--positions <n>` | 3 | camera positions |
 | `--lighting <n>` | 2 | light intensities |
 | `--room <kind>` | the scene's own | `room` \| `room-emissive` \| `room-arealight` \| `none` |

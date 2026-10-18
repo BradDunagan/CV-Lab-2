@@ -54,7 +54,9 @@
     // means there is nothing to render rather than something to render badly.
     scene: '',
     size: 384,
-    samples: 48,
+    // Every export took 300 until --samples reached it (2026-10-18), so 300
+    // keeps what this pane renders the same; it used to say 48 and mean nothing.
+    samples: 300,
     positions: 3,
     lighting: 2,
     truth: false,
@@ -82,7 +84,8 @@
   let sheet = $state([]);
 
   let total = $derived(current.positions * current.lighting);
-  let estimate = $derived(total * Math.max(6, Math.round(current.samples * 0.42)));
+  // Seconds: about 54 ms a sample at 512 px on an Apple M2, by pixel count, and a second a shot besides.
+  let estimate = $derived(total * Math.max(1, Math.round(1 + current.samples * 0.054 * (current.size / 512) * (current.size / 512))));
 
   /**
    * The controls pane is this pane's sibling.

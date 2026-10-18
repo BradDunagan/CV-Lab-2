@@ -22,6 +22,14 @@ let lastStatus = null;
 let baseLights = [];
 
 /**
+ * How many samples each export converges to; pt-lab's own default until
+ * quality() sets it. Not the live view's cap: until 2026-10-18 the generator
+ * passed --samples to setMaxSamples, which only pauses the live view, and
+ * every export took pt-lab's 300 whatever --samples said.
+ */
+let exportSamples;
+
+/**
  * Resolve when the tracer reports it is ready.
  *
  * init() returns before the scene is usable: meshes load and a BVH is built
@@ -259,10 +267,13 @@ const api = {
     return lab.setDenoiseEnabled(enabled);
   },
 
-  quality({ samples, bounces, scale } = {}) {
-    if (typeof samples === 'number') lab.setMaxSamples(samples);
+  /** `samples` per export and the live view's `cap`; returns them, as each image records them. */
+  quality({ samples, cap, bounces, scale } = {}) {
+    if (typeof samples === 'number') exportSamples = samples;
+    if (typeof cap === 'number') lab.setMaxSamples(cap);
     if (typeof bounces === 'number') lab.setBounces(bounces);
     if (typeof scale === 'number') lab.setRenderScale(scale);
+    return { samples: exportSamples, cap };
   },
 
   /** 'aces' (pt-lab's default) or 'linear', and the exposure; returns what pt-lab now holds. */
@@ -305,7 +316,7 @@ const api = {
       (s) => s.mode === 'pathtracing' && s.samples > 0,
       'the tracer to start accumulating samples'
     );
-    await lab.exportPNG(size, filename, undefined, frame ?? undefined);
+    await lab.exportPNG(size, filename, undefined, frame ?? undefined, exportSamples);
     return filename;
   },
 };
