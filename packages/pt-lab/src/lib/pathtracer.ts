@@ -296,6 +296,10 @@ const DEFAULT_LDR_AUX_WEIGHTS = `${ASSET_BASE}rt_ldr_alb_nrm.tza`;
 // Samples a fixed-size PNG export converges to before it's written. Small
 // export sizes reach this quickly; 1024² takes a few seconds (progress shown).
 const EXPORT_SAMPLES = 300;
+// How long a frame of export samples may take before fewer are drawn to the
+// next, and the most to one frame however fast they go (see accumulate).
+const EXPORT_FRAME_BUDGET_MS = 100;
+const EXPORT_MAX_PER_FRAME = 64;
 // The OIDN denoiser pads inputs smaller than its tile size and the padding
 // (garbage) bleeds into the image via the UNet's receptive field, wrecking
 // small denoised exports. So denoise at >= this size, then downscale.
@@ -2923,6 +2927,9 @@ export class PathTracerLab {
 		const prevRenderScale = this.pathTracer.renderScale;
 		const prevEnabled = this.pathTracer.enablePathTracing;
 		const prevPaused = this.pathTracer.pausePathTracing;
+		const prevTiles = this.pathTracer.tiles.clone();
+		const prevDelay = this.pathTracer.renderDelay;
+		const prevFade = this.pathTracer.fadeDuration;
 		return () => {
 			this.renderer.setPixelRatio(prevPixelRatio);
 			this.renderer.setSize(logical.x, logical.y, false);
@@ -2931,13 +2938,24 @@ export class PathTracerLab {
 			this.pathTracer.renderScale = prevRenderScale;
 			this.pathTracer.enablePathTracing = prevEnabled;
 			this.pathTracer.pausePathTracing = prevPaused;
+			this.pathTracer.tiles.copy(prevTiles);
+			this.pathTracer.renderDelay = prevDelay;
+			this.pathTracer.fadeDuration = prevFade;
 			this.pathTracer.updateCamera();
 			this.pathTracer.reset();
 			this.lastResetAt = performance.now();
 		};
 	}
 
-	/** Square, pixel ratio 1, full render scale, from sample 0 to EXPORT_SAMPLES. */
+	/**
+	 * Square, pixel ratio 1, full render scale, from sample 0 to EXPORT_SAMPLES.
+	 *
+	 * Whole samples, not tiles: the tiles keep the live view responsive, and an
+	 * export capturing with a tiled renderSample() added a 301st sample to one
+	 * quadrant only. No reset delay or fade either: the PNG is read off the
+	 * canvas, and a capture inside them would blend in the low-res preview.
+	 * saveViewForExport puts all three back.
+	 */
 	private async convergeSquare(size: number, onProgress?: (frac: number) => void) {
 		this.renderer.setPixelRatio(1);
 		this.renderer.setSize(size, size, false);
@@ -2946,13 +2964,37 @@ export class PathTracerLab {
 		this.pathTracer.renderScale = 1;
 		this.pathTracer.enablePathTracing = true;
 		this.pathTracer.pausePathTracing = false;
+		this.pathTracer.tiles.set(1, 1);
+		this.pathTracer.renderDelay = 0;
+		this.pathTracer.fadeDuration = 0;
 		this.pathTracer.updateCamera();
 		this.pathTracer.reset();
+		await this.accumulate(EXPORT_SAMPLES, onProgress);
+	}
 
-		while (this.pathTracer.samples < EXPORT_SAMPLES && !this.disposed) {
-			this.pathTracer.renderSample();
-			onProgress?.(this.pathTracer.samples / EXPORT_SAMPLES);
+	/**
+	 * Draw samples until there are `target`, as many to a frame as the GPU
+	 * keeps up with. One sample (one tile, before) to a frame made a 512 px
+	 * export wait out 1,200 display frames: 20 s at 60 Hz, nearly all of it
+	 * idle. The count doubles while a frame takes under half the budget and
+	 * halves while it takes over, so a large render still yields to the page.
+	 * Only the pace changes: each sample is the same pass as before.
+	 */
+	private async accumulate(target: number, onProgress?: (frac: number) => void) {
+		let perFrame = 1;
+		let last = performance.now();
+		while (this.pathTracer.samples < target && !this.disposed) {
+			const before = this.pathTracer.samples;
+			for (let i = 0; i < perFrame && this.pathTracer.samples < target; i++) this.pathTracer.renderSample();
+			onProgress?.(this.pathTracer.samples / target);
 			await new Promise(requestAnimationFrame);
+			const now = performance.now();
+			const took = now - last;
+			last = now;
+			// Until a sample lands (the tracer may still be compiling) there is nothing to pace.
+			if (this.pathTracer.samples === before) continue;
+			if (took < EXPORT_FRAME_BUDGET_MS / 2) perFrame = Math.min(perFrame * 2, EXPORT_MAX_PER_FRAME);
+			else if (took > EXPORT_FRAME_BUDGET_MS) perFrame = Math.max(1, perFrame >> 1);
 		}
 	}
 
@@ -3612,12 +3654,7 @@ export class PathTracerLab {
 
 		this.exporting = true;
 		this.hideDenoise();
-		const logical = this.renderer.getSize(new Vector2());
-		const prevPixelRatio = this.renderer.getPixelRatio();
-		const prevAspect = this.camera.aspect;
-		const prevRenderScale = this.pathTracer.renderScale;
-		const prevEnabled = this.pathTracer.enablePathTracing;
-		const prevPaused = this.pathTracer.pausePathTracing;
+		const restore = this.saveViewForExport();
 
 		try {
 			this.renderer.setPixelRatio(1);
@@ -3627,6 +3664,10 @@ export class PathTracerLab {
 			this.pathTracer.renderScale = 1;
 			this.pathTracer.enablePathTracing = true;
 			this.pathTracer.pausePathTracing = false;
+			// Whole samples, no delay or fade: see convergeSquare.
+			this.pathTracer.tiles.set(1, 1);
+			this.pathTracer.renderDelay = 0;
+			this.pathTracer.fadeDuration = 0;
 
 			for (let i = 0; i < angles.length; i++) {
 				const a = angles[i];
@@ -3643,11 +3684,7 @@ export class PathTracerLab {
 				this.pathTracer.reset();
 
 				const label = `${axis}+${Math.round(a)}° (${i + 1}/${angles.length})`;
-				while (this.pathTracer.samples < samples && !this.disposed) {
-					this.pathTracer.renderSample();
-					opts.onProgress?.((i + this.pathTracer.samples / samples) / angles.length, label);
-					await new Promise(requestAnimationFrame);
-				}
+				await this.accumulate(samples, (frac) => opts.onProgress?.((i + frac) / angles.length, label));
 				if (this.disposed) return;
 
 				// Snapshot beauty in the same tick, then the position pass.
@@ -3666,16 +3703,7 @@ export class PathTracerLab {
 		} finally {
 			this.setObjectTransform(targetId, orig);
 			this.pathTracer.setScene(this.scene, this.camera);
-			this.renderer.setPixelRatio(prevPixelRatio);
-			this.renderer.setSize(logical.x, logical.y, false);
-			this.camera.aspect = prevAspect;
-			this.camera.updateProjectionMatrix();
-			this.pathTracer.renderScale = prevRenderScale;
-			this.pathTracer.enablePathTracing = prevEnabled;
-			this.pathTracer.pausePathTracing = prevPaused;
-			this.pathTracer.updateCamera();
-			this.pathTracer.reset();
-			this.lastResetAt = performance.now();
+			restore();
 			this.exporting = false;
 		}
 	}
