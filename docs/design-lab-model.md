@@ -3092,50 +3092,67 @@ frame waits were a fifth. Renders before and after differ only by noise.
 With the count a real choice, the ten test poses were rendered three times at
 96 and three at 150, beside the three 300-sample renders (`stack-2g-test`,
 `-r2`, `-r3`), all nine analysed by today's code with the eighteenth's pooled
-carry, and solved from the same 300-sample sweeps:
+carry and the ledge held, and solved from the same 300-sample sweeps:
 
 | samples | s a frame, rendered | tracked scatter, px | four views: x / y / z mm, turn deg |
 |---|---|---|---|
-| 96 | 5.7 | 0.025-0.037 | 0.078 / 0.029 / 0.033 / 0.028 |
-| 150 | 8.4 | 0.021-0.030 | 0.090 / 0.033 / 0.031 / 0.026 |
-| 300 | ~17 | 0.014-0.025 | 0.078 / 0.022 / 0.029 / 0.021 |
+| 96 | 5.7 | 0.022-0.035 | 0.040 / 0.022 / 0.030 / 0.019 |
+| 150 | 8.4 | 0.019-0.029 | 0.058 / 0.029 / 0.030 / 0.021 |
+| 300 | ~17 | 0.013-0.024 | 0.039 / 0.020 / 0.024 / 0.017 |
 
-(The solve is `--calibrate hinged`, carried, RMS over the poses and the three
-renders; `joint` is the same to 0.005.)
+(`--calibrate hinged`, carried, RMS over the poses and the three renders;
+`joint` is within 0.01. The 300 row is the thirty-second's analysis on its
+own renders: 0.025 / 0.018 / 0.024 / 0.018 on the first.)
 
-- **The readings follow the samples.** A tracked reading scatters 1.6-1.8×
+- **The readings follow the samples.** A tracked reading scatters 1.5-1.8×
   more at 96 than at 300, and √(300/96) is 1.8.
-- **x does not move; y and the turn lose about a third.** x is 0.074 mm of
-  bias at every count -- the scene's, the eighteenth's -- and y and the turn
-  were the axes at the noise. At 96 they are 0.007 mm and 0.007° worse.
-- **150 is no better than 96 here**, which says what three renders of ten
-  poses resolve: about ±20% of each figure. Finer differences need more
-  renders.
-- **The solve scatters less than its readings say it should**: 1.0-1.3× at
-  96 against the readings' 1.7×. Unexplained. Which readings the robust fit
-  takes is the first suspect, not checked.
-- **Frames do not beat samples.** Path-tracing noise depends on the samples
-  a pixel gathers, however they are split: three 96-sample renders cost one
-  300-sample render and scatter about as much. Frames are worth combining for
-  what one frame cannot give -- another view, another pose -- not for noise.
+- **The solve hardly does.** At 96, y and the turn are 10% worse, z 25%, and
+  x not at all; 0.002-0.006 mm and 0.002°.
+- **150 is worse than both**, x 0.058 from two renders at 0.066 and 0.069:
+  three renders of ten poses resolve about ±30% of each figure, no finer.
+- **The solve's scatter does not follow its readings.** x scatters 0.027 mm
+  at 96 and 0.028 at 300, against readings 1.7× apart; y 0.019 against
+  0.014, z 0.022 against 0.015. Something that changes from render to render
+  and not with the samples is most of the pose's scatter. Unexplained: which
+  readings the robust fit takes is the first suspect; the 1-2% a render's
+  mean light moves between renders of the same code is another. Neither is
+  checked.
+- **Frames do not beat samples** for noise: path-tracing noise depends on the
+  samples a pixel gathers, however they are split. Frames are worth combining
+  for what one frame cannot give -- another view, another pose.
 - **A whole test set costs 2.2× less, not 3×.** The analysis is a fixed 3.9 s
   a frame (the fortieth).
+
+**This entry was first written from a mismatched analysis**, and the trace is
+worth keeping. `2026-10-05-repeat/pool.sh` reads the test frames without the
+ledge, and `results/stack-2g-{x,y,z,turn}` -- the sweeps every solve
+calibrates from -- were re-analysed in place on 2026-10-07 with it held
+(`--ledge results/ledge/stack-2g-ledge.json`). Test frames read one way and
+calibrated from sweeps read the other put x at 0.068-0.089 mm, and the first
+version said x "does not move" at 96 because that 0.04 mm swamped the noise.
+On the 300-sample renders, hinged, four views:
+
+| test frames | sweeps, ledge held | sweeps, no ledge |
+|---|---|---|
+| ledge held | **0.025** / 0.018 / 0.024 / 0.018 | 0.059 / 0.017 / 0.031 / 0.019 |
+| no ledge | 0.068 / 0.020 / 0.032 / 0.023 | **0.026** / 0.019 / 0.023 / 0.019 |
+
+Today's code gives both diagonals (the second is the thirty-first's, to the
+last digit), and the ledge file reproduces the 2026-10-07 test record's 74
+tracked readings to 0.004 px. Nothing in the code moved; a record did. A
+`results/` directory holds whichever analysis last wrote it, and nothing
+says which -- the carried commands' `ledge=` arguments did.
 
 What it does not say. The calibration sweeps stayed at 300, and a
 calibration's noise is every pose's bias afterwards (the thirty-first: two
 renders of the same sweeps moved x 0.03 mm); fewer samples there is
-untested. And the analysis is not the best there is. It is
-`2026-10-05-repeat/pool.sh`'s, against the sweeps' records as they now
-stand, and on the same three 300-sample renders it gives x 0.068-0.089 mm
-where the thirty-first's gave 0.026-0.059; y, z and the turn agree. The
-counts are compared fairly -- all nine sets share it -- but where x's bias
-is smaller, noise is a larger part of what is left, and 96 would cost x
-something it does not cost here. So 300 stays the default, for sweeps and
-for any number recorded; 96 is for looking -- a scene, a light, a pipeline
-change -- at about half the time a set.
+untested. So 300 stays the default, for sweeps and for any number recorded;
+96 is for looking -- a scene, a light, a pipeline change -- at about half
+the time a set, and on this evidence it costs the test poses little.
 
-(`notes/brads-notes/2026-10-18-samples/run.sh`: renders, analyses and solves
-all nine, and prints the tables; `SKIP_RENDER=1` analyses again.)
+(`notes/brads-notes/2026-10-18-samples/`: `run.sh` renders, analyses and
+solves all nine and prints the tables, `LEDGE=1 SKIP_RENDER=1` as above;
+`tables-ledge.txt`, and `tables.txt` from the mismatched first pass.)
 
 #### What twenty-four views measured
 

@@ -455,10 +455,13 @@ What a render costs ("A forty-second"): **every render here took 300
 samples, whatever its record says** -- `--samples` set only the live view's
 cap until 2026-10-18; now it is the export's count, default 300, recorded in
 each `.gt.json`. At 512 px on an M2 the GPU is the limit, ~54 ms a sample. At
-96 samples a frame renders in 5.7 s instead of ~17, the readings scatter
-1.8× as much, and on the test poses y and the turn lose about a third (0.007
-mm, 0.007°); x, at its bias, does not move. 300 for sweeps and recorded
-numbers; 96 for looking.
+96 samples a frame renders in 5.7 s instead of ~17 and the readings scatter
+1.7× as much, but the solved test poses barely move: y and the turn 10%
+worse, z 25%, x not at all -- most of a pose's render-to-render scatter does
+not follow the samples, unexplained. Fewer samples for the calibration
+sweeps is untested. 300 for sweeps and recorded numbers; 96 for looking.
+And a `results/` record holds whichever analysis last wrote it: the stack-2g
+sweeps' hold the ledge, so a test read without it solves 0.04 mm worse in x.
 
 Which edge is which part is predicted, not rendered ("A forty-first"):
 `predictEdges` projects the parts' triangles from the believed pose, about 3

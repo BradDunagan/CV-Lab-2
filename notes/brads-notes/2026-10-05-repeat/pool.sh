@@ -1,5 +1,8 @@
 #!/bin/zsh
 # Re-analyse a stack-2 run with the still edges from the shared pool.
+# Reads WITHOUT the ledge. results/stack-2g-{x,y,z,turn} hold the ledge since
+# 2026-10-07 (2026-10-07-ledge/pool.sh, EXTRA="--ledge results/ledge/stack-2g-ledge.json"):
+# a test analysed here and solved against them is 0.04 mm worse in x (§5, "A forty-second").
 # SUFFIX=-noisy pool.sh x ... analyses stack-2g-x-noisy and so on, pooled from
 # the sweeps with the same suffix (a degraded copy, 2026-10-05-degrade/).
 cd "$(dirname "$0")/../../.."
