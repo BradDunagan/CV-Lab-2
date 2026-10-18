@@ -3113,10 +3113,9 @@ own renders: 0.025 / 0.018 / 0.024 / 0.018 on the first.)
 - **The solve's scatter does not follow its readings.** x scatters 0.027 mm
   at 96 and 0.028 at 300, against readings 1.7× apart; y 0.019 against
   0.014, z 0.022 against 0.015. Something that changes from render to render
-  and not with the samples is most of the pose's scatter. Unexplained: which
-  readings the robust fit takes is the first suspect; the 1-2% a render's
-  mean light moves between renders of the same code is another. Neither is
-  checked.
+  and not with the samples is most of the pose's scatter: readings that
+  some renders give and others refuse, one of them wrong by 0.77 px (the
+  forty-third).
 - **Frames do not beat samples** for noise: path-tracing noise depends on the
   samples a pixel gathers, however they are split. Frames are worth combining
   for what one frame cannot give -- another view, another pose.
@@ -3153,6 +3152,87 @@ the time a set, and on this evidence it costs the test poses little.
 (`notes/brads-notes/2026-10-18-samples/`: `run.sh` renders, analyses and
 solves all nine and prints the tables, `LEDGE=1 SKIP_RENDER=1` as above;
 `tables-ledge.txt`, and `tables.txt` from the mismatched first pass.)
+
+#### A forty-third: a reading switched on and off by noise
+
+The forty-second's poses scattered from render to render as much at 300
+samples as at 96 (x 0.028 and 0.027 mm), though every reading scattered 1.8×
+less: reading by reading, 96 over 300, the median ratio is 1.79, and
+√(300/96) is 1.8. So what moved the poses was not reading noise. Pose by
+pose, one pose was most of it: pose 1's x scattered 0.066, 0.123 and 0.073 mm
+at 96, 150 and 300 samples, pose 5's 0.03-0.05, the other eight 0.01-0.02.
+
+**Pose 1's x follows one reading being there or not.** 35/50's pair 2 is a
+0.22 px strip. `trackPair` fits a strip (0.26 px) and one edge (an overhang,
+−0.49 px) about equally well, and its ratio -- the one edge's rms over the
+two's -- came out 0.983 to 1.015 in the nine renders. `TRACK_EDGE_RATIO` is
+1.0: under it the one edge is taken, over it (to 1.2) the reading is
+ambiguous and gives no gap. Five renders refused it and x was within 0.05 mm;
+four read −0.50 to −0.56 px, gapSigma 0.024-0.034 -- 0.77 px wrong, and
+confident -- and x went 0.08-0.21 mm off. Noise moves the ratio by about
+±0.01 and the threshold sits in the middle of it, so more samples narrow the
+coin and do not change the odds. It is the twenty-first's own case: the same
+pair, at 0.20 px on the approach, read −0.39 as one edge. That entry drew the
+ambiguous zone at 1.0-1.2; this reading falls just under it.
+
+Seven of the 78 pair-views switch between read and refused across the nine
+renders; pose 5 holds three. Six of the seven read right when they read
+(within 0.06 px); they switch between ambiguous and read. Only pose 1's is
+wrong. Dropped from every render, the poses' scatter follows the samples
+again -- y 0.018 against 0.011, z 0.024 against 0.013 -- and x at 300 goes
+0.039 → 0.030 mm.
+
+**The ratio does not tell a strip from an overhang under about a pixel.**
+Over every track in the sweeps and the nine test sets with its truth beside
+it (898):
+
+| true gap, px | tracks | ratio, p10 / p50 / p90 | overhang / ambiguous / strip |
+|---|---|---|---|
+| under −1 | 10 | 0.637 / 0.707 / 0.907 | 10 / 0 / 0 |
+| −1 to −0.5 | 10 | 1.000 / 1.002 / 1.005 | 2 / 8 / 0 |
+| −0.5 to −0.25 | 27 | 0.964 / 1.186 / 2.036 | 9 / 3 / 15 |
+| −0.25 to 0 | 9 | 0.997 / 1.000 / 1.001 | 5 / 4 / 0 |
+| 0 to 0.25 | 12 | 0.992 / 1.002 / 1.015 | 4 / 8 / 0 |
+| 0.25 to 0.5 | 29 | 1.047 / 1.295 / 1.670 | 0 / 7 / 22 |
+| 0.5 to 1 | 30 | 1.156 / 1.523 / 2.544 | 0 / 3 / 27 |
+| over 1 | 771 | 1.31 the lowest | 0 / 0 / 771 |
+
+Real strips under 0.25 px read 0.983-1.022; real overhangs of 0.14-0.82 px
+read mostly 0.964-1.005. Only past a pixel of overhang is it clearly under 1.
+(The fifteen overhangs called strips are right: with the ledge held, a part
+that overhangs shows its lit ledge, and the strip model reads it negative,
+0.03-0.32 px off.)
+
+**A dead band works here, narrowly.** Taking one edge only under 0.98 refuses
+13 readings over the nine sets, all four wrong ones among them; of the 17
+overhang calls it keeps, 16 are within 0.25 px of the truth (the one past is
+60/50 pair 2 at −1.19 px, read 0.26 px deeper). Simulated on the records (an
+overhang call at 0.98 or over made ambiguous) and solved again, four views,
+hinged, x scatter / total in mm:
+
+| samples | 1.0, as now | 0.98 |
+|---|---|---|
+| 96 | 0.027 / 0.040 | 0.020 / 0.039 |
+| 150 | 0.043 / 0.058 | 0.022 / 0.029 |
+| 300 | 0.028 / 0.039 | 0.017 / 0.032 |
+
+y, z and the turn move by 0.002 or less, and 0.95 gives the same as 0.98.
+But the margin is 0.004 -- the last real overhang kept reads 0.979, the wrong
+strip 0.983 -- in one scene. It is a threshold fitted to the case that
+found it, and not changed on this alone.
+
+What one frame cannot decide a sequence can: a strip and an overhang are
+0.5-0.8 px apart, and a carried pose good to 0.1 px picks between them
+(the twenty-first; `calibrate.js` and `servo` already take hypotheses that
+way). A test pose solved alone has no prior. The open question is what the
+static solve should do with a reading in that zone -- refuse it, as under
+1.0-1.2 it already does, or carry both hypotheses into the solve and let
+the other views decide.
+
+(`notes/brads-notes/2026-10-18-scatter/`: `scatter.js` by reading and by
+pose, `drop.js` the switching readings dropped, `ratios.js` the ratio
+against the truth, `cutoff.js` the dead band simulated; their output in
+`scatter.txt` and `ratios.txt`.)
 
 #### What twenty-four views measured
 

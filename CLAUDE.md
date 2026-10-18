@@ -458,7 +458,11 @@ each `.gt.json`. At 512 px on an M2 the GPU is the limit, ~54 ms a sample. At
 96 samples a frame renders in 5.7 s instead of ~17 and the readings scatter
 1.7× as much, but the solved test poses barely move: y and the turn 10%
 worse, z 25%, x not at all -- most of a pose's render-to-render scatter does
-not follow the samples, unexplained. Fewer samples for the calibration
+not follow the samples. It is readings switched on and off by noise
+("A forty-third"): under about a pixel `trackPair`'s ratio cannot tell a
+strip from an overhang, one 0.22 px strip sat on `TRACK_EDGE_RATIO` (1.0)
+and read −0.55 in four renders of nine, and a dead band at 0.98 halves x's
+scatter, on a margin of 0.004 -- not adopted. Fewer samples for the calibration
 sweeps is untested. 300 for sweeps and recorded numbers; 96 for looking.
 And a `results/` record holds whichever analysis last wrote it: the stack-2g
 sweeps' hold the ledge, so a test read without it solves 0.04 mm worse in x.
